@@ -1,0 +1,49 @@
+# RSSgate configuration. Copy to config.yaml and edit.
+# Every value below can also be changed from the admin panel (which rewrites this file).
+
+server:
+  host: 0.0.0.0
+  port: 8088
+  # SQLite database / data directory
+  data_dir: ./data
+
+llm:
+  # Provider: local | openai | openrouter | anthropic
+  provider: local
+  # Base URL of an OpenAI-compatible endpoint (used by local/openai/openrouter)
+  base_url: "http://10.1.13.99:8000/v1"
+  # API key. Use "env:VARNAME" to read from the environment.
+  api_key: ""
+  # Model name. Leave empty to auto-select: if the endpoint serves exactly
+  # one model it is used by default, otherwise pick one in the admin panel.
+  model: ""
+
+polling:
+  # Minutes between fetches. Bare web pages are far more token intensive,
+  # so they get their own (longer) timer.
+  feed_interval_minutes: 30
+  page_interval_minutes: 180
+  # Run an initial fetch of every feed on startup.
+  fetch_on_start: true
+
+summarizer:
+  # Target summary length: short | medium | long
+  length: medium
+  # Max characters of article text sent to the LLM (input guard, saves tokens)
+  max_input_chars: 24000
+  # System prompt used for article transcription/digesting.
+  # The {length} placeholder is replaced using `length` above.
+  system_prompt: >-
+    You are a careful news reader. You will receive the raw text scraped from a
+    web page. Produce a faithful digest of the article: keep every important
+    fact, name, number, date and key quotation; remove advertising, sponsored
+    content, cookie banners, navigation, comment sections, share prompts,
+    related-article blocks and any other boilerplate. Never invent or add
+    information that is not present. Write plain flowing prose with no
+    markdown headings. Length target: {length}. Respond with the digest text
+    only.
+
+ui:
+  # 'auto' follows the OS/browser dark-mode setting; 'light'/'dark' force it.
+  theme: auto
+  items_per_page: 20

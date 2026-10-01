@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="{{ 'light' if cfg.ui.theme=='light' else ('dark' if cfg.ui.theme=='dark' else '') }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSSgate Admin</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin">
+<header class="topbar">
+  <a class="brand" href="/">RSS<span>gate</span></a>
+  <span class="spacer"></span>
+  <a href="/" class="icon-btn" title="Back to reader">&#8592;</a>
+</header>
+
+<main class="admin-main">
+
+  <section class="panel">
+    <h2>Feeds</h2>
+    <table class="feed-table" id="feed-table">
+      <thead><tr><th>Feed</th><th>Type</th><th>Categories</th><th>Articles</th>
+      <th>Last fetch</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="add-feed">
+      <input id="new-url" placeholder="https://example.com/feed  (RSS, Atom or bare web page)">
+      <select id="new-type">
+        <option value="auto">auto-detect</option>
+        <option value="feed">feed</option>
+        <option value="page">bare page</option>
+      </select>
+      <input id="new-cats" placeholder="categories, comma separated">
+      <button class="btn" id="add-feed-btn">Add feed</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Categories</h2>
+    <p class="hint">Categories are assigned per feed (edit the cell above). Rename or
+      remove them everywhere below.</p>
+    <ul id="category-list" class="category-list"></ul>
+    <div class="row">
+      <input id="rename-from" placeholder="category to change">
+      <input id="rename-to" placeholder="new name (leave blank to just remove)">
+      <button class="btn" id="rename-btn">Rename / Remove</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Language model</h2>
+    <div class="grid2">
+      <label>Provider
+        <select id="cfg-provider">
+          <option value="local">OpenAI-compatible (local)</option>
+          <option value="openai">OpenAI</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="anthropic">Anthropic</option>
+        </select></label>
+      <label>Model
+        <select id="cfg-model"><option value="">auto</option></select></label>
+      <label>Base URL <input id="cfg-base-url" placeholder="http://host:port/v1"></label>
+      <label>API key <input id="cfg-api-key" type="password" placeholder="unchanged"></label>
+    </div>
+    <div class="row">
+      <button class="btn" id="llm-test-btn">Test connection</button>
+      <span id="llm-test-result" class="hint"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Polling &amp; summarizer</h2>
+    <div class="grid2">
+      <label>Feed poll interval (minutes)
+        <input id="cfg-feed-min" type="number" min="5"></label>
+      <label>Bare page poll interval (minutes)
+        <input id="cfg-page-min" type="number" min="15"></label>
+      <label>Summary length
+        <select id="cfg-length">
+          <option value="short">short</option>
+          <option value="medium">medium</option>
+          <option value="long">long</option>
+        </select></label>
+      <label>Max input characters
+        <input id="cfg-max-chars" type="number" min="2000" step="1000"></label>
+    </div>
+    <label>System prompt <span class="hint">(<code>{length}</code> is replaced with the length target)</span>
+      <textarea id="cfg-prompt" rows="6"></textarea></label>
+    <div class="row">
+      <button class="btn" id="save-btn">Save settings</button>
+      <button class="btn ghost" id="poll-now-btn">Poll all feeds now</button>
+      <span id="save-result" class="hint"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Token usage</h2>
+    <div class="usage-grid">
+      <div class="stat"><span id="usage-today">–</span><label>today</label></div>
+      <div class="stat"><span id="usage-month">–</span><label>this month</label></div>
+      <div class="stat"><span id="usage-all">–</span><label>all time</label></div>
+    </div>
+  </section>
+
+</main>
+<script src="/static/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""RSSgate entry point:  python run.py [--config config.yaml]"""
+import argparse
+import logging
+import os
+
+from rssgate import db
+from rssgate.config import load_config
+from rssgate.llm import LLMClient
+from rssgate.scheduler import Scheduler
+from rssgate.web import create_app
+
+
+def main():
+    ap = argparse.ArgumentParser(description="RSSgate feed manager")
+    ap.add_argument("--config", default="config.yaml")
+    args = ap.parse_args()
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+
+    if not os.path.exists(args.config):
+        from rssgate.config import save_config
+        save_config(load_config(args.config), args.config)
+        print(f"created default config at {args.config}")
+
+    cfg = load_config(args.config)
+    os.makedirs(cfg["server"]["data_dir"], exist_ok=True)
+    conn = db.connect(os.path.join(cfg["server"]["data_dir"], "rssgate.sqlite"))
+    db.init_db(conn)
+    app = create_app(args.config, conn=conn)
+    sched = Scheduler(conn, cfg, lambda: LLMClient(load_config(args.config)))
+    if cfg["polling"]["fetch_on_start"]:
+        from rssgate.refresh import refresh_all
+        import threading
+        threading.Thread(target=lambda: refresh_all(
+            conn, cfg, LLMClient(cfg)), daemon=True).start()
+    sched.start()
+
+    print(f"RSSgate listening on http://{cfg['server']['host']}:{cfg['server']['port']}")
+    app.run(host=cfg["server"]["host"], port=int(cfg["server"]["port"]),
+            threaded=True, debug=False)
+
+
+if __name__ == "__main__":
+    main()
