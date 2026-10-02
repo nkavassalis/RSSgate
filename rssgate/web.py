@@ -218,7 +218,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         try:
             text, usage = client.chat(TEST_PROMPT, max_tokens=128)
             db.log_usage(conn, client.provider, client.model or "auto",
-                         usage["prompt_tokens"], usage["completion_tokens"])
+                         usage["prompt_tokens"], usage["completion_tokens"],
+                         purpose="test")
             return jsonify({"ok": True, "reply": text.strip()[:40],
                             "model": client.resolve_model()})
         except Exception as exc:  # noqa: BLE001
@@ -227,6 +228,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/usage")
     def api_usage():
         return jsonify(db.usage_totals(conn))
+
+    @app.route("/api/llm/stats")
+    def api_llm_stats():
+        return jsonify(db.llm_stats(conn))
+
+    @app.route("/api/workqueue")
+    def api_workqueue():
+        return jsonify(db.workqueue_snapshot(conn))
 
     @app.route("/api/poll", methods=["POST"])
     def api_poll():

@@ -19,6 +19,8 @@ BODY_TAGS = ("p", "li", "blockquote", "h1", "h2", "h3", "h4", "pre", "td")
 
 
 def _is_junk(el) -> bool:
+    if el.name in ("body", "html"):
+        return False   # never nuke the whole page over a silly class name
     ident = " ".join(filter(None, [el.get("id", ""), " ".join(el.get("class", []))]))
     return bool(JUNK_RE.search(ident))
 
@@ -31,7 +33,12 @@ def extract_article_text(html: str, max_chars: int = 24000) -> str:
     for tag in soup.find_all(_is_junk):
         tag.decompose()
 
-    root = soup.find("article") or soup.find("main") or soup.find(attrs={"role": "main"}) or soup.body or soup
+    def weight(el):
+        return sum(len(p.get_text(strip=True)) for p in el.find_all("p", limit=30))
+
+    candidates = soup.find_all("article") + soup.find_all("main") \
+        + soup.find_all(attrs={"role": "main"}) + [soup.body or soup]
+    root = max((c for c in candidates if c), key=weight, default=soup)
 
     blocks: list[str] = []
     seen: set[str] = set()

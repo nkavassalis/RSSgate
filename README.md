@@ -42,7 +42,18 @@ cp config.example.yaml config.yaml     # optional; run.py generates defaults
 - Bare pages are fetched with conditional GET and content-hash comparison; the
   discovery LLM call is skipped when the page is unchanged.
 - `summarizer.max_input_chars` caps prompt size.
-- Token usage per call is logged; the admin panel shows today / month / all-time.
+- Token usage per call is logged; the admin panel shows today / month / all-time,
+  plus an LLM performance panel: digest queue depth & peak high-water mark,
+  avg/min/max seconds per article, estimated drain time, cache-hit count
+  (digests reused for zero tokens) and failed-digest counter. Stats auto-refresh
+  every 15 s.
+- **Work queue** (admin): live view of what the LLM is digesting right now,
+  what it processed recently (status, finish time, wall-clock duration, tokens
+  in/out) and how deep the backlog is. `GET /api/workqueue`. Items stuck in
+  `processing` (e.g. after a crash) are auto-requeued after 15 minutes.
+- **Parallel digesting**: `summarizer.concurrency` (default 2) runs that many
+  digest workers in parallel. Reasoning-model endpoints spend most of their
+  latency on hidden thinking tokens, so parallelism beats waiting.
 
 ## LLM providers
 

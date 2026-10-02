@@ -40,6 +40,8 @@ New categories are created simply by assigning them to a feed.
 | `GET /api/models` | Models from the configured provider (`[]` + error for Anthropic). |
 | `POST /api/llm/test` | Round-trip "Reply with exactly: OK" probe; usage is logged. |
 | `GET /api/usage` | `{today, month, all_time}` total tokens. |
+| `GET /api/llm/stats` | Performance snapshot: `{queue, queue_peak, errors, cache_hits, calls_today, tokens_today, avg_seconds, min_seconds, max_seconds, est_drain_minutes, last_call_ts}`. |
+| `GET /api/workqueue` | Live work queue: `{current:[{id,title,started_at,feed_title,link}], recent:[{id,title,status,summarized_at,llm_ms,tokens_in,tokens_out,feed_title}], working, queue_ahead}`. |
 | `GET /api/status` | `{feeds, pending, polling}`. |
 | `POST /api/poll` | Refresh all enabled feeds in background. |
 

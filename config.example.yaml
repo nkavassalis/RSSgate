@@ -31,6 +31,12 @@ summarizer:
   length: medium
   # Max characters of article text sent to the LLM (input guard, saves tokens)
   max_input_chars: 24000
+  # Parallel digest workers. Reasoning models spend most latency on hidden
+  # thinking tokens; running 2-4 in parallel is the cheapest speedup.
+  concurrency: 2
+  # Output budget incl. thinking tokens. Too low => empty digests on reasoning
+  # models; too high on cheap models just wastes the cap allowance.
+  max_output_tokens: 4000
   # System prompt used for article transcription/digesting.
   # The {length} placeholder is replaced using `length` above.
   system_prompt: >-

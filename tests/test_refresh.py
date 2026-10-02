@@ -64,6 +64,7 @@ def test_identical_article_reuses_summary_cache(conn, cfg, monkeypatch):
     db.upsert_article(conn, f2, "g2", "https://ex.com/post", "T", None)
     assert refresh.summarize_pending(conn, load_config(cfg), FakeLLM()) == 1
     assert FakeLLM.calls == calls_after_first  # served from cache, zero tokens
+    assert db.get_state(conn, "cache_hits") == "1"
 
 
 def test_bare_page_unchanged_skips_llm(conn, cfg, monkeypatch):

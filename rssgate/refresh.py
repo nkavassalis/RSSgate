@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import html  # noqa: F401  (kept for symmetry; unescape used in fetcher)
 import logging
+import time
 
 from . import db
 from .config import LENGTH_TARGETS
@@ -61,9 +63,12 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
         return "not modified"
     if llm is None:
         return "error: LLM required for bare pages"
+    disc_started = time.perf_counter()
     disc = discover_page_articles(res["html"], url, llm)
+    disc_ms = int((time.perf_counter() - disc_started) * 1000)
     db.log_usage(conn, llm.provider, llm.model or "auto",
-                 disc["usage"]["prompt_tokens"], disc["usage"]["completion_tokens"])
+                 disc["usage"]["prompt_tokens"], disc["usage"]["completion_tokens"],
+                 duration_ms=disc_ms, purpose="discovery")
     added = 0
     for item in disc["items"]:
         if db.upsert_article(conn, feed_id, item["link"], item["link"],
@@ -93,10 +98,11 @@ def system_prompt(cfg) -> str:
 
 
 def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
-    """Run each pending article through the LLM exactly once, unless its content
-    hash shows we already have a digest for identical text (cache hit = 0 tokens)."""
+    """Run claimed articles through the LLM exactly once, unless their content
+    hash shows we already have a digest for identical text (cache hit = 0 tokens).
+    Claims atomically, so multiple worker threads may call this concurrently."""
     done = 0
-    rows = db.pending_articles(conn, limit)
+    rows = db.claim_pending(conn, limit)
     for art in rows:
         try:
             import requests
@@ -114,24 +120,29 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             if cached:
                 db.set_article(conn, art["id"], summary=cached["summary"],
                                status="ready", body_hash=body_hash,
-                               summarized_at=db.now_iso())
+                               summarized_at=db.now_iso(), llm_ms=0)
+                db.incr_state(conn, "cache_hits")  # zero-token reuse counter
                 done += 1
                 continue
             feed = db.get_feed(conn, art["feed_id"])
             user = (f"Feed: {feed['title'] or feed['url']}\n"
                     f"Article: {art['title']}\nSource: {art['link']}\n\n{text}")
+            t0 = time.perf_counter()
             digest, usage = llm.chat(
                 [{"role": "system", "content": system_prompt(cfg)},
-                 {"role": "user", "content": user}], max_tokens=4000)
+                 {"role": "user", "content": user}],
+                max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)))
+            dur_ms = int((time.perf_counter() - t0) * 1000)
             db.log_usage(conn, llm.provider, llm.model or "auto",
-                         usage["prompt_tokens"], usage["completion_tokens"])
+                         usage["prompt_tokens"], usage["completion_tokens"],
+                         duration_ms=dur_ms, purpose="summarize")
             if not digest.strip():
                 # reasoning models can burn the whole budget thinking
                 db.set_article(conn, art["id"], status="error")
                 continue
             db.set_article(conn, art["id"], summary=digest.strip(), status="ready",
                            body_hash=body_hash, tokens_in=usage["prompt_tokens"],
-                           tokens_out=usage["completion_tokens"],
+                           tokens_out=usage["completion_tokens"], llm_ms=dur_ms,
                            summarized_at=db.now_iso())
             done += 1
         except Exception as exc:  # noqa: BLE001

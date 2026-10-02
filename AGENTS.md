@@ -14,8 +14,11 @@ rssgate/
   db.py                 ALL SQL lives here. Plain sqlite3, no ORM.
                         feeds.categories = user-assigned (comma string)
                         feeds.auto_categories = feed-declared (comma string)
-                        articles.status: pending -> ready|error
-                        state table stores viewer resume position
+                        articles.status: pending -> processing -> ready|error
+                        articles.started_at/llm_ms = per-article LLM timing
+                        claim_pending() = atomic queue claim (UPDATE..RETURNING)
+                        state table: resume position, queue_peak, cache_hits
+                        _migrate() = additive ALTER TABLE migrations on init
   extract.py            BeautifulSoup article-text extraction (junk class/id regex),
                         candidate link harvest for bare pages
   llm.py                LLMClient: chat()/list_models()/resolve_model().
@@ -27,8 +30,10 @@ rssgate/
   refresh.py            refresh_feed(): per-feed orchestration;
                         summarize_pending(): fetch link -> extract -> sha256 ->
                         hash-cache -> LLM -> log usage
-  scheduler.py          Scheduler(thread): every 30s poll feeds whose timer
-                        elapsed (feed vs page intervals differ), then summarize
+  scheduler.py          Scheduler(thread): every 30s requeue stale processing,
+                        poll due feeds (feed vs page timers differ), then run
+                        `summarizer.concurrency` parallel digest workers via
+                        ThreadPoolExecutor (claims are atomic)
   web.py                create_app(config_path, conn=None). Flask routes only;
                         delegates to db/refresh/llm.
   templates/            viewer.html, admin.html (server-rendered shells)

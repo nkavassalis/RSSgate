@@ -80,6 +80,11 @@
           <option value="medium">medium</option>
           <option value="long">long</option>
         </select></label>
+      <label>Parallel digest workers
+        <select id="cfg-concurrency">
+          <option>1</option><option>2</option><option>3</option><option>4</option>
+          <option>6</option><option>8</option>
+        </select></label>
       <label>Max input characters
         <input id="cfg-max-chars" type="number" min="2000" step="1000"></label>
     </div>
@@ -93,12 +98,34 @@
   </section>
 
   <section class="panel">
-    <h2>Token usage</h2>
+    <h2>Work queue</h2>
+    <p class="hint" id="wq-summary">–</p>
+    <div id="wq-current" class="wq-current"></div>
+    <table class="feed-table" id="wq-table">
+      <thead><tr><th></th><th>Article</th><th>Feed</th><th>Finished</th>
+        <th>Duration</th><th>Tokens</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Token usage &amp; LLM performance</h2>
     <div class="usage-grid">
-      <div class="stat"><span id="usage-today">–</span><label>today</label></div>
-      <div class="stat"><span id="usage-month">–</span><label>this month</label></div>
-      <div class="stat"><span id="usage-all">–</span><label>all time</label></div>
+      <div class="stat"><span id="usage-today">–</span><label>tokens today</label></div>
+      <div class="stat"><span id="usage-month">–</span><label>tokens this month</label></div>
+      <div class="stat"><span id="usage-all">–</span><label>tokens all time</label></div>
     </div>
+    <div class="usage-grid" style="margin-top:10px">
+      <div class="stat"><span id="st-queue">–</span><label>digest queue (peak <b id="st-peak">–</b>)</label></div>
+      <div class="stat"><span id="st-avg">–</span><label>avg sec/article (min–max <b id="st-range">–</b>)</label></div>
+      <div class="stat"><span id="st-drain">–</span><label>est. time to drain queue</label></div>
+    </div>
+    <div class="usage-grid" style="margin-top:10px">
+      <div class="stat"><span id="st-cache">–</span><label>cache hits (0 tokens)</label></div>
+      <div class="stat"><span id="st-calls">–</span><label>LLM calls today</label></div>
+      <div class="stat"><span id="st-errors">–</span><label>failed digests</label></div>
+    </div>
+    <p class="hint" id="st-last">last LLM call: –</p>
   </section>
 
 </main>

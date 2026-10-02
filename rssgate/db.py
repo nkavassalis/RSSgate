@@ -64,8 +64,22 @@ def connect(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
+    if "llm_ms" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN llm_ms INTEGER NOT NULL DEFAULT 0")
+    if "started_at" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN started_at TEXT")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(token_usage)")}
+    if "duration_ms" not in cols:
+        conn.execute("ALTER TABLE token_usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
+    if "purpose" not in cols:
+        conn.execute("ALTER TABLE token_usage ADD COLUMN purpose TEXT DEFAULT 'summarize'")
     conn.commit()
 
 
@@ -209,6 +223,56 @@ def pending_articles(conn, limit: int = 5) -> list[sqlite3.Row]:
         "SELECT * FROM articles WHERE status='pending' ORDER BY id LIMIT ?", (limit,)))
 
 
+def claim_pending(conn, limit: int = 1) -> list[sqlite3.Row]:
+    """Atomically move up to `limit` pending articles to 'processing'.
+    Safe with concurrent workers: a row can only be claimed once."""
+    cur = conn.execute(
+        "UPDATE articles SET status='processing', started_at=? WHERE id IN"
+        " (SELECT id FROM articles WHERE status='pending' ORDER BY id LIMIT ?)"
+        " RETURNING *",
+        (now_iso(), limit))
+    rows = cur.fetchall()
+    conn.commit()
+    return rows
+
+
+def mark_processing(conn, article_id: int) -> None:
+    conn.execute("UPDATE articles SET status='processing', started_at=? WHERE id=?",
+                 (now_iso(), article_id))
+    conn.commit()
+
+
+def requeue_stale_processing(conn, older_than_minutes: int = 15) -> int:
+    """Crashed mid-run items go back to the queue."""
+    cur = conn.execute(
+        "UPDATE articles SET status='pending' WHERE status='processing'"
+        " AND started_at < datetime('now', ?)", (f'-{older_than_minutes} minutes',))
+    conn.commit()
+    return cur.rowcount
+
+
+def workqueue_snapshot(conn, current_window_min: int = 2, recent_limit: int = 12) -> dict:
+    """What the LLM is doing now, what it did recently, and what's next."""
+    def rows(sql, params=()):
+        return [dict(r) for r in conn.execute(sql, params)]
+    current = rows(
+        "SELECT a.id, a.title, a.started_at, a.link, f.title AS feed_title"
+        " FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        " WHERE a.status='processing'")
+    recent = rows(
+        "SELECT a.id, a.title, a.status, a.summarized_at, a.llm_ms,"
+        " a.tokens_in, a.tokens_out, f.title AS feed_title"
+        " FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        " WHERE a.status IN ('ready','error')"
+        " ORDER BY COALESCE(a.summarized_at, a.fetched_at) DESC LIMIT ?", (recent_limit,))
+    ahead = conn.execute(
+        "SELECT COUNT(*) c FROM articles WHERE status='pending'").fetchone()["c"]
+    working = conn.execute(
+        "SELECT COUNT(*) c FROM articles WHERE status='processing'").fetchone()["c"]
+    return {"current": current, "recent": recent,
+            "working": working, "queue_ahead": ahead}
+
+
 def find_summary_by_hash(conn, body_hash: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT summary FROM articles WHERE body_hash=? AND summary IS NOT NULL "
@@ -228,13 +292,57 @@ def get_state(conn, key: str, default: str = "") -> str:
     return row["value"] if row else default
 
 
-def log_usage(conn, provider: str, model: str, prompt: int, completion: int) -> None:
+def log_usage(conn, provider: str, model: str, prompt: int, completion: int,
+              duration_ms: int = 0, purpose: str = "summarize") -> None:
     now = now_iso()
     conn.execute(
         "INSERT INTO token_usage(day, ts, provider, model, prompt_tokens,"
-        " completion_tokens, total_tokens) VALUES(?,?,?,?,?,?,?)",
-        (now[:10], now, provider, model, prompt, completion, prompt + completion))
+        " completion_tokens, total_tokens, duration_ms, purpose)"
+        " VALUES(?,?,?,?,?,?,?,?,?)",
+        (now[:10], now, provider, model, prompt, completion, prompt + completion,
+         duration_ms, purpose))
     conn.commit()
+
+
+def bump_state_max(conn, key: str, value: int) -> int:
+    """High-water mark state: keep the largest value ever seen."""
+    cur = int(get_state(conn, key, "0") or 0)
+    if value > cur:
+        set_state(conn, key, str(value))
+        return value
+    return cur
+
+
+def incr_state(conn, key: str, delta: int = 1) -> int:
+    cur = int(get_state(conn, key, "0") or 0) + delta
+    set_state(conn, key, str(cur))
+    return cur
+
+
+def llm_stats(conn) -> dict:
+    """Performance snapshot for the admin panel."""
+    def one(sql, params=()):
+        return conn.execute(sql, params).fetchone()
+    q = one("SELECT COUNT(*) c FROM articles WHERE status='pending'")["c"]
+    errors = one("SELECT COUNT(*) c FROM articles WHERE status='error'")["c"]
+    peak = bump_state_max(conn, "queue_peak", q)
+    cache_hits = int(get_state(conn, "cache_hits", "0") or 0)
+    s = one("SELECT COUNT(*) n, COALESCE(AVG(duration_ms),0) avg_ms,"
+            " COALESCE(MIN(duration_ms),0) min_ms, COALESCE(MAX(duration_ms),0) max_ms"
+            " FROM token_usage WHERE purpose='summarize' AND duration_ms > 0")
+    t = one("SELECT COUNT(*) calls, COALESCE(SUM(total_tokens),0) tokens"
+            " FROM token_usage WHERE day = date('now')")
+    avg_s = s["avg_ms"] / 1000.0
+    last = one("SELECT ts FROM token_usage ORDER BY id DESC LIMIT 1")["ts"]
+    return {
+        "queue": q, "queue_peak": peak, "errors": errors,
+        "cache_hits": cache_hits,
+        "calls_today": t["calls"], "tokens_today": t["tokens"],
+        "avg_seconds": round(avg_s, 1), "min_seconds": round(s["min_ms"] / 1000.0, 1),
+        "max_seconds": round(s["max_ms"] / 1000.0, 1),
+        "est_drain_minutes": round(q * avg_s / 60.0, 1) if q else 0,
+        "last_call_ts": last,
+    }
 
 
 def usage_totals(conn) -> dict:

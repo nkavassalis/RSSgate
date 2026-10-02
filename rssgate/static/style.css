@@ -94,6 +94,8 @@ textarea { resize:vertical; }
 .category-list li button { border:none; background:none; color:var(--chip-text);
   cursor:pointer; font-size:.9rem; padding:0; }
 .usage-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.wq-current { margin-bottom:10px; }
+.wq-item { background:var(--chip); border-radius:8px; padding:8px 12px; margin-bottom:6px; }
 .stat { text-align:center; padding:10px; border:1px solid var(--line); border-radius:10px; }
 .stat span { display:block; font-size:1.4rem; font-weight:800; }
 .stat label { margin:2px 0 0; }

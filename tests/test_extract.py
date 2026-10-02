@@ -36,8 +36,28 @@ def test_headings_marked():
     assert "## Test Article" in extract_article_text(PAGE)
 
 
+def test_never_strips_body_even_with_junk_classes():
+    tricky = ('<html><body class="single embed post-template-default"><article>'
+              '<p>Body survives despite the embed class on the body tag, long enough.</p>'
+              '</article></body></html>')
+    assert "Body survives" in extract_article_text(tricky)
+
+
 def test_page_title():
     assert page_title(PAGE) == "Test Article — Example Site"
+
+
+def test_picks_article_with_real_body_not_widget_cards():
+    multi = """<html><body>
+    <article class="card"><a>Trending</a></article>
+    <article class="card"><a>More from us</a></article>
+    <article class="post"><div class="entry-content">
+      <p>Real body paragraph one with plenty of substance to matter to readers.</p>
+      <p>Real body paragraph two with plenty of substance to matter to readers.</p>
+    </div></article></body></html>"""
+    text = extract_article_text(multi)
+    assert "Real body paragraph one" in text
+    assert "Trending" not in text
 
 
 def test_candidate_links_same_domain_and_min_length():

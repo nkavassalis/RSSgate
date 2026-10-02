@@ -98,6 +98,7 @@ async function loadConfig() {
   $('cfg-page-min').value = cfg.polling.page_interval_minutes;
   $('cfg-length').value = cfg.summarizer.length;
   $('cfg-max-chars').value = cfg.summarizer.max_input_chars;
+  $('cfg-concurrency').value = cfg.summarizer.concurrency ?? 2;
   $('cfg-prompt').value = cfg.summarizer.system_prompt;
   try {
     const m = await api('/api/models');
@@ -116,6 +117,7 @@ $('save-btn').addEventListener('click', async () => {
                page_interval_minutes: +$('cfg-page-min').value },
     summarizer: { length: $('cfg-length').value,
                   max_input_chars: +$('cfg-max-chars').value,
+                  concurrency: +$('cfg-concurrency').value,
                   system_prompt: $('cfg-prompt').value },
   };
   const key = $('cfg-api-key').value.trim();
@@ -139,6 +141,35 @@ $('poll-now-btn').addEventListener('click', async () => {
   setTimeout(() => { renderFeeds(); }, 5000);
 });
 
+// ------------------------------------------------------------------ work queue
+const WQ_ICON = { ready: '\u2713', error: '\u2717', processing: '\u25f3' };
+function fmtSec(ms) { return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'; }
+function ago(ts) {
+  if (!ts) return '\u2013';
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 5400) return (s / 60 | 0) + ' min ago';
+  return (s / 3600 | 0) + ' h ago';
+}
+
+async function renderWorkqueue() {
+  const wq = await api('/api/workqueue');
+  $('wq-summary').textContent =
+    `${wq.working} summarizing \u00b7 ${wq.queue_ahead} queued ahead`;
+  $('wq-current').innerHTML = wq.current.length
+    ? wq.current.map(c => `<div class="wq-item">\u23f3 <b>${esc(c.title)}</b>
+        <span class="hint">${esc(c.feed_title)} \u00b7 running ${ago(c.started_at).replace(' ago', '')}</span></div>`).join('')
+    : '<div class="hint">idle \u2014 nothing being summarized right now</div>';
+  $('wq-table').querySelector('tbody').innerHTML = wq.recent.map(r => `<tr>
+      <td title="${r.status}">${WQ_ICON[r.status] || '?'}</td>
+      <td>${esc(r.title)}</td><td class="hint">${esc(r.feed_title)}</td>
+      <td class="hint">${ago(r.summarized_at)}</td>
+      <td>${r.llm_ms ? fmtSec(r.llm_ms) : '\u2013'}</td>
+      <td>${r.tokens_in + r.tokens_out ? (r.tokens_in + r.tokens_out).toLocaleString() : '\u2013'}</td>
+    </tr>`).join('') ||
+    '<tr><td colspan="6" class="hint">nothing processed yet</td></tr>';
+}
+
 // ------------------------------------------------------------------ usage
 async function renderUsage() {
   const u = await api('/api/usage');
@@ -148,4 +179,22 @@ async function renderUsage() {
   $('usage-all').textContent = n(u.all_time);
 }
 
-renderFeeds(); renderCategories(); loadConfig(); renderUsage();
+async function renderLlmStats() {
+  const s = await api('/api/llm/stats');
+  const n = x => (x ?? 0).toLocaleString();
+  $('st-queue').textContent = n(s.queue);
+  $('st-peak').textContent = n(s.queue_peak);
+  $('st-avg').textContent = s.avg_seconds ? s.avg_seconds + 's' : '–';
+  $('st-range').textContent = s.avg_seconds ? `${s.min_seconds}s–${s.max_seconds}s` : '–';
+  $('st-drain').textContent = s.queue ? (s.est_drain_minutes < 60
+      ? s.est_drain_minutes.toFixed(0) + ' min' : (s.est_drain_minutes / 60).toFixed(1) + ' h')
+    : 'clear';
+  $('st-cache').textContent = n(s.cache_hits);
+  $('st-calls').textContent = n(s.calls_today);
+  $('st-errors').textContent = n(s.errors);
+  $('st-last').textContent = 'last LLM call: ' + (s.last_call_ts || 'never');
+}
+
+renderFeeds(); renderCategories(); loadConfig(); renderUsage(); renderLlmStats(); renderWorkqueue();
+setInterval(() => { renderUsage(); renderLlmStats(); }, 15000);
+setInterval(renderWorkqueue, 5000);

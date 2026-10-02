@@ -31,6 +31,11 @@ DEFAULTS: dict = {
     "summarizer": {
         "length": "medium",           # short | medium | long
         "max_input_chars": 24000,
+        # parallel LLM digest workers. Reasoning endpoints spend most time
+        # thinking, not generating -- parallelism is the cheapest speedup.
+        "concurrency": 2,
+        # limit for reasoning ("thinking") token burn-out; raise for slow models
+        "max_output_tokens": 4000,
         "system_prompt": (
             "You are a careful news reader. You will receive the raw text scraped from a "
             "web page. Produce a faithful digest of the article: keep every important "

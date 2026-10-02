@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from . import db
 from .refresh import refresh_feed, summarize_pending
@@ -41,6 +42,7 @@ class Scheduler(threading.Thread):
     def poll_due(self):
         now = time.time()
         llm = None
+        db.requeue_stale_processing(self.conn)
         for feed in db.list_feeds(self.conn):
             if not feed["enabled"] or not self._due(feed, now):
                 continue
@@ -51,6 +53,14 @@ class Scheduler(threading.Thread):
             except Exception:  # noqa: BLE001
                 pass
         try:
-            summarize_pending(self.conn, self.cfg, llm or self.llm_factory(), limit=3)
+            llm = llm or self.llm_factory()
+            workers = max(1, int(self.cfg["summarizer"].get("concurrency", 2)))
+            for _ in range(4):  # rounds; each round runs `workers` in parallel
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    results = list(pool.map(
+                        lambda _: summarize_pending(self.conn, self.cfg, llm, limit=1),
+                        range(workers)))
+                if sum(results) == 0:
+                    break
         except Exception:  # noqa: BLE001
             pass
