@@ -45,7 +45,7 @@ New categories are created simply by assigning them to a feed.
 | `GET /api/workqueue` | Live work queue: `{current:[{id,title,started_at,feed_title,link}], recent:[{id,title,status,summarized_at,llm_ms,tokens_in,tokens_out,feed_title}], working, queue_ahead}`. |
 | `GET /api/maintenance` | `{report, config}` — last maintenance run + retention/cache settings. |
 | `POST /api/maintenance/run` | Run maintenance synchronously (retention delete, orphan prune, cache cap) and return the report. |
-| `POST /api/images/backfill` | Background image backfill/enrichment over existing articles (missing heroes AND hero-only rows lacking galleries). |
+| `POST /api/images/backfill` | Background image backfill/enrichment over existing articles (missing heroes AND hero-only rows lacking galleries). Body `{"force": true}` re-extracts even enriched articles. |
 | `GET /image/<name>` | Serve a locally cached article image. Only hash-named cache files (`[0-9a-f]{24}.(jpg|png|webp|gif)`) resolve; everything else 404s. Immutable cache headers. |
 
 | `GET /api/status` | `{version, feeds, pending, polling}`. |

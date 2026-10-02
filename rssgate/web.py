@@ -334,12 +334,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def api_image_backfill():
         import contextlib
         import threading
+        data = request.get_json(silent=True) or {}
+        force = bool(data.get("force"))
 
         def _go():
             with contextlib.closing(db.connect(
                     os.path.join(data_dir, "rssgate.sqlite"))) as bconn:
                 from .refresh import backfill_images
-                backfill_images(bconn, load_config(config_path))
+                backfill_images(bconn, load_config(config_path),
+                                force=force)
         threading.Thread(target=_go, daemon=True).start()
         return jsonify({"ok": True, "started": True})
 

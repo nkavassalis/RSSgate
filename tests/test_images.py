@@ -229,3 +229,52 @@ def test_backfill_marks_imageless_pages_no_retry(conn, tmp_path, monkeypatch):
                         lambda *a, **k: calls.append(a) or FakeResp(text=""))
     refresh.backfill_images(conn, load_config("__no_such__.yaml"))
     assert calls == []
+
+
+def test_avatar_filter():
+    from rssgate.extract import extract_images
+    html = """<html><head><meta property="og:image" content="/hero.jpg"></head>
+    <body><article>
+    <div class="author-card byline"><img src="https://cdn.x/author.png"></div>
+    <img class="avatar" src="https://gravatar.com/avatar/x?s=48">
+    <div id="comments"><div class="comment"><img src="/u/joe.png" alt="joe"></div></div>
+    <img src="/emoji-smile.png"><img class="sprite" src="/sprites.png">
+    <img src="/squareface.jpg" width="180" height="180">
+    <img src="/real-content.png" width="900" height="500">
+    </article></body></html>"""
+    urls = extract_images(html, "https://blog.example/post")
+    assert urls == ["https://blog.example/hero.jpg",
+                    "https://blog.example/real-content.png"]
+
+
+def test_force_backfill_replaces_existing(conn, tmp_path, monkeypatch):
+    from rssgate.config import load_config
+    img = tmp_path / "images"; img.mkdir()
+    monkeypatch.setattr(imgstore, "_dir", img)
+    def fake_get(url, **kw):
+        if url.endswith((".jpg", ".png")):
+            return FakeResp(PNG if url.endswith(".png") else JPEG)
+        return FakeResp(text=ARTICLE_HTML)
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = db.add_feed(conn, "https://ex/f")["id"]
+    aid = db.upsert_article(conn, fid, "f", "https://blog.example/post",
+                            "T", "2026-10-02T00:00:00Z")
+    old = "old" + "0" * 21 + ".jpg"
+    db.set_article(conn, aid, status="ready", summary="s", image=old, images=old)
+    cfg = load_config("__no_such__.yaml")
+    # non-force skips it (already enriched)
+    refresh.backfill_images(conn, cfg)
+    assert conn.execute("SELECT image FROM articles WHERE id=?",
+                        (aid,)).fetchone()["image"] == old
+    # force re-extracts and replaces the stale hero+gallery
+    assert refresh.backfill_images(conn, cfg, force=True) == 1
+    row = conn.execute("SELECT image, images FROM articles WHERE id=?",
+                       (aid,)).fetchone()
+    assert row["image"] != old and row["image"].endswith((".jpg", ".png"))
+    assert "," in row["images"]
+    
+
+
+def test_backfill_route_accepts_force(client):
+    r = client.post("/api/images/backfill", json={"force": True})
+    assert r.get_json() == {"ok": True, "started": True}

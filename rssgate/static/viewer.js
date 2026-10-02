@@ -228,6 +228,27 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosition(); });
   window.addEventListener('pagehide', savePosition);
 
+  // ---- lightbox: click any cached image to see it full-size --------------
+  let lb = null;
+  function closeLb() { if (lb) { lb.remove(); lb = null; document.removeEventListener('keydown', lbKey); } }
+  function lbKey(e) { if (e.key === 'Escape') closeLb(); }
+  function openLb(src, alt) {
+    closeLb();
+    lb = document.createElement('div');
+    lb.id = 'lightbox';
+    lb.innerHTML = `<img src="${esc(src)}" alt="${esc(alt || '')}">
+      <span class="lb-hint">click anywhere or Esc to close</span>`;
+    lb.addEventListener('click', closeLb);
+    document.body.appendChild(lb);
+    document.addEventListener('keydown', lbKey);
+  }
+  document.addEventListener('click', e => {
+    const img = e.target.closest('img.card-thumb, .gallery img');
+    if (!img) return;
+    e.preventDefault(); e.stopPropagation();
+    openLb(img.currentSrc || img.src, img.alt);
+  });
+
   // ---- sidebar: mode toggle, presets, feed filter -------------------------
   function setMode(mode) {
     store.mode = mode;

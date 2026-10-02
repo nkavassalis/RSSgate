@@ -141,7 +141,8 @@ def _cache_image(conn, art, page_html: str) -> str | None:
         return None
 
 
-def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
+def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40,
+                    force: bool = False) -> int:
     """Zero-token catch-up: cache hero images for articles stored before
     images existed. Feed-declared URLs are free; at most `page_fetches`
     article pages are re-fetched for og/content images."""
@@ -149,10 +150,12 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
     from .fetcher import UA
     # images='-' marks "page fetched, no usable images" so the page budget
     # advances instead of re-fetching imageless pages every pass forever
+    cond = ("status IN ('ready','error')" if force else
+            "status IN ('ready','error')"
+            " AND COALESCE(images,'') NOT IN ('-')"
+            " AND (image IS NULL OR images = '' OR images = '-')")
     rows = conn.execute(
-        "SELECT * FROM articles WHERE status IN ('ready','error')"
-        " AND COALESCE(images,'') NOT IN ('-')"
-        " AND (image IS NULL OR images = '' OR images = '-')"
+        f"SELECT * FROM articles WHERE {cond}"
         " ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ?",
         (limit,)).fetchall()
     imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))

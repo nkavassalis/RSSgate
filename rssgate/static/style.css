@@ -185,3 +185,12 @@ textarea { resize:vertical; }
 .gallery img { width:110px; height:84px; object-fit:cover; border-radius:8px;
   border:1px solid var(--line); background:var(--chip); display:block; }
 @media (max-width:640px) { .gallery img { width:84px; height:64px; } }
+
+/* lightbox */
+#lightbox { position:fixed; inset:0; z-index:100; background:rgba(10,12,16,.92);
+  display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
+#lightbox img { max-width:92vw; max-height:88vh; object-fit:contain;
+  border-radius:8px; box-shadow:0 12px 60px rgba(0,0,0,.6); background:var(--bg); }
+#lightbox .lb-hint { position:absolute; bottom:14px; left:0; right:0;
+  text-align:center; color:#9aa3b2; font-size:.78rem; }
+.gallery img, .card-thumb { cursor:zoom-in; }

@@ -87,10 +87,19 @@ def extract_candidate_links(html: str, base_url: str) -> list[dict]:
     return out[:60]
 
 
+AVATAR_RE = re.compile(
+    r"(avatar|gravatar|byline|author|profile|userpic|user[-_/]|member|crew|"
+    r"mention|staff|comment(\b|er\b|s\b|[-_/])|respondent|persona|"
+    r"emoji|emoticon|icon[s]?[-/]|sprite|logo|favicon|button|badge|"
+    r"signature|reaction|face[-_/]|\?s=\d{1,3}\b|&s=\d{1,3}\b)", re.I)
+
+
 def extract_images(html: str, base_url: str) -> list[str]:
-    """Candidate hero images from an article page: og:image / twitter:image
-    first, then the first plausible content <img>. Junk/icon-ish sources and
-    data URIs are skipped; returns absolute URLs, best first, max 4."""
+    """Candidate hero/gallery images from an article page: og:image /
+    twitter:image first, then plausible content <img>s. Avatars, author-box
+    faces, comment-user pics, icons/emojis/logos and tiny or square-small
+    images are rejected by inspecting the tag, its alt text, and up to four
+    ancestor class/id levels. Returns absolute URLs, best first, max 8."""
     soup = BeautifulSoup(html, "html.parser")
     out: list[str] = []
 
@@ -106,19 +115,36 @@ def extract_images(html: str, base_url: str) -> list[str]:
         m = soup.find("meta", attrs=attrs)
         if m and m.get("content"):
             add(m["content"])
-    for img in soup.find_all("img", limit=40):
-        src = img.get("src") or img.get("data-src") or img.get("data-original")
-        if not src or src.startswith("data:"):
-            continue
-        blob = " ".join(filter(None, [str(img.get("class", "")),
-                                      str(img.get("id", "")), src]))
-        if JUNK_RE.search(blob):
-            continue
-        for dim in ("width", "height"):
-            v = str(img.get(dim) or "")
-            digits = "".join(ch for ch in v if ch.isdigit())
-            if digits and int(digits) < 150:
-                src = None
+
+    def reject(img) -> bool:
+        parts = [str(img.get("class", "")), str(img.get("id", "")),
+                 str(img.get("src") or img.get("data-src") or ""),
+                 str(img.get("alt", "")), str(img.get("title", ""))]
+        el = img
+        for _ in range(4):                      # ancestor context scan
+            el = el.parent
+            if el is None or el.name in (None, "body", "html"):
                 break
+            parts.append(" ".join([str(el.get("class", "")),
+                                   str(el.get("id", ""))]))
+        blob = " ".join(parts)
+        if AVATAR_RE.search(blob):
+            return True
+        if JUNK_RE.search(" ".join([str(img.get("class", "")),
+                                     str(img.get("id", "")),
+                                     str(img.get("src", ""))])):
+            return True
+        w = "".join(c for c in str(img.get("width") or "") if c.isdigit())
+        h = "".join(c for c in str(img.get("height") or "") if c.isdigit())
+        if w and int(w) < 150:
+            return True
+        if w and h and w == h and int(w) <= 200:   # square+smallish = avatar
+            return True
+        return False
+
+    for img in soup.find_all("img", limit=60):
+        src = img.get("src") or img.get("data-src") or img.get("data-original")
+        if not src or src.startswith("data:") or reject(img):
+            continue
         add(src)
-    return out[:4]
+    return out[:8]

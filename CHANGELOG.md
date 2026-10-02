@@ -31,6 +31,22 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.9.0] — 2026-10-02
+
+### Added
+- **Lightbox**: clicking a card thumbnail or gallery image opens the
+  locally cached original full-size (never re-downloaded; click or Esc to
+  close). Displays were small — the cached bytes always were the full
+  `og:image`/content source.
+- **`force` option on POST /api/images/backfill**: re-extracts even
+  already-enriched articles (used to replace avatar-contaminated galleries).
+
+### Fixed
+- **Avatar/icon extraction**: the image filter now inspects alt text and up
+  to 4 ancestor class/id levels (author cards, comment blocks, bylines),
+  rejects gravatar-style URLs & size params, emoji/sprite/logo paths, and
+  square-and-small declared dimensions. Avatars no longer enter galleries.
+
 ## [1.8.1] — 2026-10-02
 
 ### Fixed

@@ -35,7 +35,12 @@ cp config.example.yaml config.yaml     # optional; run.py generates defaults
 
 ## Post images (locally cached)
 
-Cards show a hero thumbnail when one exists. RSSgate takes it from what the
+Cards show a hero thumbnail when one exists — **click any image for a
+full-size lightbox** (served from the local cache, never re-downloaded).
+The puller rejects avatars, author/comment user-pics, emojis, sprites,
+logos and square-small images by inspecting the tag, its alt text, and
+ancestor context; `POST /api/images/backfill {"force": true}` re-runs
+extraction over already-enriched articles. RSSgate takes it from what the
 feed *already declares* (media:thumbnail / og:image / image enclosures —
 free) or, for raw & digested articles, from the page HTML it was fetching
 anyway — **zero extra LLM tokens**. Every image is downloaded once, sniffed
