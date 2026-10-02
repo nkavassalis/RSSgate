@@ -62,6 +62,52 @@
       ${body}</article>`;
   }
 
+  // ---- viewed = read: dwelling on an unread card marks it seen, even with
+  // no further scrolling (so re-clicking a view clears what you're looking at)
+  const dwellTimers = new WeakMap();
+  const dwellObs = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      const card = e.target;
+      if (e.isIntersecting && e.intersectionRatio >= 0.55 &&
+          card.classList.contains('unread')) {
+        if (!dwellTimers.has(card))
+          dwellTimers.set(card, setTimeout(() => markSeen(card), 1100));
+      } else if (dwellTimers.has(card)) {
+        clearTimeout(dwellTimers.get(card));
+        dwellTimers.delete(card);
+      }
+    }
+  }, { threshold: [0, 0.55] });
+  function observeCards() {
+    stream.querySelectorAll('.card.unread:not([data-obs])').forEach(c => {
+      c.dataset.obs = '1';
+      dwellObs.observe(c);
+    });
+  }
+  function markSeen(card) {
+    dwellTimers.delete(card);
+    if (!card.classList.contains('unread')) return;
+    card.classList.remove('unread');
+    const dot = card.querySelector('.newdot');
+    if (dot) dot.remove();
+    bumpPill(card.dataset.feed);
+    const body = JSON.stringify({
+      ts: card.dataset.ts, id: +card.dataset.id,
+      reads: { [card.dataset.feed]: card.dataset.ts },
+      global: false,
+    });
+    navigator.sendBeacon && navigator.sendBeacon('/api/position',
+      new Blob([body], { type: 'application/json' }))
+      || fetch('/api/position', { method: 'POST', body,
+          headers: { 'content-type': 'application/json' } });
+  }
+  function bumpPill(feedId) {
+    const li = document.querySelector(`#feed-filter li[data-feed="${feedId}"]`);
+    if (!li) return;
+    const pill = li.querySelector('.unread-pill');
+    if (pill) pill.remove();   // article_count fallback is stale-ish; a
+  }                           // re-render on next switch fixes it
+
   // ---- loading ------------------------------------------------------------
   async function loadNext() {
     if (loading || exhausted) return;
@@ -83,6 +129,7 @@
       $('empty-hint').hidden = true;
       endBanner.hidden = true;
       stream.insertAdjacentHTML('beforeend', data.items.map(cardHtml).join(''));
+      observeCards();
       cursor = { ts: data.items.at(-1).ts, id: data.items.at(-1).id };
     }
     if (!data.has_more) {
@@ -148,10 +195,11 @@
         c.classList.remove('unread');
         const dot = c.querySelector('.newdot');
         if (dot) dot.remove();
+        bumpPill(c.dataset.feed);
         flipped = true;
       }
     }
-    if (flipped) renderFeedFilter();
+    if (flipped) setTimeout(renderFeedFilter, 500);  // after beacon lands
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
       new Blob([body], { type: 'application/json' }))
       || fetch('/api/position', { method: 'POST', body,

@@ -31,6 +31,15 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.2.2] — 2026-10-02
+
+### Added
+- **Viewed = read**: dwelling on an unread card (~1s, ≥55% in viewport)
+  marks it read immediately — flips the card, decrements the pill, and
+  beacons that one card's cursor. Previously only *scrolling past* the
+  fold counted, so an unread card sitting in view (or a re-click of the
+  same view) never cleared.
+
 ## [1.2.1] — 2026-10-02
 
 ### Fixed
