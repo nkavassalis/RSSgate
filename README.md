@@ -91,6 +91,24 @@ title in the viewer:
 - **User-assigned** — managed entirely from the admin panel: assign per feed,
   and globally **create / rename / remove** categories.
 
+## Sponsored content filter (per feed)
+
+Off by default. Tick **Ad filter** on a feed in the admin panel (or send
+`{"hide_sponsored": true}` to `PUT /api/feeds/<id>`) and sponsored/sale posts
+never enter your reader — and never reach the LLM either:
+
+1. **Free pre-filter**: at digest time the item's title/link is checked against
+   heuristics (`sponsored`, `now up to N% off`, `deal of the day`, `prime day`,
+   `/sponsored/` URL paths…). Matches are marked `hidden` before the page is
+   even fetched — zero tokens.
+2. **Zero-cost second pass**: if the digest text itself starts by calling the
+   piece a sponsored/promotional post, the article is hidden too (the digest is
+   kept in the DB for audit).
+
+Hidden articles are excluded from the viewer and stats; un-ticking the flag
+re-queues them. Detection is intentionally conservative — it errs toward
+*showing* articles.
+
 ## Endless reader & resume
 
 The viewer requests pages from `GET /api/articles`; your furthest-seen position

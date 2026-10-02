@@ -105,8 +105,11 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         for f in db.list_feeds(conn):
             n = conn.execute("SELECT COUNT(*) c FROM articles WHERE feed_id=?",
                              (f["id"],)).fetchone()["c"]
+            hid = conn.execute(
+                "SELECT COUNT(*) c FROM articles WHERE feed_id=? AND status='hidden'",
+                (f["id"],)).fetchone()["c"]
             out.append({k: f[k] for k in f.keys() if k not in ("etag", "last_modified")}
-                       | {"article_count": n,
+                       | {"article_count": n, "hidden_count": hid,
                           "categories": db.parse_categories(f["categories"]),
                           "auto_categories": db.parse_categories(f["auto_categories"])})
         return jsonify(out)
@@ -143,6 +146,20 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 c.strip() for c in data["categories"] if c.strip())
         if "enabled" in data:
             fields["enabled"] = 1 if data["enabled"] else 0
+        if "hide_sponsored" in data:
+            fields["hide_sponsored"] = 1 if data["hide_sponsored"] else 0
+            if not data["hide_sponsored"]:  # un-hide everything when flag goes off
+                conn.execute("UPDATE articles SET status='pending'"
+                             " WHERE feed_id=? AND status='hidden'", (fid,))
+            else:  # sweep existing items too (free: titles + stored digests)
+                from .refresh import is_sponsored, SPONSORED_DIGEST_RE
+                for a in conn.execute("SELECT id, title, link, summary FROM articles"
+                                      " WHERE feed_id=? AND status='ready'", (fid,)):
+                    if (is_sponsored(a["title"], a["link"]) or
+                            SPONSORED_DIGEST_RE.search((a["summary"] or "")[:400])):
+                        conn.execute("UPDATE articles SET status='hidden' WHERE id=?",
+                                     (a["id"],))
+                conn.commit()
         if "type" in data and data["type"] in ("auto", "feed", "page"):
             fields["type"] = data["type"]
         db.update_feed(conn, fid, **fields)

@@ -26,6 +26,11 @@ async function renderFeeds() {
           ? `<span class="auto-cat">feed says: ${esc(f.auto_categories.join(', '))}</span>`
           : ''}
       </td>
+      <td style="text-align:center">
+        <input type="checkbox" data-role="spons" style="width:auto"
+               ${f.hide_sponsored ? 'checked' : ''}>
+        ${f.hidden_count ? `<div class="auto-cat">${f.hidden_count} hidden</div>` : ''}
+      </td>
       <td>${f.article_count}</td>
       <td class="hint">${esc((f.last_fetched_at || '').replace('T', ' ').replace('Z', '')) || 'never'}</td>
       <td style="white-space:nowrap">
@@ -40,7 +45,8 @@ async function renderFeeds() {
     tr.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
       if (btn.dataset.act === 'save')
         await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(
-          { categories: tr.querySelector('[data-role=cats]').value.split(',') }) });
+          { categories: tr.querySelector('[data-role=cats]').value.split(','),
+            hide_sponsored: tr.querySelector('[data-role=spons]').checked }) });
       if (btn.dataset.act === 'del' && confirm('Delete this feed and its articles?'))
         await api(`/api/feeds/${id}`, { method: 'DELETE' });
       if (btn.dataset.act === 'refresh') {

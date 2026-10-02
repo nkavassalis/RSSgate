@@ -65,6 +65,9 @@ def connect(path: str) -> sqlite3.Connection:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(feeds)")}
+    if "hide_sponsored" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
     if "llm_ms" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN llm_ms INTEGER NOT NULL DEFAULT 0")
@@ -188,7 +191,7 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                   limit: int = 20, feed_id: int | None = None,
                   category: str | None = None) -> list[sqlite3.Row]:
     """Reverse-chronological page of articles older than (before_ts, before_id)."""
-    where, params = ["1=1"], []
+    where, params = ["a.status != 'hidden'"], []
     if before_ts is not None:
         where.append(f"({_TS_EXPR} < ? OR ({_TS_EXPR} = ? AND a.id < ?))")
         params += [before_ts, before_ts, before_id or 0]

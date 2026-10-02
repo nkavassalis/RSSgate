@@ -17,7 +17,7 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 |---|---|
 | `GET /api/feeds` | List feeds incl. `categories[]`, `auto_categories[]`, `article_count`, `last_status`. |
 | `POST /api/feeds` | Add. Body `{url, type?: auto\|feed\|page, categories?: [str], refresh?: bool}`. 400 bad url, 409 duplicate. |
-| `PUT /api/feeds/<id>` | Update `{categories?: [str], enabled?: bool, type?: ...}`. |
+| `PUT /api/feeds/<id>` | Update `{categories?: [str], enabled?: bool, type?: ..., hide_sponsored?: bool}`. Clearing `hide_sponsored` un-hides that feed's hidden articles. |
 | `DELETE /api/feeds/<id>` | Delete feed + its articles. |
 | `POST /api/feeds/<id>/refresh` | Poll this feed immediately. |
 

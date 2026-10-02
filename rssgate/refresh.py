@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import html  # noqa: F401  (kept for symmetry; unescape used in fetcher)
 import logging
+import re
 import time
 
 from . import db
@@ -14,6 +15,22 @@ from .fetcher import fetch_feed, fetch_page, discover_page_articles, probe
 log = logging.getLogger("rssgate.refresh")
 
 LENGTH_TARGETS = LENGTH_TARGETS  # re-export for tests
+
+SPONSORED_TITLE_RE = re.compile(
+    r"\b(sponsored|promo\b|promotional|paid partnership|in partnership with"
+    r"|partner content|gift guide|deal of the day|deal alert"
+    r"|now (up to )?\d+% ?off|up to \d+% off|prime day|black friday"
+    r"|cyber monday|save \d+%|on sale|discount code|best deal)\b", re.I)
+SPONSORED_LINK_RE = re.compile(r"/(sponsored|deals?|partner-?content)/", re.I)
+SPONSORED_DIGEST_RE = re.compile(
+    r"(sponsored (promotional )?(piece|post|article|content)|"
+    r"promotional piece|paid partnership|this (article|post) is sponsored)", re.I)
+
+
+def is_sponsored(title: str, link: str) -> bool:
+    """Deterministic, free pre-filter: obvious sponsored/sale posts by title or URL."""
+    return bool(SPONSORED_TITLE_RE.search(title or "")
+                or SPONSORED_LINK_RE.search(link or ""))
 
 
 def _purpose_model(cfg, key: str) -> str:
@@ -110,6 +127,10 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
     rows = db.claim_pending(conn, limit)
     for art in rows:
         try:
+            feed = db.get_feed(conn, art["feed_id"])
+            if feed and feed["hide_sponsored"] and is_sponsored(art["title"], art["link"]):
+                db.set_article(conn, art["id"], status="hidden")  # 0 tokens spent
+                continue
             import requests
             from .fetcher import UA
             resp = requests.get(art["link"], headers={"user-agent": UA}, timeout=30)
@@ -129,7 +150,6 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                 db.incr_state(conn, "cache_hits")  # zero-token reuse counter
                 done += 1
                 continue
-            feed = db.get_feed(conn, art["feed_id"])
             user = (f"Feed: {feed['title'] or feed['url']}\n"
                     f"Article: {art['title']}\nSource: {art['link']}\n\n{text}")
             t0 = time.perf_counter()
@@ -145,6 +165,13 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             if not digest.strip():
                 # reasoning models can burn the whole budget thinking
                 db.set_article(conn, art["id"], status="error")
+                continue
+            if feed and feed["hide_sponsored"] and SPONSORED_DIGEST_RE.search(digest[:400]):
+                # the model itself flagged it as sponsored: hide, keep digest
+                # on file for audit, never render in the viewer
+                db.set_article(conn, art["id"], summary=digest.strip(),
+                               status="hidden", body_hash=body_hash,
+                               llm_ms=dur_ms, summarized_at=db.now_iso())
                 continue
             db.set_article(conn, art["id"], summary=digest.strip(), status="ready",
                            body_hash=body_hash, tokens_in=usage["prompt_tokens"],
