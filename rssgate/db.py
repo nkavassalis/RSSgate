@@ -191,25 +191,33 @@ def _cat_sql(col: str) -> str:
     return f"(',' || COALESCE({col},'') || ',') LIKE ('%,' || ? || ',%')"
 
 
+def _cat_effective_sql() -> str:
+    """Canonical category filter (2 bound params, same name each):
+      1. the post's OWN tags,
+      2. user-assigned feed labels (you labeled the whole feed — it matches).
+    Feed-declared tags (feeds.auto_categories) are display-fallback only:
+    a news feed's union tag soup (~40 tags) must never drag its untagged
+    posts into every category view. Untagged posts live under 'All'.
+    """
+    return "(" + _cat_sql("a.categories") + " OR " + _cat_sql("f.categories") + ")"
+
+
 def category_list(conn) -> list[dict]:
-    """Every category name known anywhere (per-post tags, user-assigned feed
-    tags, feed-declared tags) with the count of visible articles it matches.
-    Matches are EXACT members of stored comma strings, not substrings."""
+    """Category names that the filter can actually match (per-post tags and
+    user-assigned feed labels) with visible-article counts. Exact comma
+    membership, not substrings; zero-count names are never listed."""
     names: set[str] = set()
     for row in conn.execute(
             "SELECT categories c FROM feeds WHERE categories != ''"
-            " UNION SELECT auto_categories FROM feeds WHERE auto_categories != ''"
             " UNION SELECT categories FROM articles WHERE categories != ''"):
         names |= set(parse_categories(row["c"]))
     out = []
     for n in sorted(names):
         cnt = conn.execute(
             "SELECT COUNT(*) c FROM articles a JOIN feeds f ON f.id=a.feed_id"
-            " WHERE a.status != 'hidden' AND ("
-            + _cat_sql("a.categories") + " OR " + _cat_sql("f.categories")
-            + " OR " + _cat_sql("f.auto_categories") + ")",
-            (n, n, n)).fetchone()["c"]
-        out.append({"name": n, "count": cnt})
+            " WHERE a.status != 'hidden' AND " + _cat_effective_sql(),
+            (n, n)).fetchone()["c"]
+        out.append({"name": n, "count": cnt}) if cnt else None
     return out
 
 
@@ -308,10 +316,8 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
         if cats:
             ors = []
             for c in cats:
-                ors.append("(" + _cat_sql("a.categories")
-                           + " OR " + _cat_sql("f.categories")
-                           + " OR " + _cat_sql("f.auto_categories") + ")")
-                params += [c, c, c]
+                ors.append(_cat_effective_sql())
+                params += [c, c]
             where.append("(" + " OR ".join(ors) + ")")
     rows = conn.execute(
         f"""SELECT a.id, a.title, a.link, a.summary, a.status,

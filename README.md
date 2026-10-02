@@ -93,9 +93,11 @@ The viewer has a left sidebar (a slide-out drawer under 800 px):
   “All”. Click any number of categories to OR them together (combined with
   the feed filter and New/Since modes); chip counts show matching articles.
   Selection persists in localStorage and the drawer stays open for
-  multi-tapping on mobile. A category matches a post’s own tags, your
-  feed’s assigned tags, or the feed-declared union — as EXACT tag members,
-  never fuzzy substrings.
+  multi-tapping on mobile. A chip matches a post’s **own tags**, or a label
+  **you assigned to its feed** in the admin panel (that labels the whole
+  feed). Feed-declared tags stay cosmetic: a news site’s 40-tag soup never
+  drags untagged posts into every category view — untagged posts live under
+  “All”. Matching is exact tag membership, never fuzzy substrings.
 - **New / Since toggle** — *New* starts at the newest article and pages
   through your reading; *Since* puts a floor under the stream: it shows
   everything from your chosen date onward and politely stops there
@@ -122,8 +124,9 @@ Categories appear as chips on each article card, in three flavors:
   of their own, and for bare-page items (which never have tags).
 - **Your categories** (filled accent chips) — user-assigned per feed, managed
   entirely from the admin panel: assign per feed, and globally **create /
-  rename / remove**. Category filtering matches post tags, your feed tags, or
-  the feed union.
+  rename / remove**. The reader's category chips filter on post tags and
+  your feed labels (whole feed); the feed-declared union only decorates
+  untagged cards.
 
 ## Feed discovery when the URL isn't a feed
 

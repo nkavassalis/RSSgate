@@ -1,66 +1,72 @@
-"""Sidebar category filter: multi-select, exact comma-membership, counts."""
+"""Sidebar category filter: multi-select, post-tag/user-label semantics."""
 from rssgate import db
 
 
 def seed(conn):
     f1 = db.add_feed(conn, "https://ex/tech", categories=["technology"])["id"]
     f2 = db.add_feed(conn, "https://ex/food", categories=["cooking"])["id"]
+    db.add_feed(conn, "https://ex/empty", categories=["ghost"])["id"]  # no posts
     conn.execute("UPDATE feeds SET auto_categories='science,health' WHERE id=?", (f1,))
-    a1 = db.upsert_article(conn, f1, "g1", "l1", "Post tagged AI", None,
+    a1 = db.upsert_article(conn, f1, "g1", "l1", "Tagged AI post", None,
                            categories=["ai", "tech"])
     a2 = db.upsert_article(conn, f2, "g2", "l2", "Untagged food post", None)
-    a3 = db.upsert_article(conn, f1, "g3", "l3", "Internet-y", None,
+    a3 = db.upsert_article(conn, f1, "g3", "l3", "Tagged Internet post", None,
                            categories=["internet"])
-    for a in (a1, a2, a3):
+    a4 = db.upsert_article(conn, f1, "g4", "l4", "Untagged tech-feed post", None)
+    for a in (a1, a2, a3, a4):
         db.set_article(conn, a, status="ready", summary="s")
     return f1, f2
 
 
-def test_exact_membership_not_substring(conn):
+def test_feed_declared_tags_are_filter_inert(conn):
+    """THE regression: feed-declared union tags (e.g. Gizmodo's ~40-tag
+    'health' in the soup) must not match ANYTHING in a category filter."""
     seed(conn)
-    # 'tech' matches only the post tag; NOT the feed tag 'technology'
-    titles = [r["title"] for r in db.articles_page(conn, limit=10, category="tech")]
-    assert titles == ["Post tagged AI"]
-    # substring would have leaked 'technology'; exact does not
+    assert db.articles_page(conn, limit=10, category="science") == []
+    assert db.articles_page(conn, limit=10, category="health") == []
+    # exact membership, not substrings
+    assert [r["title"] for r in
+            db.articles_page(conn, limit=10, category="tech")] == ["Tagged AI post"]
     assert db.articles_page(conn, limit=10, category="ch") == []
-    # feed-level tag filters its articles via fallback (f1 -> tech feed)
-    titles = [r["title"] for r in
-              db.articles_page(conn, limit=10, category="technology")]
-    assert set(titles) == {"Post tagged AI", "Internet-y"}
 
 
-def test_multi_select_is_or(conn):
+def test_user_feed_labels_match_whole_feed(conn):
     seed(conn)
-    titles = [r["title"] for r in
-              db.articles_page(conn, limit=10, category=["ai", "cooking"])]
-    assert set(titles) == {"Post tagged AI", "Untagged food post"}
-    # combined with feed filter
+    titles = {r["title"] for r in
+              db.articles_page(conn, limit=10, category="technology")}
+    assert titles == {"Tagged AI post", "Tagged Internet post",
+                      "Untagged tech-feed post"}   # every f1 post
+
+
+def test_multi_select_is_or_and_composes_with_feed(conn):
+    seed(conn)
+    titles = {r["title"] for r in
+              db.articles_page(conn, limit=10, category=["ai", "cooking"])}
+    assert titles == {"Tagged AI post", "Untagged food post"}
     titles = [r["title"] for r in
               db.articles_page(conn, limit=10, category=["ai", "cooking"],
                                feed_id=1)]
-    assert titles == ["Post tagged AI"]
+    assert titles == ["Tagged AI post"]
 
 
-def test_category_list_union_counts(conn):
+def test_category_list_counts_match_the_filter(conn):
     seed(conn)
     lst = {d["name"]: d["count"] for d in db.category_list(conn)}
-    assert lst["ai"] == 1          # post tag
-    assert lst["technology"] == 2  # user feed tag -> 2 articles of f1
-    assert lst["science"] == 2     # feed-declared (auto) -> f1 articles
-    assert lst["cooking"] == 1
+    assert lst["ai"] == 1                    # post tag
+    assert lst["technology"] == 3            # user label: whole feed
+    assert lst["cooking"] == 1               # user label on f2
+    assert "science" not in lst              # auto-only: never offered
+    assert "ghost" not in lst                # zero-count: never offered
 
 
-def test_api_multi_category_and_viewer_list(client):
+def test_api(client):
     seed(client.conn)
     r = client.get("/api/articles?limit=10&category=ai&category=cooking")
     assert {i["title"] for i in r.get_json()["items"]} == {
-        "Post tagged AI", "Untagged food post"}
-    # single param still works (back-compat)
-    r = client.get("/api/articles?limit=10&category=ai")
-    assert [i["title"] for i in r.get_json()["items"]] == ["Post tagged AI"]
-    # viewer category list shape
+        "Tagged AI post", "Untagged food post"}
+    r = client.get("/api/articles?limit=10&category=science")
+    assert r.get_json()["items"] == []
     data = client.get("/api/categories?viewer=1").get_json()
     assert {"name": "ai", "count": 1} in data
-    # admin scope unchanged (user-assigned only)
-    admin = client.get("/api/categories").get_json()
-    assert {d["name"] for d in admin} == {"technology", "cooking"}
+    admin = client.get("/api/categories").get_json()            # scope intact
+    assert {d["name"] for d in admin} == {"technology", "cooking", "ghost"}

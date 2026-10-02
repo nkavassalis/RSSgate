@@ -31,6 +31,18 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.4.0] — 2026-10-02
+
+### Changed
+- **Category filtering is post-precise.** Clicking `Health` returned every
+  Gizmodo post because the feed's declared tag soup (~40 tags, `Health`
+  included) OR-matched all of the feed's articles. Filter semantics are
+  now: **post's own tags**, or **labels you assigned to its feed** (those
+  label the whole feed). `feeds.auto_categories` remains a display-fallback
+  chip for untagged cards but is filter-inert; untagged posts live under
+  “All”. Sidebar chip counts/visibility use the same rule (zero-count and
+  auto-only names are no longer offered as chips).
+
 ## [1.3.1] — 2026-10-02
 
 ### Changed

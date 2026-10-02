@@ -18,10 +18,11 @@ rssgate/
                         feeds: type auto|feed|page, categories (user, comma),
                         auto_categories (feed-declared), summarize (raw mode
                         flag), hide_sponsored, last_read_ts (read cursor)
-                        category filtering: _cat_sql() = exact comma-membership
-                        (NOT LIKE substrings); articles_page(category=) takes
-                        str or list (list = OR); category_list() = union +
-                        article counts for the viewer chips
+                        category filtering: _cat_effective_sql() = exact
+                        membership of POST tags or USER feed labels only
+                        (feeds.auto_categories is display-fallback, filter-
+                        inert); articles_page(category=) str or list (OR);
+                        category_list() = filterable names + live counts
                         articles: status pending -> processing -> ready
                         |error|hidden; categories = per-post tags;
                         started_at/llm_ms = per-article LLM timing;
