@@ -38,7 +38,7 @@ def stub_network(monkeypatch, page_html=ARTICLE_HTML, page_bytes=None):
 
 def test_summarize_once_and_log_usage(conn, cfg, monkeypatch):
     stub_network(monkeypatch)
-    fid = db.add_feed(conn, "https://ex.com/feed", type_="feed")
+    fid = db.add_feed(conn, "https://ex.com/feed", type_="feed")["id"]
     aid = db.upsert_article(conn, fid, "g", "https://ex.com/post", "T", None)
     from rssgate.config import load_config
     import os
@@ -56,8 +56,8 @@ def test_summarize_once_and_log_usage(conn, cfg, monkeypatch):
 def test_identical_article_reuses_summary_cache(conn, cfg, monkeypatch):
     stub_network(monkeypatch)
     from rssgate.config import load_config
-    f1 = db.add_feed(conn, "https://a/feed", type_="feed")
-    f2 = db.add_feed(conn, "https://b/feed", type_="feed")
+    f1 = db.add_feed(conn, "https://a/feed", type_="feed")["id"]
+    f2 = db.add_feed(conn, "https://b/feed", type_="feed")["id"]
     db.upsert_article(conn, f1, "g1", "https://ex.com/post", "T", None)
     refresh.summarize_pending(conn, load_config(cfg), FakeLLM())
     calls_after_first = FakeLLM.calls
@@ -71,7 +71,7 @@ def test_bare_page_unchanged_skips_llm(conn, cfg, monkeypatch):
     stub_network(monkeypatch, page_html=PAGE_HTML)
     from rssgate.config import load_config
     FakeLLM.calls = 0
-    fid = db.add_feed(conn, "https://ex.com/news", type_="page")
+    fid = db.add_feed(conn, "https://ex.com/news", type_="page")["id"]
     feed = db.get_feed(conn, fid)
     # first refresh: LLM discovers articles
     status = refresh.refresh_feed(conn, feed, load_config(cfg), FakeLLM())
@@ -90,7 +90,7 @@ def test_feed_304_skips_everything(conn, cfg, monkeypatch):
         "ok": True, "not_modified": True, "status": 304, "content": b"",
         "content_type": "", "etag": None, "last_modified": None})
     from rssgate.config import load_config
-    fid = db.add_feed(conn, "https://ex.com/feed", type_="feed")
+    fid = db.add_feed(conn, "https://ex.com/feed", type_="feed")["id"]
     feed = db.get_feed(conn, fid)
     assert refresh.refresh_feed(conn, feed, load_config(cfg), FakeLLM()) == "not modified"
     assert conn.execute("SELECT COUNT(*) c FROM articles").fetchone()["c"] == 0

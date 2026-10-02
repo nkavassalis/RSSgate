@@ -71,6 +71,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "categories": parse_categories(r["categories"]),
                 "auto_categories": parse_categories(r["auto_categories"]),
                 "post_categories": parse_categories(r["post_categories"]),
+                "unread": bool(r["unread"]),
             })
         return jsonify({"items": items, "has_more": has_more,
                         "next": items[-1] if items else None})
@@ -79,11 +80,17 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def api_position():
         data = request.get_json(force=True)
         ts, aid = data.get("ts"), int(data.get("id", 0))
-        if ts and aid:
+        if not (ts and aid):
+            return jsonify({"ok": False, "error": "ts and id required"}), 400
+        for fid in data.get("feeds") or []:
+            try:
+                db.mark_feed_read(conn, int(fid), ts)
+            except (TypeError, ValueError):
+                continue
+        if data.get("global", not data.get("feeds")):  # legacy {ts,id} = global
             db.set_state(conn, "resume_ts", ts)
             db.set_state(conn, "resume_id", str(aid))
-            return jsonify({"ok": True})
-        return jsonify({"ok": False, "error": "ts and id required"}), 400
+        return jsonify({"ok": True})
 
     @app.route("/api/resume")
     def api_resume():
@@ -113,6 +120,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 (f["id"],)).fetchone()["c"]
             out.append({k: f[k] for k in f.keys() if k not in ("etag", "last_modified")}
                        | {"article_count": n, "hidden_count": hid,
+                          "unread": db.feed_unread(conn, f["id"], f["last_read_ts"]),
                           "categories": db.parse_categories(f["categories"]),
                           "auto_categories": db.parse_categories(f["auto_categories"])})
         return jsonify(out)
@@ -125,9 +133,10 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             return jsonify({"error": "url must start with http(s)://"}), 400
         cats = [c.strip() for c in (data.get("categories") or []) if c.strip()]
         try:
-            fid = db.add_feed(conn, url, data.get("type", "auto"), "", cats)
+            feed_row = db.add_feed(conn, url, data.get("type", "auto"), "", cats)
         except Exception as exc:  # unique constraint etc.
             return jsonify({"error": f"feed already exists or invalid: {exc}"}), 409
+        fid = feed_row["id"]
         if data.get("refresh", True):
             def _bg():
                 try:
@@ -135,7 +144,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 except Exception:  # noqa: BLE001
                     pass
             threading.Thread(target=_bg, daemon=True).start()
-        return jsonify(_feed_dict(db.get_feed(conn, fid))), 201
+        return jsonify(_feed_dict(feed_row)), 201
 
     @app.route("/api/feeds/probe", methods=["POST"])
     def api_probe_feed():
@@ -282,11 +291,12 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/status")
     def api_status():
+        from . import __version__
         cfg = load_config(config_path)
         n_feeds = conn.execute("SELECT COUNT(*) c FROM feeds").fetchone()["c"]
         n_pending = conn.execute(
             "SELECT COUNT(*) c FROM articles WHERE status='pending'").fetchone()["c"]
-        return jsonify({"feeds": n_feeds, "pending": n_pending,
-                        "polling": cfg["polling"]})
+        return jsonify({"version": __version__, "feeds": n_feeds,
+                        "pending": n_pending, "polling": cfg["polling"]})
 
     return app

@@ -7,7 +7,7 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 
 | Method/Path | Description |
 |---|---|
-| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive), `before_id`, `limit` (≤100), `feed_id`, `category`, `from_date` (YYYY-MM-DD alias of before_ts=23:59 of that day). Defaults to stored resume position. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[]}], has_more, next}`. |
+| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive), `before_id`, `limit` (≤100), `feed_id`, `category`, `since_ts` (ISO floor, inclusive — powers the “Since” mode; `from_date` YYYY-MM-DD accepted as sugar). Defaults to stored resume position when no cursor given. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[]}], has_more, next}`. |
 | `POST /api/position` | Save resume position. Body `{ts, id}` (the oldest article card the user passed). |
 | `GET /api/resume` | `{resume_ts, resume_id, newest_ts}` — client boot call. |
 
@@ -43,7 +43,7 @@ New categories are created simply by assigning them to a feed.
 | `GET /api/usage` | `{today, month, all_time}` total tokens. |
 | `GET /api/llm/stats` | Performance snapshot: `{queue, queue_peak, errors, cache_hits, calls_today, tokens_today, avg_seconds, min_seconds, max_seconds, est_drain_minutes, last_call_ts}`. |
 | `GET /api/workqueue` | Live work queue: `{current:[{id,title,started_at,feed_title,link}], recent:[{id,title,status,summarized_at,llm_ms,tokens_in,tokens_out,feed_title}], working, queue_ahead}`. |
-| `GET /api/status` | `{feeds, pending, polling}`. |
+| `GET /api/status` | `{version, feeds, pending, polling}`. |
 | `POST /api/poll` | Refresh all enabled feeds in background. |
 
 ## Error shape

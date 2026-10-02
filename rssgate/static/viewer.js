@@ -52,8 +52,9 @@
       : a.status === 'error'
         ? `<div class="unsummarized">\u26a0 could not summarize \u2014 <a href="${esc(a.link)}">read original</a></div>`
         : `<div class="unsummarized">\u23f3 waiting for AI transcription\u2026</div>`;
-    return `<article class="card" data-ts="${esc(a.ts)}" data-id="${a.id}">
-      <div class="card-meta"><span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
+    return `<article class="card${a.unread ? ' unread' : ''}" data-ts="${esc(a.ts)}"
+        data-id="${a.id}" data-feed="${a.feed_id}">
+      <div class="card-meta">${a.unread ? '<span class="newdot" title="unread"></span>' : ''}<span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
         ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time></div>
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
@@ -111,17 +112,20 @@
     loadNext();
   }
 
-  // ---- resume position (only meaningful in New mode, unfiltered) ----------
-  function canSavePos() { return store.mode === 'new' && !store.feed; }
+  // ---- read tracking: feed cursors advance everywhere, resume cursor only
+  // in the unfiltered New view (so filters never hijack your resume point) ----
   function savePosition() {
-    if (!canSavePos()) return;
-    const cards = stream.querySelectorAll('.card');
+    const cards = [...stream.querySelectorAll('.card')];
     if (!cards.length) return;
-    let best = null;
     const cutoff = window.scrollY + window.innerHeight * 0.6;
-    cards.forEach(c => { if (c.offsetTop <= cutoff) best = c; });
-    if (!best) best = cards[cards.length - 1];
-    const body = JSON.stringify({ ts: best.dataset.ts, id: +best.dataset.id });
+    const passed = cards.filter(c => c.offsetTop <= cutoff);
+    if (!passed.length) return;
+    const oldest = passed[passed.length - 1];
+    const feeds = [...new Set(passed.map(c => c.dataset.feed))];
+    const body = JSON.stringify({
+      ts: oldest.dataset.ts, id: +oldest.dataset.id, feeds,
+      global: store.mode === 'new' && !store.feed,
+    });
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
       new Blob([body], { type: 'application/json' }))
       || fetch('/api/position', { method: 'POST', body,
@@ -179,9 +183,11 @@
   async function renderFeedFilter() {
     const feeds = await fetch('/api/feeds').then(r => r.json());
     const ul = $('feed-filter');
-    ul.innerHTML = '<li data-feed="" class="' + (store.feed ? '' : 'active') + '">All feeds</li>'
+    ul.innerHTML = '<li data-feed="" class="' + (store.feed ? '' : 'active') + '">All feeds' + '</li>'
       + feeds.map(f => `<li data-feed="${f.id}" class="${store.feed == f.id ? 'active' : ''}"
-           title="${esc(f.url)}">${esc(f.title || f.url)} <span>${f.article_count}</span></li>`)
+           title="${esc(f.url)}"><span class="fname">${esc(f.title || f.url)}</span>
+           ${f.unread ? `<b class="unread-pill">${f.unread}</b>`
+                      : `<span>${f.article_count}</span>`}</li>`)
           .join('');
     ul.querySelectorAll('li').forEach(li =>
       li.addEventListener('click', () => setFeedFilter(li.dataset.feed)));

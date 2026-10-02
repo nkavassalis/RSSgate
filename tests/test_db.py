@@ -2,7 +2,7 @@ from rssgate import db
 
 
 def seed(conn, n=5):
-    fid = db.add_feed(conn, "https://example.com/feed")
+    fid = db.add_feed(conn, "https://example.com/feed")["id"]
     ids = []
     for i in range(n):
         ids.append(db.upsert_article(
@@ -14,11 +14,11 @@ def seed(conn, n=5):
 
 
 def test_article_dedup_by_guid(conn):
-    fid = db.add_feed(conn, "https://example.com/feed")
+    fid = db.add_feed(conn, "https://example.com/feed")["id"]
     assert db.upsert_article(conn, fid, "g1", "l1", "T", None) is not None
     assert db.upsert_article(conn, fid, "g1", "l1", "T", None) is None  # duplicate
     # same guid on another feed is a different article
-    fid2 = db.add_feed(conn, "https://other.example/feed")
+    fid2 = db.add_feed(conn, "https://other.example/feed")["id"]
     assert db.upsert_article(conn, fid2, "g1", "l1", "T", None) is not None
 
 
@@ -51,7 +51,7 @@ def test_category_helpers(conn):
 
 
 def test_per_post_categories(conn):
-    fid = db.add_feed(conn, "https://ex/feed")
+    fid = db.add_feed(conn, "https://ex/feed")["id"]
     aid = db.upsert_article(conn, fid, "g1", "l1", "T", None, ["Space", "Rockets"])
     row = conn.execute("SELECT categories FROM articles WHERE id=?", (aid,)).fetchone()
     assert row["categories"] == "Space,Rockets"

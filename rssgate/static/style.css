@@ -51,6 +51,12 @@ body { margin:0; background:var(--bg); color:var(--text);
 #feed-filter li:hover { background:var(--chip); }
 #feed-filter li.active { background:var(--chip); color:var(--chip-text);
   font-weight:700; }
+#feed-filter .fname { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#feed-filter .unread-pill { background:var(--accent); color:#fff; border-radius:999px;
+  min-width:20px; text-align:center; padding:0 6px; font-size:.72rem; align-self:center; }
+.card.unread { border-left:3px solid var(--accent); }
+.newdot { width:8px; height:8px; border-radius:50%; background:var(--accent);
+  display:inline-block; flex:none; }
 #sidebar-veil { display:none; position:fixed; inset:49px 0 0 0; background:rgba(0,0,0,.4);
   z-index:14; }
 #sidebar-veil.show { display:block; }

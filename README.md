@@ -8,10 +8,11 @@ automatically.
 Two sides:
 
 - **Viewer** (`/`) — an endless reverse-chronological scroller that *resumes
-  where you left off*. Every article is replaced by an LLM transcription of the
-  linked page: important text kept, advertising and boilerplate stripped. When
-  you reach the end you get **"You've seen it all!"** plus a friendly date
-  picker to jump back through time.
+  where you left off*, with a feed-filter sidebar, per-feed unread counts and
+  a New/Since date toggle. Every article is replaced by an LLM transcription
+  of the linked page: important text kept, advertising and boilerplate
+  stripped. When you reach the end you get **"You've seen it all!"** plus a
+  friendly date picker to jump back through time.
 - **Admin** (`/admin`, gear icon top-right of the viewer) — add feeds (RSS/Atom
   XML *and* bare web pages), manage categories, pick providers/models, tune
   polling and summarization, and watch your token spend.
@@ -81,6 +82,20 @@ model overrides (`llm.model_summarize`, `llm.model_discover`) let a cheap
 instruct model do the digesting while a reasoning model handles bare-page
 discovery, when you have more than one model available.
 
+## Reader UI: sidebar, New/Since modes
+
+The viewer has a left sidebar (a slide-out drawer under 800 px):
+
+- **Feeds list** — click a feed to filter the stream to it; “All feeds” to
+  clear. Selection persists in the browser (localStorage), as do the mode and
+  date. Resume-position saving only applies to the unfiltered New view.
+- **New / Since toggle** — *New* is the classic flow: resume where you left off
+  and scroll into the past until “You’ve seen it all!”. *Since* puts a floor
+  under the stream: it shows everything from your chosen date onward and
+  politely stops there (“That’s everything since 2026-09-25”). Preset chips
+  (24h / 7d / 30d / 90d) make the common cases one tap; the “Jump to date”
+  picker on the end banner simply switches into Since mode — one mental model.
+
 ## Categories
 
 Categories appear as chips on each article card, in three flavors:
@@ -141,23 +156,40 @@ Hidden articles are excluded from the viewer and stats; un-ticking the flag
 re-queues them. Detection is intentionally conservative — it errs toward
 *showing* articles.
 
-## Endless reader & resume
+## Endless reader, resume & read state
 
-The viewer requests pages from `GET /api/articles`; your furthest-seen position
-is stored server-side (`POST /api/position`, sent via `sendBeacon`) and the next
-visit continues from there. `GET /api/resume` exposes it. After the first load,
-scrolling hits the end banner where a date picker loads anything published on
-or before the chosen date.
+Three layers of "where was I?", all server-side:
+
+- **Global resume cursor** — your furthest-seen `(ts, id)` in the unfiltered
+  New view (`POST /api/position` via `sendBeacon`, `GET /api/resume`).
+- **Per-feed read cursors** (`feeds.last_read_ts`) — scrolling cards marks
+  their feed read up to that article, whether you scroll the mixed stream or
+  a filtered view. The sidebar shows an unread pill per feed (accent badge);
+  articles newer than the cursor carry a blue dot + left accent bar in the
+  stream, and are visually calmer once read.
+- **Client prefs** — sidebar mode (New/Since), since-date and feed filter
+  live in localStorage; they are view preferences, not read state.
+
+Since mode floors the stream at `GET /api/articles?since_ts=…`; the date
+picker on the end banner simply switches into Since mode.
 
 ## Development & tests
 
 ```bash
 .venv/bin/pip install pytest
-.venv/bin/python -m pytest        # 45 tests, no network required
+.venv/bin/python -m pytest        # 84 tests, no network required
 ```
 
-See [docs/API.md](docs/API.md) for the HTTP surface and
-[AGENTS.md](AGENTS.md) for an agent-oriented map of the codebase.
+See [docs/API.md](docs/API.md) for the HTTP surface,
+[AGENTS.md](AGENTS.md) for an agent-oriented map of the codebase, and
+[CHANGELOG.md](CHANGELOG.md) for release history and the versioning policy
+(major/minor/patch criteria — bump `rssgate.__version__` and tag every
+release).
+
+## Versioning
+
+Current: **v1.0.0** — see [CHANGELOG.md](CHANGELOG.md) for the policy and
+history. Tags follow `vX.Y.Z`.
 
 ## Security note
 

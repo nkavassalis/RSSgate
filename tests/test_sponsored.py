@@ -23,7 +23,7 @@ class FakeLLM:
 
 
 def setup(conn, html, flag=1):
-    fid = db.add_feed(conn, "https://ex/feed", type_="feed")
+    fid = db.add_feed(conn, "https://ex/feed", type_="feed")["id"]
     db.update_feed(conn, fid, hide_sponsored=flag)
     aid = db.upsert_article(conn, fid, "g", "https://ex.com/post", "Regular Title", None)
     import requests

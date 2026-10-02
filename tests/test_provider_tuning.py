@@ -81,7 +81,7 @@ def test_refresh_uses_purpose_models(conn, cfg, monkeypatch):
             seen["model"] = model
             return "d", {"prompt_tokens": 1, "completion_tokens": 1}
 
-    fid = db.add_feed(conn, "https://ex/feed", type_="feed")
+    fid = db.add_feed(conn, "https://ex/feed", type_="feed")["id"]
     db.upsert_article(conn, fid, "g", "https://ex.com/p", "t", None)
     full = load_config(cfg)
     full["llm"]["model_summarize"] = "cheap-fast-m"

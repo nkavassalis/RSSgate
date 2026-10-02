@@ -1,6 +1,6 @@
 def test_since_floor_api_and_db(conn):
     from rssgate import db
-    fid = db.add_feed(conn, "https://ex/feed")
+    fid = db.add_feed(conn, "https://ex/feed")["id"]
     for i, day in enumerate(("2026-09-01", "2026-09-10", "2026-10-01")):
         aid = db.upsert_article(conn, fid, f"g{i}", f"l{i}", f"A{i}", f"{day}T12:00:00Z")
         db.set_article(conn, aid, status="ready", summary="s")
@@ -16,7 +16,7 @@ def test_since_floor_api_and_db(conn):
 def test_since_param_on_endpoint(client):
     conn = client.conn
     from rssgate import db
-    fid = db.add_feed(conn, "https://ex/feed", title="Ex")
+    fid = db.add_feed(conn, "https://ex/feed", title="Ex")["id"]
     for i, day in enumerate(("2026-08-01", "2026-09-15")):
         aid = db.upsert_article(conn, fid, f"g{i}", f"l{i}", "t", f"{day}T00:00:00Z")
         db.set_article(conn, aid, status="ready", summary="s")

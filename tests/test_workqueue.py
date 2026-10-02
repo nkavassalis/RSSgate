@@ -3,7 +3,7 @@ from rssgate import db
 
 
 def seed_pending(conn, n=3):
-    fid = db.add_feed(conn, "https://ex/feed")
+    fid = db.add_feed(conn, "https://ex/feed")["id"]
     for i in range(n):
         db.upsert_article(conn, fid, f"g{i}", f"https://ex.com/{i}", f"A{i}", None)
     return fid

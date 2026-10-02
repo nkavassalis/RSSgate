@@ -19,7 +19,7 @@ def stub(conn, monkeypatch, summarize_flag):
     import requests
     class R: ok = True; status_code = 200; text = HTML
     monkeypatch.setattr(requests, "get", lambda *a, **k: R())
-    fid = db.add_feed(conn, "https://ex/feed", type_="feed")
+    fid = db.add_feed(conn, "https://ex/feed", type_="feed")["id"]
     db.update_feed(conn, fid, summarize=summarize_flag)
     aid = db.upsert_article(conn, fid, "g", "https://ex.com/p", "T", None)
     return fid, aid

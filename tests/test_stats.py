@@ -16,7 +16,7 @@ def test_bump_state_max_and_incr_state(conn):
 
 
 def test_llm_stats_snapshot(conn):
-    fid = db.add_feed(conn, "https://ex/feed")
+    fid = db.add_feed(conn, "https://ex/feed")["id"]
     for i in range(3):
         db.upsert_article(conn, fid, f"g{i}", f"l{i}", "t", None)
     db.log_usage(conn, "local", "m", 100, 20, duration_ms=30000, purpose="summarize")

@@ -70,6 +70,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
     if "summarize" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN summarize INTEGER NOT NULL DEFAULT 1")
+    if "last_read_ts" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
     if "categories" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN categories TEXT NOT NULL DEFAULT ''")
@@ -102,13 +104,18 @@ def parse_categories(raw: str) -> list[str]:
 
 
 def add_feed(conn, url: str, type_: str = "auto", title: str = "",
-             categories: list[str] | None = None) -> int:
+             categories: list[str] | None = None) -> sqlite3.Row:
+    """Insert and return the new feed row."""
     cur = conn.execute(
         "INSERT INTO feeds(url, type, title, categories, added_at) VALUES(?,?,?,?,?)",
-        (url, type_, title, ",".join(categories or []), now_iso()),
-    )
+        (url, type_, title, ",".join(categories or []), now_iso()))
     conn.commit()
-    return cur.lastrowid
+    row = conn.execute("SELECT * FROM feeds WHERE id=?", (cur.lastrowid,)).fetchone()
+    if row is None:  # defensive: shared-connection interleaving
+        row = conn.execute("SELECT * FROM feeds WHERE url=?", (url,)).fetchone()
+    if row is None:
+        raise RuntimeError("feed insert failed")
+    return row
 
 
 def list_feeds(conn) -> list[sqlite3.Row]:
@@ -225,7 +232,9 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                    a.published_at, a.fetched_at, a.tokens_in, a.tokens_out,
                    f.id AS feed_id, f.title AS feed_title, f.description AS feed_description,
                    f.categories AS categories, f.auto_categories AS auto_categories,
-                   a.categories AS post_categories, f.summarize AS feed_summarize
+                   a.categories AS post_categories, f.summarize AS feed_summarize,
+                   CASE WHEN COALESCE(f.last_read_ts, '') = '' THEN 1
+                        WHEN {_TS_EXPR} > f.last_read_ts THEN 1 ELSE 0 END AS unread
             FROM articles a JOIN feeds f ON f.id = a.feed_id
             WHERE {' AND '.join(where)}
             ORDER BY ts DESC, a.id DESC LIMIT ?""",
@@ -324,6 +333,22 @@ def log_usage(conn, provider: str, model: str, prompt: int, completion: int,
         (now[:10], now, provider, model, prompt, completion, prompt + completion,
          duration_ms, purpose))
     conn.commit()
+
+
+def mark_feed_read(conn, feed_id: int, ts: str) -> None:
+    """Advance one feed's read cursor; moves forward only (ISO strings sort
+    chronologically)."""
+    conn.execute("UPDATE feeds SET last_read_ts=? WHERE id=?"
+                 " AND (last_read_ts IS NULL OR last_read_ts < ?)", (ts, feed_id, ts))
+    conn.commit()
+
+
+def feed_unread(conn, feed_id: int, last_read_ts: str | None) -> int:
+    """Articles newer than the feed's read cursor (never-read feeds: all)."""
+    return conn.execute(
+        "SELECT COUNT(*) c FROM articles WHERE feed_id=? AND status!='hidden'"
+        " AND " + _TS_EXPR + " > COALESCE(?, '')",
+        (feed_id, last_read_ts)).fetchone()["c"]
 
 
 def bump_state_max(conn, key: str, value: int) -> int:
