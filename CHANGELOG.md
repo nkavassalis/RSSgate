@@ -31,6 +31,13 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.6.1] — 2026-10-02
+
+### Fixed
+- `/image/*` 500s when `server.data_dir` is relative: Flask resolves relative
+  `send_file` paths against the package directory. The image cache directory
+  is now canonicalized to an absolute path at init.
+
 ## [1.6.0] — 2026-10-02
 
 ### Added

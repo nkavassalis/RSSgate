@@ -26,9 +26,9 @@ _MAGIC = (
 
 
 def init(path) -> None:
-    """Point the cache at a directory (created if missing)."""
+    """Point the cache at a directory (created if missing). Always absolute."""
     global _dir
-    p = Path(path)
+    p = Path(path).expanduser().resolve()
     p.mkdir(parents=True, exist_ok=True)
     _dir = p
 

@@ -20,7 +20,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     data_dir = cfg["server"]["data_dir"]
     os.makedirs(data_dir, exist_ok=True)
     from . import imgstore
-    imgstore.init(os.path.join(data_dir, "images"))
+    imgstore.init(os.path.abspath(os.path.join(data_dir, "images")))
     if conn is None:
         conn = db.connect(os.path.join(data_dir, "rssgate.sqlite"))
         db.init_db(conn)
