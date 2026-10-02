@@ -28,8 +28,8 @@ cp config.example.yaml config.yaml     # optional; run.py generates defaults
 
 | Type | Examples | Behavior |
 |---|---|---|
-| `feed` | `https://gizmodo.com/feed`, `https://baka.jp/feed.xml` | Parsed with `feedparser`. Conditional GET (ETag/Last-Modified) + guid dedupe. Feed-declared `<category>` tags are captured and shown as chips. |
-| `page` (bare web page) | `https://arstechnica.com/rss-feeds/` | No structured feed: the page's article links are extracted with an LLM and treated like feed items. Skipped entirely when the page bytes haven't changed. Gets its own, longer poll timer. |
+| `feed` | `https://gizmodo.com/feed`, `https://feeds.arstechnica.com/arstechnica/index`, `https://feeds.npr.org/1001/rss.xml`, `https://baka.jp/feed.xml` | Parsed with `feedparser`. Conditional GET (ETag/Last-Modified) + guid dedupe. Feed-declared `<category>` tags are captured and shown as chips. |
+| `page` (bare web page) | `https://lite.cnn.com/` (text-only CNN, no RSS anywhere on the page) | No structured feed: the page's article links are extracted with an LLM and treated like feed items. Skipped entirely when the page bytes haven't changed. Gets its own, longer poll timer. |
 | `auto` | any URL | Probed once; result stored. |
 
 ## Token efficiency (the point of the design)
@@ -85,3 +85,14 @@ or before the chosen date.
 
 See [docs/API.md](docs/API.md) for the HTTP surface and
 [AGENTS.md](AGENTS.md) for an agent-oriented map of the codebase.
+
+## Security note
+
+RSSgate has **no authentication** and binds `0.0.0.0` by default — it is meant
+for trusted networks. Set `server.host: 127.0.0.1` in `config.yaml` or put it
+behind a reverse proxy with auth if others can reach the port. The admin panel
+(and the LLM spend behind it) is open to anyone who can reach the port.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
