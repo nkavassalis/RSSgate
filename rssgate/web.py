@@ -328,6 +328,19 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
 
+    @app.route("/api/images/backfill", methods=["POST"])
+    def api_image_backfill():
+        import contextlib
+        import threading
+
+        def _go():
+            with contextlib.closing(db.connect(
+                    os.path.join(data_dir, "rssgate.sqlite"))) as bconn:
+                from .refresh import backfill_images
+                backfill_images(bconn, load_config(config_path))
+        threading.Thread(target=_go, daemon=True).start()
+        return jsonify({"ok": True, "started": True})
+
     @app.route("/api/status")
     def api_status():
         from . import __version__

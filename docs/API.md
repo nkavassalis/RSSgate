@@ -43,6 +43,7 @@ New categories are created simply by assigning them to a feed.
 | `GET /api/usage` | `{today, month, all_time}` total tokens. |
 | `GET /api/llm/stats` | Performance snapshot: `{queue, queue_peak, errors, cache_hits, calls_today, tokens_today, avg_seconds, min_seconds, max_seconds, est_drain_minutes, last_call_ts}`. |
 | `GET /api/workqueue` | Live work queue: `{current:[{id,title,started_at,feed_title,link}], recent:[{id,title,status,summarized_at,llm_ms,tokens_in,tokens_out,feed_title}], working, queue_ahead}`. |
+| `POST /api/images/backfill` | Kick a background token-free hero-image backfill over existing articles. |
 | `GET /image/<name>` | Serve a locally cached article image. Only hash-named cache files (`[0-9a-f]{24}.(jpg|png|webp|gif)`) resolve; everything else 404s. Immutable cache headers. |
 
 | `GET /api/status` | `{version, feeds, pending, polling}`. |

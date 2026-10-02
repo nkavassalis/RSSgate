@@ -121,22 +121,53 @@ def system_prompt(cfg) -> str:
     return summ["system_prompt"].replace("{length}", target)
 
 
-def _cache_image(conn, art, page_html: str) -> None:
+def _cache_image(conn, art, page_html: str) -> str | None:
     """Best-effort hero image for one article: prefer the URL the feed
     declared (free); else the first candidate from the page HTML we already
-    fetched. Cached locally forever. Never raises."""
+    fetched. Cached locally forever. Never raises; returns filename."""
     try:
         url = art["image_url"] if "image_url" in art.keys() else None
         if not url:
             cands = extract_images(page_html or "", art["link"])
             url = cands[0] if cands else None
         if not url:
-            return
+            return None
         fname = imgstore.store(url)
         if fname:
             db.set_article(conn, art["id"], image=fname, image_url=url)
+        return fname
     except Exception:  # noqa: BLE001 - images are decorative
-        pass
+        return None
+
+
+def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
+    """Zero-token catch-up: cache hero images for articles stored before
+    images existed. Feed-declared URLs are free; at most `page_fetches`
+    article pages are re-fetched for og/content images."""
+    import requests
+    from .fetcher import UA
+    rows = conn.execute(
+        "SELECT * FROM articles WHERE image IS NULL AND status IN ('ready','error')"
+        " ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ?",
+        (limit,)).fetchall()
+    stored = fetched = 0
+    for art in rows:
+        if art["image_url"]:
+            if _cache_image(conn, art, ""):
+                stored += 1
+            continue
+        if fetched >= page_fetches or not art["link"]:
+            continue
+        try:
+            fetched += 1
+            resp = requests.get(art["link"], headers={"user-agent": UA},
+                                timeout=25)
+            if resp.ok and _cache_image(conn, art, resp.text):
+                stored += 1
+        except Exception:  # noqa: BLE001
+            continue
+    log.info("image backfill: %d stored (%d pages fetched)", stored, fetched)
+    return stored
 
 
 def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:

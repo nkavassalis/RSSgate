@@ -42,8 +42,9 @@ anyway — **zero extra LLM tokens**. Every image is downloaded once, sniffed
 for real image bytes (magic bytes, ≤5 MB), stored under
 `<data_dir>/images/<sha256-of-URL>.<ext>` and served from our own
 `GET /image/<name>` route (hash-named files only — no SSRF, no traversal,
-immutable cache headers). Existing articles keep whatever they had; images
-accumulate from the moment you upgrade.
+immutable cache headers). On startup RSSgate runs one **backfill pass**
+over your existing library (declared URLs are free; at most 40 pages are
+re-fetched), and `POST /api/images/backfill` re-triggers it anytime.
 
 ## Token efficiency (the point of the design)
 

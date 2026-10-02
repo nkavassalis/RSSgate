@@ -31,6 +31,14 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.6.0] — 2026-10-02
+
+### Added
+- **Image backfill**: startup pass (and `POST /api/images/backfill`) caches
+  hero images for articles predating v1.5.0 — feed-declared URLs cost
+  nothing but a download; at most 40 article pages are re-fetched per pass.
+  Zero LLM tokens, same cache, same safety rules.
+
 ## [1.5.0] — 2026-10-02
 
 ### Added

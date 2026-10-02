@@ -111,3 +111,29 @@ def test_api_articles_exposes_image(client, tmp_path, monkeypatch):
     db.set_article(conn, aid, status="ready", summary="s", image="ab" * 12 + ".png")
     item = client.get("/api/articles?limit=1").get_json()["items"][0]
     assert item["image"] == "ab" * 12 + ".png"
+
+
+def test_backfill_uses_declared_urls_free(conn, cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(imgstore, "_dir", tmp_path / "images")
+    (tmp_path / "images").mkdir(exist_ok=True)
+    page_calls = []
+    def fake_get(url, **kw):
+        page_calls.append(url)
+        if url.endswith(".jpg"):
+            return FakeResp(JPEG)
+        return FakeResp(text=ARTICLE_HTML)   # page -> og:image /hero.jpg
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = db.add_feed(conn, "https://ex/bf")["id"]
+    a1 = db.upsert_article(conn, fid, "b1", "https://x/p1", "T1",
+                           "2026-10-01T00:00:00Z", image_url="https://i/1.jpg")
+    a2 = db.upsert_article(conn, fid, "b2", "https://x/p2", "T2",
+                           "2026-10-02T00:00:00Z")           # no declared url
+    for a in (a1, a2):
+        db.set_article(conn, a, status="ready", summary="s" * 40)
+    n = refresh.backfill_images(conn, load_config(cfg), page_fetches=1)
+    assert n == 2
+    assert "https://i/1.jpg" in page_calls                  # free, declared
+    assert "https://x/p2" in page_calls                     # capped page fetch
+    both = conn.execute("SELECT image FROM articles WHERE image IS NOT NULL"
+                        " ").fetchall()
+    assert len(both) == 2

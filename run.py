@@ -43,6 +43,17 @@ def main():
         threading.Thread(target=_startup_poll, daemon=True).start()
     sched.start()
 
+    import threading as _th
+
+    def _image_backfill():
+        import contextlib
+        import time
+        time.sleep(15)   # let startup poll/digesters finish first
+        with contextlib.closing(db.connect(db_path)) as bconn:
+            from rssgate.refresh import backfill_images
+            backfill_images(bconn, cfg)
+    _th.Thread(target=_image_backfill, daemon=True).start()
+
     print(f"RSSgate listening on http://{cfg['server']['host']}:{cfg['server']['port']}")
     app.run(host=cfg["server"]["host"], port=int(cfg["server"]["port"]),
             threaded=True, debug=False)
