@@ -82,6 +82,30 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE articles ADD COLUMN started_at TEXT")
 
 
+def norm_ts(value):
+    """Normalize any feed/HTTP timestamp (ISO with Z/+00:00/offsets, RFC 822)
+    to canonical 'YYYY-MM-DDTHH:MM:SSZ' UTC — matching now_iso(). Every
+    timestamp comparison in this app is a string comparison, so everything
+    stored must share this one format. Unparseable values pass through."""
+    if not value:
+        return None
+    s = str(value).strip()
+    dt = None
+    try:
+        dt = datetime.datetime.fromisoformat(s)
+    except ValueError:
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(s)
+        except Exception:  # noqa: BLE001
+            return s
+    if dt is None:
+        return s
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _migrate(conn)
@@ -90,7 +114,29 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE token_usage ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
     if "purpose" not in cols:
         conn.execute("ALTER TABLE token_usage ADD COLUMN purpose TEXT DEFAULT 'summarize'")
+    _normalize_timestamps(conn)
     conn.commit()
+
+
+def _normalize_timestamps(conn: sqlite3.Connection) -> None:
+    """One-time (idempotent) migration: rewrite every stored timestamp to
+    canonical UTC. Fixes cross-format cursor comparisons."""
+    for r in conn.execute("SELECT id, published_at FROM articles"
+                          " WHERE published_at IS NOT NULL").fetchall():
+        n = norm_ts(r["published_at"])
+        if n and n != r["published_at"]:
+            conn.execute("UPDATE articles SET published_at=? WHERE id=?", (n, r["id"]))
+    for r in conn.execute("SELECT id, last_read_ts FROM feeds"
+                          " WHERE last_read_ts IS NOT NULL").fetchall():
+        n = norm_ts(r["last_read_ts"])
+        if n and n != r["last_read_ts"]:
+            conn.execute("UPDATE feeds SET last_read_ts=? WHERE id=?", (n, r["id"]))
+    for key in ("resume_ts", "oldest_seen"):
+        v = get_state(conn, key)
+        if v:
+            n = norm_ts(v)
+            if n and n != v:
+                set_state(conn, key, n)
 
 
 def now_iso() -> str:
@@ -189,6 +235,7 @@ def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
     """Insert a new article (with its own category tags). Returns its id, or
     None if already known -- known articles get refreshed category tags only."""
     cats = ",".join(categories or [])
+    published_at = norm_ts(published_at) if published_at else None
     known = conn.execute("SELECT 1 FROM articles WHERE feed_id=? AND guid=?",
                          (feed_id, guid)).fetchone()
     if known:
@@ -313,6 +360,8 @@ def find_summary_by_hash(conn, body_hash: str) -> sqlite3.Row | None:
 # ---------------------------------------------------------------- state / usage
 
 def set_state(conn, key: str, value: str) -> None:
+    if key in ("resume_ts", "oldest_seen") and value:
+        value = norm_ts(value)
     conn.execute("INSERT INTO state(key,value) VALUES(?,?)"
                  " ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
     conn.commit()
@@ -336,8 +385,10 @@ def log_usage(conn, provider: str, model: str, prompt: int, completion: int,
 
 
 def mark_feed_read(conn, feed_id: int, ts: str) -> None:
-    """Advance one feed's read cursor; moves forward only (ISO strings sort
-    chronologically)."""
+    """Advance one feed's read cursor (canonical UTC strings); forward only."""
+    ts = norm_ts(ts)
+    if not ts or not feed_id:
+        return
     conn.execute("UPDATE feeds SET last_read_ts=? WHERE id=?"
                  " AND (last_read_ts IS NULL OR last_read_ts < ?)", (ts, feed_id, ts))
     conn.commit()

@@ -63,3 +63,38 @@ def test_position_legacy_payload_still_saves_global(client):
     fid = seed_api(client)
     client.post("/api/position", json={"ts": "2026-10-01T00:00:00Z", "id": 9})
     assert client.get("/api/resume").get_json()["resume_ts"] == "2026-10-01T00:00:00Z"
+
+
+def test_norm_ts_all_formats():
+    from rssgate.db import norm_ts
+    canon = "2026-10-02T16:00:00Z"
+    for raw in ["2026-10-02T16:00:00Z", "2026-10-02T16:00:00+00:00",
+                "2026-10-02T12:00:00-04:00", "2026-10-02T16:00:00.123456Z",
+                "Fri, 02 Oct 2026 16:00:00 +0000",
+                "Fri, 02 Oct 2026 12:00:00 -0400",
+                "Fri, 02 Oct 2026 16:00:00 GMT"]:
+        assert norm_ts(raw) == canon, raw
+    assert norm_ts(None) is None
+    assert norm_ts("garbage") == "garbage"  # passthrough, never crashes
+
+
+def test_mixed_format_timestamps_compare_correctly(client, conn):
+    """The original bug: an article stored with an offset or RFC-822 date and
+    a cursor in a different format must still count as read after scrolling."""
+    from rssgate import db
+    fid = db.add_feed(conn, "https://ex/mixed")["id"]
+    db.upsert_article(conn, fid, "g1", "u1", "RFC",
+                      "Fri, 02 Oct 2026 12:00:00 -0400")   # = 16:00Z
+    db.upsert_article(conn, fid, "g2", "u2", "Newer",
+                      "2026-10-02T18:00:00+00:00")
+    stored = {r["title"]: r["published_at"] for r in conn.execute(
+        "SELECT title, published_at FROM articles")}
+    assert stored["RFC"] == "2026-10-02T16:00:00Z"
+    assert stored["Newer"] == "2026-10-02T18:00:00Z"
+    # cursor lands on the RFC article (beacon ts arrives in yet another form)
+    db.mark_feed_read(conn, fid, "2026-10-02T16:00:00+00:00")
+    assert db.feed_unread(conn, fid, "2026-10-02T16:00:00Z") == 1  # only Newer
+    # forward-only still holds across formats
+    db.mark_feed_read(conn, fid, "2026-10-01T00:00:00Z")
+    assert conn.execute("SELECT last_read_ts FROM feeds WHERE id=?",
+                        (fid,)).fetchone()["last_read_ts"] == "2026-10-02T16:00:00Z"

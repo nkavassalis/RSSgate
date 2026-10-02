@@ -31,6 +31,19 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.0.1] — 2026-10-02
+
+### Fixed
+- **Read-state never caught up (the bug users saw):** feeds publish
+  timestamps in inconsistent formats (`Z`, `+00:00`, `-04:00`, RFC 822).
+  Since all cursor/unread comparisons are string comparisons, mixed formats
+  made scrolled-past articles stay unread and some cursors never advance.
+  Every stored timestamp is now normalized to canonical
+  `YYYY-MM-DDTHH:MM:SSZ` UTC at the DB chokepoints (`upsert_article`,
+  `mark_feed_read`, `set_state`) with an idempotent startup migration for
+  existing rows (`db._normalize_timestamps`). Regression tests cover all
+  input formats and cross-format cursor advancement.
+
 ## [1.0.0] — 2026-10-02 — "Caught up"
 
 First stable baseline. Everything to date, grouped:
