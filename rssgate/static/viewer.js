@@ -140,6 +140,18 @@
       ts: pos.dataset.ts, id: +pos.dataset.id, reads,
       global: store.mode === 'new' && !store.feed,
     });
+    // local reflection: cards you just passed ARE read — flip them now
+    // instead of waiting for a re-fetch, and resync the sidebar pills
+    let flipped = false;
+    for (const c of passed) {
+      if (c.classList.contains('unread')) {
+        c.classList.remove('unread');
+        const dot = c.querySelector('.newdot');
+        if (dot) dot.remove();
+        flipped = true;
+      }
+    }
+    if (flipped) renderFeedFilter();
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
       new Blob([body], { type: 'application/json' }))
       || fetch('/api/position', { method: 'POST', body,
@@ -192,6 +204,7 @@
     store.feed = id;
     document.querySelectorAll('#feed-filter li').forEach(li =>
       li.classList.toggle('active', li.dataset.feed === id));
+    renderFeedFilter();   // pills reflect server truth on every switch
     restart();
   }
   async function renderFeedFilter() {

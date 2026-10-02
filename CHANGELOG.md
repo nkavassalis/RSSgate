@@ -31,6 +31,15 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.2.1] — 2026-10-02
+
+### Fixed
+- Read-state visual sync: cards scrolled past now flip from unread to
+  read *immediately* (class + dot removed, same code path that sends the
+  read beacon), instead of keeping their blue frame until a re-fetch.
+  Sidebar pills re-render on every feed switch and whenever cards flip,
+  so pill counts and card styling can no longer disagree.
+
 ## [1.2.0] — 2026-10-02
 
 ### Added
