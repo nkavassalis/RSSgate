@@ -63,6 +63,7 @@
       ? `<div class="gallery">${extra.map(g =>
           `<a href="${esc(a.link)}" target="_blank" rel="noopener"><img src="/image/${esc(g)}" loading="lazy" alt=""></a>`).join('')}</div>`
       : '';
+    const readmore = `<p class="readmore"><a href="${esc(a.link)}" target="_blank" rel="noopener">Read the full article at ${esc(a.feed_title || 'the original')} &#8599;</a></p>`;
     const thumb = a.image
       ? `<img class="card-thumb" src="/image/${esc(a.image)}" alt="" loading="lazy">`
       : '';
@@ -73,7 +74,7 @@
       ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
-      ${body}${gallery}</article>`;
+      ${body}${gallery}${readmore}</article>`;
   }
 
   // ---- viewed = read: dwelling on an unread card marks it seen, even with

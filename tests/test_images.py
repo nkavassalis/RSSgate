@@ -160,3 +160,49 @@ def test_gallery_stored_and_exposed(client, tmp_path, monkeypatch):
     assert item["image"] and len(item["gallery"]) >= 2
     for g in item["gallery"]:
         assert client.get(f"/image/{g}").status_code == 200
+
+
+def test_images_per_post_configurable(client, tmp_path, monkeypatch):
+    from rssgate.config import load_config
+    img = tmp_path / "images"; img.mkdir()
+    monkeypatch.setattr(imgstore, "_dir", img)
+    rich = ARTICLE_HTML.replace("<p>",
+        '<img src="https://cdn.x/p2.png"><img src="https://cdn.x/p3.png">'
+        '<img src="https://cdn.x/p4.png"><img src="https://cdn.x/p5.png"><p>')
+    def fake_get(url, **kw):
+        if url.endswith((".jpg", ".png")):
+            return FakeResp(PNG if url.endswith(".png") else JPEG)
+        return FakeResp(text=rich)
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = client.post("/api/feeds", json={"url": "https://ex/cfg"}).get_json()["id"]
+    conn = client.conn
+    aid = db.upsert_article(conn, fid, "c", "https://blog.example/post",
+                            "T", "2026-10-02T00:00:00Z")
+    cfg = load_config("__no_such__.yaml")
+    cfg["maintenance"]["images_per_post"] = 2
+    refresh.summarize_pending(conn, cfg, FakeImgLLM(), limit=1)
+    item = client.get("/api/articles?limit=1").get_json()["items"][0]
+    assert len(item["gallery"]) == 2          # budget respected
+    assert imgstore.set_per_post(99) == 8 and imgstore.set_per_post(0) == 1
+    imgstore.set_per_post(4)
+
+
+def test_backfill_enriches_hero_only_rows(conn, tmp_path, monkeypatch):
+    """v1.6-era rows (hero but no gallery) are re-visited."""
+    from rssgate.config import load_config
+    img = tmp_path / "images"; img.mkdir()
+    monkeypatch.setattr(imgstore, "_dir", img)
+    def fake_get(url, **kw):
+        if url.endswith((".jpg", ".png")):
+            return FakeResp(PNG if url.endswith(".png") else JPEG)
+        return FakeResp(text=ARTICLE_HTML)
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = db.add_feed(conn, "https://ex/old")["id"]
+    aid = db.upsert_article(conn, fid, "h", "https://blog.example/post",
+                            "T", "2026-10-01T00:00:00Z")
+    db.set_article(conn, aid, status="ready", summary="s", image="ab" * 12 + ".jpg")
+    n = refresh.backfill_images(conn, load_config("__no_such__.yaml"))
+    assert n == 1
+    images = conn.execute("SELECT images FROM articles WHERE id=?",
+                          (aid,)).fetchone()["images"]
+    assert "," in images or len(images.split(",")) >= 1

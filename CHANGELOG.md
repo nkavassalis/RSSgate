@@ -31,6 +31,18 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.8.0] — 2026-10-02
+
+### Added
+- **`maintenance.images_per_post`** (1-8, default 4): configurable image
+  budget per article (hero included); admin number input in Maintenance.
+- **"Read the full article at <feed> ↗"** footer link on every card.
+
+### Fixed
+- Image backfill now re-visits hero-only articles (v1.6-era rows, e.g.
+  baka.jp) so pre-gallery articles catch up; previously `image IS NOT NULL`
+  meant they were skipped forever.
+
 ## [1.7.0] — 2026-10-02
 
 ### Added

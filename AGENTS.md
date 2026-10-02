@@ -84,7 +84,7 @@ CHANGELOG.md            version criteria + history — update on every release
    at-resume in oldest mode.
 5. **Image refs are the cache's GC root**: any code deleting articles must
    return their image filenames (db.delete_old_articles does) and maintenance
-   prunes orphans afterwards. Config `maintenance.*` governs retention/cap.
+   prunes orphans afterwards. Config `maintenance.*` governs retention/cap/images_per_post.
 6. **Threading + sqlite**: each worker opens its OWN connection; a shared
    handle across threads corrupts commit state (this stranded articles in
    'processing' once — see stale-requeue).

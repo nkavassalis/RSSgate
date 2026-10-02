@@ -72,3 +72,4 @@ ui:
 maintenance:
   retention_months: 0        # 0 = keep articles forever; N = delete older than N months
   images_max_mb: 0           # 0 = unlimited; N = prune <data_dir>/images to ~N MB
+  images_per_post: 4         # max images cached per article, hero included (1-8)

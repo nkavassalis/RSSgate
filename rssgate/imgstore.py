@@ -14,6 +14,21 @@ _dir: Path | None = None
 _lock = threading.Lock()
 
 MAX_BYTES = 5_000_000
+_per_post = 4
+
+
+def set_per_post(n) -> int:
+    """Clamp/store the per-article image budget."""
+    global _per_post
+    try:
+        _per_post = max(1, min(8, int(n)))
+    except (TypeError, ValueError):
+        pass
+    return _per_post
+
+
+def per_post() -> int:
+    return _per_post
 _NAME_RE = re.compile(r"^[0-9a-f]{24}\.(jpg|png|webp|gif)$")
 
 # magic bytes -> extension

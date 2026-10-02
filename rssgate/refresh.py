@@ -128,7 +128,7 @@ def _cache_image(conn, art, page_html: str) -> str | None:
     Never raises; returns the hero filename."""
     try:
         decl = art["image_url"] if "image_url" in art.keys() else None
-        urls = [decl] if decl else extract_images(page_html or "", art["link"])[:4]
+        urls = [decl] if decl else extract_images(page_html or "", art["link"])[:imgstore.per_post()]
         if not urls:
             return None
         names = [n for n in (imgstore.store(u) for u in urls) if n]
@@ -148,9 +148,11 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
     import requests
     from .fetcher import UA
     rows = conn.execute(
-        "SELECT * FROM articles WHERE image IS NULL AND status IN ('ready','error')"
+        "SELECT * FROM articles WHERE (image IS NULL OR images = '')"
+        " AND status IN ('ready','error')"
         " ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ?",
         (limit,)).fetchall()
+    imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
     stored = fetched = 0
     for art in rows:
         if art["image_url"]:
@@ -167,7 +169,7 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
                 stored += 1
         except Exception:  # noqa: BLE001
             continue
-    log.info("image backfill: %d stored (%d pages fetched)", stored, fetched)
+    log.info("image backfill: %d enriched (%d pages fetched)", stored, fetched)
     return stored
 
 
@@ -175,6 +177,7 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
     """Run claimed articles through the LLM exactly once, unless their content
     hash shows we already have a digest for identical text (cache hit = 0 tokens).
     Claims atomically, so multiple worker threads may call this concurrently."""
+    imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
     done = 0
     rows = db.claim_pending(conn, limit)
     for art in rows:

@@ -97,6 +97,9 @@ discovery, when you have more than one model available.
 
 ## Reader UI: sidebar, New/Since modes
 
+Every card ends with a **"Read the full article at <feed> ↗"** link to the
+original page.
+
 The viewer has a left sidebar (a slide-out drawer under 800 px):
 
 - **Feeds list** — click a feed to filter the stream to it; “All feeds” to
@@ -175,7 +178,10 @@ Admin panel → **Maintenance**:
   articles (any status) are deleted along with their image references.
 - **Image cache cap** — unlimited by default, or trim `<data_dir>/images`
   oldest-first to roughly N MB (dangling references are cleaned up).
+- **Max images per article** — 1-8 (default 4: hero + 3 gallery).
 - Orphaned cache files (no article references them) are always pruned.
+- The startup **image backfill** also enriches older articles that were
+  stored before galleries existed (hero-only rows get revisited).
 
 Maintenance runs once at startup and every 6 hours, or on demand from the
 panel / `POST /api/maintenance/run`. Reports show in the panel.

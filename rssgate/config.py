@@ -58,6 +58,7 @@ DEFAULTS: dict = {
     "maintenance": {
         "retention_months": 0,           # 0 = forever
         "images_max_mb": 0,              # 0 = unlimited
+        "images_per_post": 4,          # hero + gallery max (1-8)
     },
     "ui": {
         "theme": "auto",              # auto | light | dark
