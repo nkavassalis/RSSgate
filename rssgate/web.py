@@ -64,7 +64,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         rows = db.articles_page(
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
-            category=request.args.get("category"),
+            category=request.args.getlist("category") or None,
             since_ts=request.args.get("since_ts"), order=order)
         has_more = len(rows) > limit
         items = []
@@ -226,6 +226,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/categories")
     def api_categories():
+        if request.args.get("viewer"):
+            return jsonify(db.category_list(conn))
         return jsonify(db.all_categories(conn))
 
     @app.route("/api/categories/rename", methods=["POST"])

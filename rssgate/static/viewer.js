@@ -14,6 +14,11 @@
     set since(v) { localStorage.setItem('rssgate.since', v); },
     get feed() { return localStorage.getItem('rssgate.feed') || ''; },
     set feed(v) { localStorage.setItem('rssgate.feed', v); },
+    get cats() {
+      try { return JSON.parse(localStorage.getItem('rssgate.cats')) || []; }
+      catch { return []; }
+    },
+    set cats(v) { localStorage.setItem('rssgate.cats', JSON.stringify(v)); },
   };
   function dateStr(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
@@ -117,6 +122,7 @@
     else if (store.mode === 'new' && !store.feed && order === 'newest')
       params.set('fresh', '1');   // oldest mode: no fresh => continue at resume
     if (store.feed) params.set('feed_id', store.feed);
+    for (const c of store.cats) params.append('category', c);
     if (store.mode === 'since') params.set('since_ts', store.since + 'T00:00:00Z');
     const res = await fetch('/api/articles?' + params);
     const data = await res.json();
@@ -156,10 +162,12 @@
     const d = new Date(); d.setDate(d.getDate() - 1); return dateStr(d);
   }
 
-  function restart() {
+  function restart(keepDrawer) {
     stream.innerHTML = ''; cursor = null; exhausted = false;
     started = false; endBanner.hidden = true;
-    $('sidebar').classList.remove('open'); $('sidebar-veil').classList.remove('show');
+    if (!keepDrawer) {
+      $('sidebar').classList.remove('open'); $('sidebar-veil').classList.remove('show');
+    }
     loadNext();
   }
 
@@ -255,6 +263,28 @@
     renderFeedFilter();   // pills reflect server truth on every switch
     restart();
   }
+  // ---- category chips (multi-select; empty = all) -------------------------
+  async function renderCats() {
+    const cats = await fetch('/api/categories?viewer=1').then(r => r.json());
+    const sel = store.cats;
+    const box = $('cat-filter');
+    box.innerHTML = `<button class="chip${sel.length ? '' : ' active'}"
+        data-cat="">All</button>`
+      + cats.map(c => `<button class="chip${sel.includes(c.name) ? ' active' : ''}"
+          data-cat="${esc(c.name)}" title="${c.count} article${c.count === 1 ? '' : 's'}">${esc(c.name)}<small>${c.count}</small></button>`).join('');
+    box.querySelectorAll('.chip').forEach(b =>
+      b.addEventListener('click', () => {
+        const name = b.dataset.cat;
+        let sel2 = name ? [...store.cats] : [];
+        if (!name) sel2 = [];                                  // All clears
+        else if (sel2.includes(name)) sel2 = sel2.filter(x => x !== name);
+        else sel2.push(name);
+        store.cats = sel2;
+        renderCats();
+        restart(true);   // keep drawer open for multi-select on mobile
+      }));
+  }
+
   async function renderFeedFilter() {
     const feeds = await fetch('/api/feeds').then(r => r.json());
     const ul = $('feed-filter');
@@ -281,6 +311,7 @@
   Promise.all([
     fetch('/api/resume').then(r => r.json()),
     renderFeedFilter(),
+    renderCats(),
   ]).then(([s]) => {
     bootResume = s.resume_ts || '';
     order = s.order === 'oldest' ? 'oldest' : 'newest';

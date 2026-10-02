@@ -89,6 +89,13 @@ The viewer has a left sidebar (a slide-out drawer under 800 px):
 - **Feeds list** — click a feed to filter the stream to it; “All feeds” to
   clear. Selection persists in the browser (localStorage), as do the mode and
   date. Resume-position saving only applies to the unfiltered New view.
+- **Categories (multi-select)** — chips above the feed list, defaulting to
+  “All”. Click any number of categories to OR them together (combined with
+  the feed filter and New/Since modes); chip counts show matching articles.
+  Selection persists in localStorage and the drawer stays open for
+  multi-tapping on mobile. A category matches a post’s own tags, your
+  feed’s assigned tags, or the feed-declared union — as EXACT tag members,
+  never fuzzy substrings.
 - **New / Since toggle** — *New* starts at the newest article and pages
   through your reading; *Since* puts a floor under the stream: it shows
   everything from your chosen date onward and politely stops there

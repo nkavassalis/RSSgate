@@ -159,3 +159,14 @@ textarea { resize:vertical; }
   .feed-table tr { display:block; border-bottom:1px solid var(--line); padding:8px 0; }
   .card-meta time { margin-left:0; }
 }
+
+/* category chips (viewer sidebar) */
+.cat-filter { display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 10px; }
+.cat-filter .chip { font:inherit; font-size:.78rem; padding:4px 9px; border-radius:999px;
+  border:1px solid var(--line); background:transparent; color:var(--text);
+  cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+.cat-filter .chip small { color:var(--muted); font-size:.68rem; }
+.cat-filter .chip:hover { background:var(--chip); }
+.cat-filter .chip.active { background:var(--accent); border-color:var(--accent);
+  color:#fff; }
+.cat-filter .chip.active small { color:rgba(255,255,255,.8); }

@@ -186,6 +186,33 @@ def delete_feed(conn, feed_id: int) -> None:
     conn.commit()
 
 
+def _cat_sql(col: str) -> str:
+    """Exact-membership test for a comma-string category column."""
+    return f"(',' || COALESCE({col},'') || ',') LIKE ('%,' || ? || ',%')"
+
+
+def category_list(conn) -> list[dict]:
+    """Every category name known anywhere (per-post tags, user-assigned feed
+    tags, feed-declared tags) with the count of visible articles it matches.
+    Matches are EXACT members of stored comma strings, not substrings."""
+    names: set[str] = set()
+    for row in conn.execute(
+            "SELECT categories c FROM feeds WHERE categories != ''"
+            " UNION SELECT auto_categories FROM feeds WHERE auto_categories != ''"
+            " UNION SELECT categories FROM articles WHERE categories != ''"):
+        names |= set(parse_categories(row["c"]))
+    out = []
+    for n in sorted(names):
+        cnt = conn.execute(
+            "SELECT COUNT(*) c FROM articles a JOIN feeds f ON f.id=a.feed_id"
+            " WHERE a.status != 'hidden' AND ("
+            + _cat_sql("a.categories") + " OR " + _cat_sql("f.categories")
+            + " OR " + _cat_sql("f.auto_categories") + ")",
+            (n, n, n)).fetchone()["c"]
+        out.append({"name": n, "count": cnt})
+    return out
+
+
 def all_categories(conn) -> list[dict]:
     """Distinct user-assigned categories with usage counts."""
     counts: dict[str, int] = {}
@@ -277,8 +304,15 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
         where.append("a.feed_id = ?")
         params.append(feed_id)
     if category:
-        where.append("(a.categories LIKE ? OR f.categories LIKE ? OR f.auto_categories LIKE ?)")
-        params += [f"%{category}%"] * 3
+        cats = [category] if isinstance(category, str) else [c for c in category if c]
+        if cats:
+            ors = []
+            for c in cats:
+                ors.append("(" + _cat_sql("a.categories")
+                           + " OR " + _cat_sql("f.categories")
+                           + " OR " + _cat_sql("f.auto_categories") + ")")
+                params += [c, c, c]
+            where.append("(" + " OR ".join(ors) + ")")
     rows = conn.execute(
         f"""SELECT a.id, a.title, a.link, a.summary, a.status,
                    {_TS_EXPR.replace('published_at', 'a.published_at').replace('fetched_at', 'a.fetched_at')} AS ts,

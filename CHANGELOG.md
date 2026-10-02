@@ -31,6 +31,20 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.3.0] — 2026-10-02
+
+### Added
+- **Sidebar category filter** — multi-select chips above the feed list,
+  default "All". ORs across selections, composes with feed filter and
+  New/Since; persisted in localStorage; chip counts from
+  `GET /api/categories?viewer=1` (union of post/user/feed-declared names
+  with article counts). `GET /api/articles` now accepts repeated
+  `category=` params.
+
+### Changed
+- Category matching is now EXACT comma-membership (post/user/auto columns)
+  instead of raw LIKE substrings — `tech` no longer matches `technology`.
+
 ## [1.2.2] — 2026-10-02
 
 ### Added
