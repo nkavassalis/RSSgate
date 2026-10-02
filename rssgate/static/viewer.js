@@ -68,6 +68,7 @@
     loading = true;
     const params = new URLSearchParams({ limit: PAGE });
     if (cursor) { params.set('before_ts', cursor.ts); params.set('before_id', cursor.id); }
+    else if (store.mode === 'new' && !store.feed) params.set('fresh', '1');
     if (store.feed) params.set('feed_id', store.feed);
     if (store.mode === 'since') params.set('since_ts', store.since + 'T00:00:00Z');
     const res = await fetch('/api/articles?' + params);
@@ -137,9 +138,6 @@
       new Blob([body], { type: 'application/json' }))
       || fetch('/api/position', { method: 'POST', body,
           headers: { 'content-type': 'application/json' } });
-    // once the stream has been scrolled past the old resume point, the
-    // "new articles above" hint is no longer relevant on this boot
-    if (oldest.dataset.ts > (bootResume || '')) hideNewAbove();
   }
   function queueSave() { clearTimeout(saveTimer); saveTimer = setTimeout(savePosition, 1200); }
   window.addEventListener('scroll', queueSave, { passive: true });
@@ -218,21 +216,27 @@
     renderFeedFilter(),
   ]).then(([s]) => {
     bootResume = s.resume_ts || '';
-    if (store.mode === 'new' && !store.feed && s.resume_ts && s.newest_ts) {
-      cursor = { ts: s.resume_ts, id: +s.resume_id };
-      if (s.newest_ts > s.resume_ts) $('new-above').hidden = false;
+    // Stream ALWAYS boots at newest (what "caught up" means).
+    // The saved resume position becomes an explicit "continue" option.
+    if (store.mode === 'new' && !store.feed && s.resume_ts && s.newest_ts
+        && s.resume_ts < s.newest_ts) {
+      const d = s.resume_ts.slice(0, 10);
+      $('new-above-btn').innerHTML =
+        `&#8681; Continue reading from ${d}`;
+      $('new-above').hidden = false;
+      $('new-above-btn').dataset.resume = s.resume_ts;
+      $('new-above-btn').dataset.resumeId = s.resume_id || '0';
     }
     loadNext();
   });
 
-  // ---- newer-above jump: resume bounds the New stream, so newly arrived
-  // articles sit above it; this is the one-tap way to reach them ----------
+  // ---- continue-reading: jump the stream to the saved resume point -------
   function hideNewAbove() { $('new-above').hidden = true; }
-  $('new-above-btn').addEventListener('click', () => {
+  $('new-above-btn').addEventListener('click', function () {
     hideNewAbove();
-    savePosition();                 // don't lose the deep-read position
-    stream.innerHTML = ''; cursor = null; exhausted = false; started = false;
+    stream.innerHTML = ''; exhausted = false; started = false;
     endBanner.hidden = true;
+    cursor = { ts: this.dataset.resume, id: +this.dataset.resumeId };
     window.scrollTo(0, 0);
     loadNext();
   });

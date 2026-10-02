@@ -46,7 +46,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         unfiltered = (not request.args.get("feed_id")
                       and not request.args.get("category")
                       and not request.args.get("since_ts"))
-        if before_ts is None and unfiltered:
+        if before_ts is None and unfiltered and not request.args.get("fresh"):
             ts = db.get_state(conn, "resume_ts")
             aid = int(db.get_state(conn, "resume_id", "0") or 0)
             if ts:

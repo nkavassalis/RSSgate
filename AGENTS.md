@@ -64,7 +64,8 @@ CHANGELOG.md            version criteria + history — update on every release
    leave the server except masked (`***`).
 3. **All SQL in `db.py`**; routes stay thin.
 4. **Cursors are (ts, id) keyset** — strictly-older pagination, never OFFSET.
-   Read cursors (global + per-feed) advance FORWARD only.
+   Read cursors (global + per-feed) advance FORWARD only. The resume cursor
+   bounds ONLY legacy unfiltered no-fresh requests; the viewer boots fresh.
 5. **Threading + sqlite**: each worker opens its OWN connection; a shared
    handle across threads corrupts commit state (this stranded articles in
    'processing' once — see stale-requeue).
@@ -83,8 +84,10 @@ CHANGELOG.md            version criteria + history — update on every release
   POST /api/position → mark_feed_read per feed (+ global cursor only when
   `global:true`, i.e. New + All-feeds view). Sidebar pills from
   `db.feed_unread`; card dots from `unread` column in /api/articles.
-- **Viewer boot**: GET /api/resume + /api/feeds → GET /api/articles
-  (cursor + feed_id + since_ts) → IntersectionObserver → beacons.
+- **Viewer boot**: ALWAYS at newest (`?fresh=1`); GET /api/resume shows a
+  "Continue reading" button when resume < newest → reloads stream at resume.
+  GET /api/articles (cursor + feed_id + since_ts) → IntersectionObserver →
+  beacons `{ts,id,reads:{feed:ts},global}` → per-feed cursors precisely.
 
 ## Versioning policy (cut releases the same way every time)
 Given `MAJOR.MINOR.PATCH`, tagged `vX.Y.Z`, `__version__` in

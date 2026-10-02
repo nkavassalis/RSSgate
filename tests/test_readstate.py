@@ -139,3 +139,16 @@ def test_reads_map_precise_per_feed_cursors(client):
     assert feeds[fid]["unread"] == 0
     assert feeds[fid2]["unread"] == 1          # untouched feed stays unread
     assert client.get("/api/resume").get_json()["resume_ts"] == ""
+
+
+def test_fresh_param_bypasses_resume_bound(client):
+    """New-mode boots at newest via ?fresh=1; legacy unbounded-free requests
+    keep honoring the resume bound (backwards compatible)."""
+    fid = seed_api(client)
+    client.post("/api/position", json={"ts": "2026-10-01T00:00:00Z", "id": 1,
+                                       "global": True})
+    assert [i["title"] for i in
+            client.get("/api/articles?limit=10").get_json()["items"]] == []
+    titles = [i["title"] for i in
+              client.get("/api/articles?limit=10&fresh=1").get_json()["items"]]
+    assert titles == ["A2", "A1", "A0"]

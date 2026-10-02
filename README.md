@@ -158,17 +158,21 @@ re-queues them. Detection is intentionally conservative — it errs toward
 
 ## Endless reader, resume & read state
 
-Three layers of "where was I?", all server-side:
+The stream **always opens at the newest article** — "caught up" means what you
+see. Three layers of state:
 
-- **Global resume cursor** — your furthest-seen `(ts, id)` in the unfiltered
-  New view (`POST /api/position` via `sendBeacon`, `GET /api/resume`).
-- **Per-feed read cursors** (`feeds.last_read_ts`) — scrolling cards marks
-  their feed read up to that article, whether you scroll the mixed stream or
-  a filtered view. The sidebar shows an unread pill per feed (accent badge);
-  articles newer than the cursor carry a blue dot + left accent bar in the
-  stream, and are visually calmer once read.
-- **Client prefs** — sidebar mode (New/Since), since-date and feed filter
-  live in localStorage; they are view preferences, not read state.
+- **Continue reading** — your deepest scroll position `(ts, id)` is stored
+  server-side (`POST /api/position` via `sendBeacon`). When it's older than
+  the newest article, a "⤓ Continue reading from <date>" button appears to
+  drop you back where you left off (`GET /api/resume` exposes it; `?fresh=1`
+  on `/api/articles` is the at-newest opt-out of the resume bound).
+- **Per-feed read cursors** (`feeds.last_read_ts`) — each read beacon sends
+  `reads: {feed_id: newest_passed_card_ts}`, so every feed's cursor advances
+  at the exact card you passed, in filtered *and* mixed views. The sidebar
+  shows an unread pill per feed; unpassed cards carry a blue dot + accent
+  bar and calm down once read.
+- **Client prefs** — mode (New/Since), since-date and feed filter live in
+  localStorage; view preferences, not read state.
 
 Since mode floors the stream at `GET /api/articles?since_ts=…`; the date
 picker on the end banner simply switches into Since mode.

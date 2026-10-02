@@ -31,6 +31,21 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.1.0] — 2026-10-02
+
+### Changed
+- **The New view now always boots at the newest article.** Previously the
+  stream resumed at your deepest scroll point, so everything newer lived
+  "above the ceiling": invisible in the All-feeds stream while feed pills
+  counted them — reading everything in All never cleared the feeds. The
+  saved position is now offered as an explicit "⤓ Continue reading from
+  <date>" button (same keyset `(ts, id)` semantics, same beacons).
+
+### Added
+- `GET /api/articles?fresh=1` — explicit at-newest opt-out of the server's
+  resume bound (the viewer sends it on fresh boots; legacy requests are
+  unchanged).
+
 ## [1.0.2] — 2026-10-02
 
 ### Fixed
