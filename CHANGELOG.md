@@ -31,6 +31,26 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.0.2] — 2026-10-02
+
+### Fixed
+- **Unread pills that never cleared.** Three compounding bugs:
+  1. The server applied the global resume cursor as the page bound to
+     *every* `/api/articles` request — feed-filtered, category and Since
+     views silently started at your stale resume point, hiding (and
+     preventing read-marking of) everything newer. Resume now bounds only
+     the plain New/all-feeds first page.
+  2. Read beacons sent one position (the *oldest* card past the fold), so
+     fast scrolling marked an old cutoff and left newer scrolled-past cards
+     unread forever. Beacons now send `reads: {feed_id: newest_passed_ts}`
+     — a precise per-feed cursor from the actual cards you passed.
+  3. Newly arrived articles sit *above* the resume point in the New view
+     and were unreachable there. A "↑ New articles above" button now
+     appears when `newest_ts > resume_ts` and jumps the stream to newest
+     (saving your deep position first).
+- Verified live: CNN filtered view went from an invisible-empty stream
+  (29 unread, no dots) to newest-first with dots; pills clear on scroll.
+
 ## [1.0.1] — 2026-10-02
 
 ### Fixed

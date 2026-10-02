@@ -39,9 +39,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     # ------------------------------------------------------------- articles
 
     def _cursor_from_request():
+        """Keyset upper bound. The stored resume cursor ONLY bounds the plain
+        New/all-feeds first page — filters and Since mode start at newest."""
         before_ts = request.args.get("before_ts")
         before_id = int(request.args.get("before_id", 0) or 0)
-        if before_ts is None:
+        unfiltered = (not request.args.get("feed_id")
+                      and not request.args.get("category")
+                      and not request.args.get("since_ts"))
+        if before_ts is None and unfiltered:
             ts = db.get_state(conn, "resume_ts")
             aid = int(db.get_state(conn, "resume_id", "0") or 0)
             if ts:
@@ -82,12 +87,21 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         ts, aid = data.get("ts"), int(data.get("id", 0))
         if not (ts and aid):
             return jsonify({"ok": False, "error": "ts and id required"}), 400
-        for fid in data.get("feeds") or []:
-            try:
-                db.mark_feed_read(conn, int(fid), ts)
-            except (TypeError, ValueError):
-                continue
-        if data.get("global", not data.get("feeds")):  # legacy {ts,id} = global
+        # precise per-feed cursors: {"reads": {"<feed_id>": "<ts>", ...}}
+        reads = data.get("reads")
+        if isinstance(reads, dict) and reads:
+            for fid, rts in reads.items():
+                try:
+                    db.mark_feed_read(conn, int(fid), rts)
+                except (TypeError, ValueError):
+                    continue
+        else:  # back-compat: {feeds: [ids], ts} or legacy global-only payload
+            for fid in data.get("feeds") or []:
+                try:
+                    db.mark_feed_read(conn, int(fid), ts)
+                except (TypeError, ValueError):
+                    continue
+        if data.get("global", not data.get("feeds") and not reads):  # legacy {ts,id} = global
             db.set_state(conn, "resume_ts", ts)
             db.set_state(conn, "resume_id", str(aid))
         return jsonify({"ok": True})

@@ -98,3 +98,44 @@ def test_mixed_format_timestamps_compare_correctly(client, conn):
     db.mark_feed_read(conn, fid, "2026-10-01T00:00:00Z")
     assert conn.execute("SELECT last_read_ts FROM feeds WHERE id=?",
                         (fid,)).fetchone()["last_read_ts"] == "2026-10-02T16:00:00Z"
+
+
+def test_filtered_view_ignores_resume_bounds(client):
+    """Filtered/since views must start at newest: a stale global resume cursor
+    used to hide unread articles inside feed views (pills that never clear)."""
+    fid = seed_api(client)
+    # user's global resume sits on the OLDEST article (2026-10-01T00:00Z)
+    client.post("/api/position", json={"ts": "2026-10-01T00:00:00Z", "id": 1,
+                                       "global": True})
+    # unfiltered New view IS bounded (keyset is strictly-older than resume)
+    titles = [i["title"] for i in
+              client.get("/api/articles?limit=10").get_json()["items"]]
+    assert titles == []
+    # filtered view is NOT bounded: newest first, all 3 visible
+    titles = [i["title"] for i in client.get(
+        f"/api/articles?limit=10&feed_id={fid}").get_json()["items"]]
+    assert titles == ["A2", "A1", "A0"]
+    # since-mode is not bounded either
+    titles = [i["title"] for i in client.get(
+        "/api/articles?limit=10&since_ts=2026-09-01T00:00:00Z"
+    ).get_json()["items"]]
+    assert titles == ["A2", "A1", "A0"]
+
+
+def test_reads_map_precise_per_feed_cursors(client):
+    """Per-feed beacon precision: reads={feed: ts} marks each feed read at its
+    OWN newest-passed card, and does not touch the global cursor."""
+    fid = seed_api(client)
+    fid2 = client.post("/api/feeds", json={"url": "https://ex/2"}).get_json()["id"]
+    conn = client.conn
+    aid = db.upsert_article(conn, fid2, "k1", "l", "B1", "2026-10-02T05:00:00Z")
+    db.set_article(conn, aid, status="ready", summary="s")
+    r = client.post("/api/position", json={
+        "ts": "2026-10-01T00:00:00Z", "id": 1,
+        "reads": {str(fid): "2026-10-03T00:00:00Z"},   # feed1 fully read
+        "global": False})
+    assert r.get_json()["ok"]
+    feeds = {f["id"]: f for f in client.get("/api/feeds").get_json()}
+    assert feeds[fid]["unread"] == 0
+    assert feeds[fid2]["unread"] == 1          # untouched feed stays unread
+    assert client.get("/api/resume").get_json()["resume_ts"] == ""

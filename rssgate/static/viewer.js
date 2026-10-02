@@ -23,7 +23,8 @@
     const d = new Date(); d.setDate(d.getDate() - 7); return dateStr(d);
   }
 
-  let cursor = null, loading = false, exhausted = false, started = false, saveTimer = null;
+  let cursor = null, loading = false, exhausted = false, started = false,
+      saveTimer = null, bootResume = '';
 
   const fmt = ts => {
     const d = new Date(ts), now = new Date();
@@ -120,16 +121,25 @@
     const cutoff = window.scrollY + window.innerHeight * 0.6;
     const passed = cards.filter(c => c.offsetTop <= cutoff);
     if (!passed.length) return;
+    // per-feed cursor = NEWEST passed card of that feed (fast scrolling past
+    // an unread card must still mark it read; one oldest-position beacon did not)
+    const reads = {};
+    for (const c of passed) {
+      const f = c.dataset.feed, t = c.dataset.ts;
+      if (f && (!reads[f] || t > reads[f])) reads[f] = t;
+    }
     const oldest = passed[passed.length - 1];
-    const feeds = [...new Set(passed.map(c => c.dataset.feed))];
     const body = JSON.stringify({
-      ts: oldest.dataset.ts, id: +oldest.dataset.id, feeds,
+      ts: oldest.dataset.ts, id: +oldest.dataset.id, reads,
       global: store.mode === 'new' && !store.feed,
     });
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
       new Blob([body], { type: 'application/json' }))
       || fetch('/api/position', { method: 'POST', body,
           headers: { 'content-type': 'application/json' } });
+    // once the stream has been scrolled past the old resume point, the
+    // "new articles above" hint is no longer relevant on this boot
+    if (oldest.dataset.ts > (bootResume || '')) hideNewAbove();
   }
   function queueSave() { clearTimeout(saveTimer); saveTimer = setTimeout(savePosition, 1200); }
   window.addEventListener('scroll', queueSave, { passive: true });
@@ -207,9 +217,23 @@
     fetch('/api/resume').then(r => r.json()),
     renderFeedFilter(),
   ]).then(([s]) => {
+    bootResume = s.resume_ts || '';
     if (store.mode === 'new' && !store.feed && s.resume_ts && s.newest_ts) {
       cursor = { ts: s.resume_ts, id: +s.resume_id };
+      if (s.newest_ts > s.resume_ts) $('new-above').hidden = false;
     }
+    loadNext();
+  });
+
+  // ---- newer-above jump: resume bounds the New stream, so newly arrived
+  // articles sit above it; this is the one-tap way to reach them ----------
+  function hideNewAbove() { $('new-above').hidden = true; }
+  $('new-above-btn').addEventListener('click', () => {
+    hideNewAbove();
+    savePosition();                 // don't lose the deep-read position
+    stream.innerHTML = ''; cursor = null; exhausted = false; started = false;
+    endBanner.hidden = true;
+    window.scrollTo(0, 0);
     loadNext();
   });
 })();
