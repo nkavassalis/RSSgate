@@ -26,11 +26,14 @@ rssgate/
                         articles: status pending -> processing -> ready
                         |error|hidden; categories = per-post tags;
                         started_at/llm_ms = per-article LLM timing;
-                        image_url (declared) + image (cached filename)
+                        image_url (declared) + image (hero) + images (gallery,
+                        comma filenames)
                         UNIQUE(feed_id, guid)
                         claim_pending() = atomic claim (UPDATE..RETURNING)
                         state table: resume position, queue_peak, cache_hits
                         _migrate() = additive ALTER TABLE migrations on init
+  maint.py              run_all(): retention delete + orphan prune + size cap;
+                        6h loop from run.py; report in state 'maint_report'
   imgstore.py           local image cache: store(url) magic-byte-sniffs and
                         writes data/images/<sha256[:24]>.<ext>; safe_path()
                         gates the /image route. init(dir) from create_app
@@ -79,7 +82,10 @@ CHANGELOG.md            version criteria + history — update on every release
    per-feed) advance FORWARD only. The resume cursor bounds ONLY legacy
    unfiltered no-fresh requests; the viewer boots fresh in newest mode and
    at-resume in oldest mode.
-5. **Threading + sqlite**: each worker opens its OWN connection; a shared
+5. **Image refs are the cache's GC root**: any code deleting articles must
+   return their image filenames (db.delete_old_articles does) and maintenance
+   prunes orphans afterwards. Config `maintenance.*` governs retention/cap.
+6. **Threading + sqlite**: each worker opens its OWN connection; a shared
    handle across threads corrupts commit state (this stranded articles in
    'processing' once — see stale-requeue).
 6. Status `hidden` is terminal-but-reversible via the sponsored toggle;

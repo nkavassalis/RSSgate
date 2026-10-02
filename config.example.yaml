@@ -67,3 +67,8 @@ ui:
   # oldest = chronological catch-up (continue at your position, read
   # forward to now). Editable in the admin panel.
   order: newest
+
+# Maintenance: article retention + image cache hygiene (also in the admin panel)
+maintenance:
+  retention_months: 0        # 0 = keep articles forever; N = delete older than N months
+  images_max_mb: 0           # 0 = unlimited; N = prune <data_dir>/images to ~N MB

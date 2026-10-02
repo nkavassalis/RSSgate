@@ -167,6 +167,19 @@ extractor, dedupes by content hash, and shows the cleaned text in the reader
 with a dashed `raw` chip. Re-checking the box re-queues that feed's raw items
 for proper digesting. Sponsored-filter behavior applies in both modes.
 
+## Maintenance (retention & cache hygiene)
+
+Admin panel → **Maintenance**:
+
+- **Keep articles for** — *forever* (default) or 1/3/6/12/24 months. Older
+  articles (any status) are deleted along with their image references.
+- **Image cache cap** — unlimited by default, or trim `<data_dir>/images`
+  oldest-first to roughly N MB (dangling references are cleaned up).
+- Orphaned cache files (no article references them) are always pruned.
+
+Maintenance runs once at startup and every 6 hours, or on demand from the
+panel / `POST /api/maintenance/run`. Reports show in the panel.
+
 ## Sponsored content filter (per feed)
 
 Off by default. Tick **Ad filter** on a feed in the admin panel (or send

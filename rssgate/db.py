@@ -84,6 +84,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE articles ADD COLUMN image_url TEXT")
     if "image" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN image TEXT")
+    if "images" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN images TEXT NOT NULL DEFAULT ''")
 
 
 def norm_ts(value):
@@ -359,6 +361,7 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                    f.id AS feed_id, f.title AS feed_title, f.description AS feed_description,
                    f.categories AS categories, f.auto_categories AS auto_categories,
                    a.categories AS post_categories, a.image AS image,
+                   a.images AS gallery,
                    f.summarize AS feed_summarize,
                    CASE WHEN COALESCE(f.last_read_ts, '') = '' THEN 1
                         WHEN {_TS_EXPR} > f.last_read_ts THEN 1 ELSE 0 END AS unread
@@ -439,6 +442,58 @@ def find_summary_by_hash(conn, body_hash: str) -> sqlite3.Row | None:
 
 
 # ---------------------------------------------------------------- state / usage
+
+def delete_old_articles(conn, months: int) -> tuple[int, set[str]]:
+    """Delete articles older than `months` (approx 30.44-day months) across
+    all statuses. Returns (deleted_count, image filenames they referenced)."""
+    if months <= 0:
+        return 0, set()
+    days = int(months * 30.44)
+    cutoff = (datetime.datetime.now(datetime.timezone.utc)
+              - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    expr = "COALESCE(published_at, fetched_at)"
+    rows = conn.execute(
+        f"DELETE FROM articles WHERE {expr} < ?"
+        " RETURNING image, images", (cutoff,)).fetchall()
+    conn.commit()
+    files: set[str] = set()
+    for r in rows:
+        if r["image"]:
+            files.add(r["image"])
+        for name in (r["images"] or "").split(","):
+            if name:
+                files.add(name)
+    return len(rows), files
+
+
+def referenced_images(conn) -> set[str]:
+    """Every image filename any article still references."""
+    out: set[str] = set()
+    for r in conn.execute("SELECT image, images FROM articles"
+                          " WHERE image IS NOT NULL OR images != ''"):
+        if r["image"]:
+            out.add(r["image"])
+        for name in (r["images"] or "").split(","):
+            if name:
+                out.add(name)
+    return out
+
+
+def clear_image_refs(conn, pruned: set[str]) -> None:
+    """Null/drop references to deleted cache files."""
+    if not pruned:
+        return
+    for r in conn.execute("SELECT id, image, images FROM articles"
+                          " WHERE image IS NOT NULL OR images != ''"):
+        img = None if (not r["image"] or r["image"] in pruned) else r["image"]
+        names = [n for n in (r["images"] or "").split(",")
+                 if n and n not in pruned]
+        joined = ",".join(names)
+        if img != r["image"] or joined != (r["images"] or ""):
+            conn.execute("UPDATE articles SET image=?, images=? WHERE id=?",
+                         (img, joined, r["id"]))
+    conn.commit()
+
 
 def set_state(conn, key: str, value: str) -> None:
     if key in ("resume_ts", "oldest_seen") and value:

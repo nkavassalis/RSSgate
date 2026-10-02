@@ -31,6 +31,18 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.7.0] — 2026-10-02
+
+### Added
+- **In-body galleries**: hero + up to 3 content images cached per article
+  (same token-free pipeline); rendered as a strip under the digest linking
+  to the original.
+- **Maintenance** (admin panel + `GET/POST /api/maintenance[/run]`):
+  article retention in months (default forever) with image-ref cleanup,
+  image-cache size cap (oldest-first, dangling refs cleared), orphan-file
+  pruning. Runs at startup and every 6 h; report surfaced in the panel.
+- New config section `maintenance: {retention_months, images_max_mb}`.
+
 ## [1.6.1] — 2026-10-02
 
 ### Fixed

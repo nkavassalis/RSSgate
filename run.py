@@ -54,6 +54,16 @@ def main():
             backfill_images(bconn, cfg)
     _th.Thread(target=_image_backfill, daemon=True).start()
 
+    def _maintenance():
+        import contextlib
+        from rssgate import maint
+        import time
+        time.sleep(120)          # after startup poll + image backfill
+        with contextlib.closing(db.connect(db_path)) as mconn:
+            maint.run_all(mconn, load_config(args.config))
+        maint.loop(lambda: db.connect(db_path), args.config)
+    _th.Thread(target=_maintenance, daemon=True).start()
+
     print(f"RSSgate listening on http://{cfg['server']['host']}:{cfg['server']['port']}")
     app.run(host=cfg["server"]["host"], port=int(cfg["server"]["port"]),
             threaded=True, debug=False)

@@ -55,6 +55,10 @@ DEFAULTS: dict = {
             "only."
         ),
     },
+    "maintenance": {
+        "retention_months": 0,           # 0 = forever
+        "images_max_mb": 0,              # 0 = unlimited
+    },
     "ui": {
         "theme": "auto",              # auto | light | dark
         "items_per_page": 20,

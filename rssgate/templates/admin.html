@@ -109,6 +109,30 @@
   </section>
 
   <section class="panel">
+    <h2>Maintenance</h2>
+    <div class="grid2">
+      <label>Keep articles for
+        <select id="cfg-retention">
+          <option value="0">forever (default)</option>
+          <option value="1">1 month</option>
+          <option value="3">3 months</option>
+          <option value="6">6 months</option>
+          <option value="12">12 months</option>
+          <option value="24">24 months</option>
+        </select></label>
+      <label>Image cache cap (MB, 0 = unlimited)
+        <input id="cfg-imgcap" type="number" min="0" step="50"></label>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="maint-run-btn">Run maintenance now</button>
+      <span id="maint-result" class="hint"></span>
+    </div>
+    <p class="hint">Retention deletes articles older than the window (all statuses)
+      and their now-orphaned images. The cache cap trims oldest files first.
+      Runs automatically every 6 hours and once at startup.</p>
+  </section>
+
+  <section class="panel">
     <h2>Work queue</h2>
     <p class="hint" id="wq-summary">–</p>
     <div id="wq-current" class="wq-current"></div>

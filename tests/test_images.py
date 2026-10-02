@@ -137,3 +137,26 @@ def test_backfill_uses_declared_urls_free(conn, cfg, tmp_path, monkeypatch):
     both = conn.execute("SELECT image FROM articles WHERE image IS NOT NULL"
                         " ").fetchall()
     assert len(both) == 2
+
+
+def test_gallery_stored_and_exposed(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(imgstore, "_dir", tmp_path / "images")
+    (tmp_path / "images").mkdir(exist_ok=True)
+    html = ARTICLE_HTML.replace(
+        "<p>", '<img src="https://cdn.x/second.png"><p>')
+    def fake_get(url, **kw):
+        if url.endswith((".jpg", ".png")):
+            return FakeResp(PNG if url.endswith(".png") else JPEG)
+        return FakeResp(text=html)
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = client.post("/api/feeds", json={"url": "https://ex/g"}).get_json()["id"]
+    conn = client.conn
+    aid = db.upsert_article(conn, fid, "g", "https://blog.example/post",
+                            "T", "2026-10-02T00:00:00Z")
+    n = refresh.summarize_pending(conn, load_config("__no_such__.yaml"),
+                                  FakeImgLLM(), limit=1)   # DEFAULTS suffice
+    assert n == 1
+    item = client.get("/api/articles?limit=1").get_json()["items"][0]
+    assert item["image"] and len(item["gallery"]) >= 2
+    for g in item["gallery"]:
+        assert client.get(f"/image/{g}").status_code == 200

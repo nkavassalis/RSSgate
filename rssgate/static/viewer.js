@@ -58,6 +58,11 @@
       : a.status === 'error'
         ? `<div class="unsummarized">\u26a0 could not summarize \u2014 <a href="${esc(a.link)}">read original</a></div>`
         : `<div class="unsummarized">\u23f3 waiting for AI transcription\u2026</div>`;
+    const extra = (a.gallery || []).filter(g => g !== a.image).slice(0, 3);
+    const gallery = extra.length
+      ? `<div class="gallery">${extra.map(g =>
+          `<a href="${esc(a.link)}" target="_blank" rel="noopener"><img src="/image/${esc(g)}" loading="lazy" alt=""></a>`).join('')}</div>`
+      : '';
     const thumb = a.image
       ? `<img class="card-thumb" src="/image/${esc(a.image)}" alt="" loading="lazy">`
       : '';
@@ -68,7 +73,7 @@
       ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
-      ${body}</article>`;
+      ${body}${gallery}</article>`;
   }
 
   // ---- viewed = read: dwelling on an unread card marks it seen, even with

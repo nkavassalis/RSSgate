@@ -7,7 +7,7 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 
 | Method/Path | Description |
 |---|---|
-| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive *or* inclusive-newer in oldest mode), `before_id`, `limit` (≤100), `feed_id`, `category` (repeatable; multi = OR; exact tag membership), `since_ts` (ISO floor, inclusive — powers “Since” mode; `from_date` YYYY-MM-DD accepted as sugar), `order` (`newest`|`oldest`, defaults to configured `ui.order`). Defaults to stored resume position when no cursor given (back-compat); `fresh=1` opts out and starts at newest - the viewer always sends it on boot. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[], image}], has_more, next}`. |
+| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive *or* inclusive-newer in oldest mode), `before_id`, `limit` (≤100), `feed_id`, `category` (repeatable; multi = OR; exact tag membership), `since_ts` (ISO floor, inclusive — powers “Since” mode; `from_date` YYYY-MM-DD accepted as sugar), `order` (`newest`|`oldest`, defaults to configured `ui.order`). Defaults to stored resume position when no cursor given (back-compat); `fresh=1` opts out and starts at newest - the viewer always sends it on boot. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[], image, gallery[]}], has_more, next}`. |
 | `POST /api/position` | Save read state. Body `{ts, id, reads?, global}` — `reads` is a `{feed_id: ts}` map advancing per-feed read cursors precisely; `global:true` also moves the New-view resume cursor (legacy `{ts,id}` or `{feeds:[ids]}` payloads still work). Resume cursor bounds only the unfiltered New first page; filtered/since views always start at newest. |
 | `GET /api/resume` | `{resume_ts, resume_id, newest_ts, order}` — client boot call. |
 
@@ -43,6 +43,8 @@ New categories are created simply by assigning them to a feed.
 | `GET /api/usage` | `{today, month, all_time}` total tokens. |
 | `GET /api/llm/stats` | Performance snapshot: `{queue, queue_peak, errors, cache_hits, calls_today, tokens_today, avg_seconds, min_seconds, max_seconds, est_drain_minutes, last_call_ts}`. |
 | `GET /api/workqueue` | Live work queue: `{current:[{id,title,started_at,feed_title,link}], recent:[{id,title,status,summarized_at,llm_ms,tokens_in,tokens_out,feed_title}], working, queue_ahead}`. |
+| `GET /api/maintenance` | `{report, config}` — last maintenance run + retention/cache settings. |
+| `POST /api/maintenance/run` | Run maintenance synchronously (retention delete, orphan prune, cache cap) and return the report. |
 | `POST /api/images/backfill` | Kick a background token-free hero-image backfill over existing articles. |
 | `GET /image/<name>` | Serve a locally cached article image. Only hash-named cache files (`[0-9a-f]{24}.(jpg|png|webp|gif)`) resolve; everything else 404s. Immutable cache headers. |
 

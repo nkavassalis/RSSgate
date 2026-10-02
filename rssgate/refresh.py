@@ -122,20 +122,21 @@ def system_prompt(cfg) -> str:
 
 
 def _cache_image(conn, art, page_html: str) -> str | None:
-    """Best-effort hero image for one article: prefer the URL the feed
-    declared (free); else the first candidate from the page HTML we already
-    fetched. Cached locally forever. Never raises; returns filename."""
+    """Best-effort images for one article: the URL the feed declared (free)
+    or ALL plausible candidates from the page HTML we already fetched (hero
+    + up to 3 gallery). Cached locally forever; first stored = hero.
+    Never raises; returns the hero filename."""
     try:
-        url = art["image_url"] if "image_url" in art.keys() else None
-        if not url:
-            cands = extract_images(page_html or "", art["link"])
-            url = cands[0] if cands else None
-        if not url:
+        decl = art["image_url"] if "image_url" in art.keys() else None
+        urls = [decl] if decl else extract_images(page_html or "", art["link"])[:4]
+        if not urls:
             return None
-        fname = imgstore.store(url)
-        if fname:
-            db.set_article(conn, art["id"], image=fname, image_url=url)
-        return fname
+        names = [n for n in (imgstore.store(u) for u in urls) if n]
+        if not names:
+            return None
+        db.set_article(conn, art["id"], image=names[0], image_url=urls[0],
+                       images=",".join(names))
+        return names[0]
     except Exception:  # noqa: BLE001 - images are decorative
         return None
 

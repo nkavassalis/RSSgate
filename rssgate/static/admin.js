@@ -179,6 +179,9 @@ async function loadConfig() {
   $('cfg-feed-min').value = cfg.polling.feed_interval_minutes;
   $('cfg-page-min').value = cfg.polling.page_interval_minutes;
   $('cfg-order').value = (cfg.ui && cfg.ui.order) || 'newest';
+  const maint = cfg.maintenance || {};
+  $('cfg-retention').value = String(maint.retention_months ?? 0);
+  $('cfg-imgcap').value = maint.images_max_mb ?? 0;
   $('cfg-length').value = cfg.summarizer.length;
   $('cfg-max-chars').value = cfg.summarizer.max_input_chars;
   $('cfg-concurrency').value = cfg.summarizer.concurrency ?? 2;
@@ -200,6 +203,8 @@ $('save-btn').addEventListener('click', async () => {
     polling: { feed_interval_minutes: +$('cfg-feed-min').value,
                page_interval_minutes: +$('cfg-page-min').value },
     ui: { order: $('cfg-order').value },
+    maintenance: { retention_months: +$('cfg-retention').value,
+                   images_max_mb: +$('cfg-imgcap').value },
     summarizer: { length: $('cfg-length').value,
                   max_input_chars: +$('cfg-max-chars').value,
                   concurrency: +$('cfg-concurrency').value,
@@ -288,3 +293,27 @@ async function renderLlmStats() {
 renderFeeds(); renderCategories(); loadConfig(); renderUsage(); renderLlmStats(); renderWorkqueue();
 setInterval(() => { renderUsage(); renderLlmStats(); }, 15000);
 setInterval(renderWorkqueue, 5000);
+
+// ------------------------------------------------------------------ maintenance
+function fmtMaint(r) {
+  if (!r || !r.ts) return 'never run';
+  const bits = [];
+  if (r.deleted_articles) bits.push(`${r.deleted_articles} articles deleted`);
+  if (r.orphans_removed) bits.push(`${r.orphans_removed} orphan files (${r.orphans_freed_mb} MB)`);
+  if (r.cache_trimmed) bits.push(`cache trimmed ${r.cache_trimmed} files (${r.cache_trimmed_mb} MB)`);
+  bits.push(`cache now ${r.cache_mb} MB`);
+  return `${r.ts.slice(0, 16).replace('T', ' ')} — ` + (r.ok ? bits.join(', ') : 'failed: ' + r.error);
+}
+(async () => {
+  try {
+    const r = await api('/api/maintenance');
+    $('maint-result').textContent = fmtMaint(r.report);
+  } catch { /* endpoint down */ }
+})();
+$('maint-run-btn').addEventListener('click', async () => {
+  $('maint-result').textContent = 'running…';
+  try {
+    const r = await api('/api/maintenance/run', { method: 'POST' });
+    $('maint-result').textContent = fmtMaint(r);
+  } catch (e) { $('maint-result').textContent = '✗ ' + e.message; }
+});

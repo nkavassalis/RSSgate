@@ -84,6 +84,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "auto_categories": parse_categories(r["auto_categories"]),
                 "post_categories": parse_categories(r["post_categories"]),
                 "image": r["image"],
+                "gallery": [g for g in (r["gallery"] or "").split(",") if g],
                 "unread": bool(r["unread"]),
             })
         return jsonify({"items": items, "has_more": has_more,
@@ -340,6 +341,17 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 backfill_images(bconn, load_config(config_path))
         threading.Thread(target=_go, daemon=True).start()
         return jsonify({"ok": True, "started": True})
+
+    @app.route("/api/maintenance")
+    def api_maintenance():
+        from . import maint
+        return jsonify({"report": maint.last_report(conn),
+                        "config": load_config(config_path)["maintenance"]})
+
+    @app.route("/api/maintenance/run", methods=["POST"])
+    def api_maintenance_run():
+        from . import maint
+        return jsonify(maint.run_all(conn, load_config(config_path)))
 
     @app.route("/api/status")
     def api_status():
