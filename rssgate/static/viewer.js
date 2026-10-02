@@ -26,6 +26,8 @@
   function cardHtml(a) {
     const cats = [...(a.auto_categories || []), ...(a.categories || [])]
       .map(c => `<span class="chip">${esc(c)}</span>`).join(' ');
+    const raw = a.feed_summarize === false
+      ? ' <span class="chip raw" title="shown as extracted, no LLM used">raw</span>' : '';
     const sub = a.feed_description && a.feed_description !== a.feed_title
       ? `<div class="feed-sub">${esc(a.feed_description)}</div>` : '';
     const body = a.status === 'ready' && a.summary
@@ -34,7 +36,7 @@
         ? `<div class="unsummarized">⚠ could not summarize — <a href="${esc(a.link)}">read original</a></div>`
         : `<div class="unsummarized">⏳ waiting for AI transcription…</div>`;
     return `<article class="card" data-ts="${esc(a.ts)}" data-id="${a.id}">
-      <div class="card-meta"><span class="feed-title">${esc(a.feed_title || '—')}</span>
+      <div class="card-meta"><span class="feed-title">${esc(a.feed_title || '—')}</span>${raw}
         ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time></div>
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>

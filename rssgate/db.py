@@ -68,6 +68,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(feeds)")}
     if "hide_sponsored" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
+    if "summarize" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN summarize INTEGER NOT NULL DEFAULT 1")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
     if "llm_ms" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN llm_ms INTEGER NOT NULL DEFAULT 0")
@@ -206,7 +208,8 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                    {_TS_EXPR.replace('published_at', 'a.published_at').replace('fetched_at', 'a.fetched_at')} AS ts,
                    a.published_at, a.fetched_at, a.tokens_in, a.tokens_out,
                    f.id AS feed_id, f.title AS feed_title, f.description AS feed_description,
-                   f.categories AS categories, f.auto_categories AS auto_categories
+                   f.categories AS categories, f.auto_categories AS auto_categories,
+                   f.summarize AS feed_summarize
             FROM articles a JOIN feeds f ON f.id = a.feed_id
             WHERE {' AND '.join(where)}
             ORDER BY ts DESC, a.id DESC LIMIT ?""",

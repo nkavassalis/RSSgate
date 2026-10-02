@@ -26,9 +26,11 @@ async function renderFeeds() {
           ? `<span class="auto-cat">feed says: ${esc(f.auto_categories.join(', '))}</span>`
           : ''}
       </td>
-      <td style="text-align:center">
-        <input type="checkbox" data-role="spons" style="width:auto"
-               ${f.hide_sponsored ? 'checked' : ''}>
+      <td style="text-align:center; white-space:nowrap">
+        <label style="display:inline; margin:0"><input type="checkbox" data-role="llm" style="width:auto"
+          ${f.summarize === 0 ? '' : 'checked'} title="Use LLM digest (unchecked = show raw extracted text, zero tokens)"> LLM</label>
+        <label style="display:inline; margin:0 0 0 8px"><input type="checkbox" data-role="spons" style="width:auto"
+          ${f.hide_sponsored ? 'checked' : ''} title="Hide sponsored posts before they reach the LLM"> Ads</label>
         ${f.hidden_count ? `<div class="auto-cat">${f.hidden_count} hidden</div>` : ''}
       </td>
       <td>${f.article_count}</td>
@@ -46,6 +48,7 @@ async function renderFeeds() {
       if (btn.dataset.act === 'save')
         await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(
           { categories: tr.querySelector('[data-role=cats]').value.split(','),
+            summarize: tr.querySelector('[data-role=llm]').checked,
             hide_sponsored: tr.querySelector('[data-role=spons]').checked }) });
       if (btn.dataset.act === 'del' && confirm('Delete this feed and its articles?'))
         await api(`/api/feeds/${id}`, { method: 'DELETE' });

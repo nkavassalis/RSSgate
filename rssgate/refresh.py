@@ -142,12 +142,32 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                 db.set_article(conn, art["id"], status="error", summary=None)
                 continue
             body_hash = hashlib.sha256(text.encode()).hexdigest()
+            if feed and not feed["summarize"]:
+                # raw mode: cleaned extracted text IS the digest (zero tokens)
+                if feed["hide_sponsored"] and SPONSORED_DIGEST_RE.search(text[:400]):
+                    db.set_article(conn, art["id"], status="hidden")
+                    continue
+                db.set_article(conn, art["id"], summary=text, status="ready",
+                                body_hash=body_hash, summarized_at=db.now_iso(),
+                                llm_ms=0)
+                done += 1
+                continue
             cached = db.find_summary_by_hash(conn, body_hash)
             if cached:
                 db.set_article(conn, art["id"], summary=cached["summary"],
                                status="ready", body_hash=body_hash,
                                summarized_at=db.now_iso(), llm_ms=0)
                 db.incr_state(conn, "cache_hits")  # zero-token reuse counter
+                done += 1
+                continue
+            if feed and not feed["summarize"]:
+                # raw mode: cleaned extracted text IS the digest (zero tokens)
+                if feed["hide_sponsored"] and SPONSORED_DIGEST_RE.search(text[:400]):
+                    db.set_article(conn, art["id"], status="hidden")
+                    continue
+                db.set_article(conn, art["id"], summary=text,
+                               status="ready", body_hash=body_hash,
+                               summarized_at=db.now_iso(), llm_ms=0)
                 done += 1
                 continue
             user = (f"Feed: {feed['title'] or feed['url']}\n"

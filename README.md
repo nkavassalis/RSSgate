@@ -91,6 +91,16 @@ title in the viewer:
 - **User-assigned** — managed entirely from the admin panel: assign per feed,
   and globally **create / rename / remove** categories.
 
+## Raw mode (per feed, zero LLM tokens)
+
+Some feeds don't need an AI digest — a plain blog or a text-only site is
+already clean reading. Uncheck **LLM** for a feed in the admin panel (or
+`{"summarize": false}` to `PUT /api/feeds/<id>`) and RSSgate still does
+everything that matters for free: fetches the page, strips ads/chrome with the
+extractor, dedupes by content hash, and shows the cleaned text in the reader
+with a dashed `raw` chip. Re-checking the box re-queues that feed's raw items
+for proper digesting. Sponsored-filter behavior applies in both modes.
+
 ## Sponsored content filter (per feed)
 
 Off by default. Tick **Ad filter** on a feed in the admin panel (or send

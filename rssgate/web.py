@@ -66,6 +66,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "summary": r["summary"], "status": r["status"], "ts": r["ts"],
                 "feed_id": r["feed_id"], "feed_title": r["feed_title"],
                 "feed_description": r["feed_description"],
+                "feed_summarize": bool(r["feed_summarize"]),
                 "categories": parse_categories(r["categories"]),
                 "auto_categories": parse_categories(r["auto_categories"]),
             })
@@ -146,6 +147,12 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 c.strip() for c in data["categories"] if c.strip())
         if "enabled" in data:
             fields["enabled"] = 1 if data["enabled"] else 0
+        if "summarize" in data:
+            want = 1 if data["summarize"] else 0
+            if want and not feed["summarize"]:   # raw -> LLM: re-digest the feed
+                conn.execute("UPDATE articles SET status='pending'"
+                             " WHERE feed_id=? AND status='ready' AND llm_ms=0", (fid,))
+            fields["summarize"] = want
         if "hide_sponsored" in data:
             fields["hide_sponsored"] = 1 if data["hide_sponsored"] else 0
             if not data["hide_sponsored"]:  # un-hide everything when flag goes off
