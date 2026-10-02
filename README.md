@@ -33,6 +33,18 @@ cp config.example.yaml config.yaml     # optional; run.py generates defaults
 | `page` (bare web page) | `https://lite.cnn.com/` (text-only CNN, no RSS anywhere on the page) | No structured feed: the page's article links are extracted with an LLM and treated like feed items. Skipped entirely when the page bytes haven't changed. Gets its own, longer poll timer. |
 | `auto` | any URL | Probed once; result stored. |
 
+## Post images (locally cached)
+
+Cards show a hero thumbnail when one exists. RSSgate takes it from what the
+feed *already declares* (media:thumbnail / og:image / image enclosures —
+free) or, for raw & digested articles, from the page HTML it was fetching
+anyway — **zero extra LLM tokens**. Every image is downloaded once, sniffed
+for real image bytes (magic bytes, ≤5 MB), stored under
+`<data_dir>/images/<sha256-of-URL>.<ext>` and served from our own
+`GET /image/<name>` route (hash-named files only — no SSRF, no traversal,
+immutable cache headers). Existing articles keep whatever they had; images
+accumulate from the moment you upgrade.
+
 ## Token efficiency (the point of the design)
 
 - An article is summarized **exactly once**; guid-dedupe means existing

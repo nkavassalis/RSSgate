@@ -170,3 +170,12 @@ textarea { resize:vertical; }
 .cat-filter .chip.active { background:var(--accent); border-color:var(--accent);
   color:#fff; }
 .cat-filter .chip.active small { color:rgba(255,255,255,.8); }
+
+/* article hero thumbnails (locally cached) */
+.card-thumb { float:right; width:132px; max-width:38vw; max-height:132px;
+  object-fit:cover; border-radius:10px; margin:2px 0 10px 14px;
+  border:1px solid var(--line); background:var(--chip); }
+.card::after { content:""; display:block; clear:both; }
+@media (max-width:640px) {
+  .card-thumb { width:96px; max-height:96px; margin:0 0 8px 10px; }
+}

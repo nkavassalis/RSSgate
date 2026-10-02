@@ -8,6 +8,8 @@ import re
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
 
+from bs4 import BeautifulSoup
+
 import feedparser
 import requests
 
@@ -110,6 +112,31 @@ def _collect_categories(parsed) -> list[str]:
     return entry_cats[:8]
 
 
+def entry_image(e) -> str | None:
+    """Hero image URL an entry declares (free, no page fetch needed):
+    media:thumbnail / media:content / image:frontpage / enclosure(image/*)
+    / first <img> in inline content."""
+    for key in ("media_thumbnail", "media_content"):
+        for item in e.get(key) or []:
+            u = item.get("url") if isinstance(item, dict) else None
+            if u:
+                return u
+    img = e.get("image")
+    if isinstance(img, dict) and img.get("url"):
+        return img["url"]
+    for enc in e.get("enclosures") or []:
+        if str(enc.get("type", "")).startswith("image/") and enc.get("href"):
+            return enc["href"]
+    for c in e.get("content") or []:
+        html = c.get("value") if isinstance(c, dict) else None
+        if html:
+            soup = BeautifulSoup(html, "html.parser")
+            im = soup.find("img", src=True)
+            if im:
+                return im["src"]
+    return None
+
+
 def fetch_feed(url: str, etag: str | None = None, last_modified: str | None = None) -> dict:
     """Fetch & parse an RSS/Atom feed.
     Returns {ok, changed, not_modified?, meta:{title,description,categories},
@@ -133,6 +160,7 @@ def fetch_feed(url: str, etag: str | None = None, last_modified: str | None = No
             "title": (e.get("title") or "").strip() or "(untitled)",
             "published_at": _entry_pubdate(e),
             "categories": _entry_categories(e),
+            "image": entry_image(e),
         })
     meta = {
         "title": (parsed.feed.get("title") or "").strip(),

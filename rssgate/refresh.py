@@ -8,8 +8,9 @@ import re
 import time
 
 from . import db
+from . import imgstore
 from .config import LENGTH_TARGETS
-from .extract import extract_article_text, page_title
+from .extract import extract_article_text, extract_images, page_title
 from .fetcher import fetch_feed, fetch_page, discover_page_articles, probe
 
 log = logging.getLogger("rssgate.refresh")
@@ -67,7 +68,8 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
         added = 0
         for e in res["entries"]:
             if db.upsert_article(conn, feed_id, e["guid"], e["link"], e["title"],
-                                 e["published_at"], e.get("categories")):
+                                 e["published_at"], e.get("categories"),
+                                 e.get("image")):
                 added += 1
         log.info("feed %s: %d new articles", url, added)
         return f"ok ({added} new)"
@@ -119,6 +121,24 @@ def system_prompt(cfg) -> str:
     return summ["system_prompt"].replace("{length}", target)
 
 
+def _cache_image(conn, art, page_html: str) -> None:
+    """Best-effort hero image for one article: prefer the URL the feed
+    declared (free); else the first candidate from the page HTML we already
+    fetched. Cached locally forever. Never raises."""
+    try:
+        url = art["image_url"] if "image_url" in art.keys() else None
+        if not url:
+            cands = extract_images(page_html or "", art["link"])
+            url = cands[0] if cands else None
+        if not url:
+            return
+        fname = imgstore.store(url)
+        if fname:
+            db.set_article(conn, art["id"], image=fname, image_url=url)
+    except Exception:  # noqa: BLE001 - images are decorative
+        pass
+
+
 def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
     """Run claimed articles through the LLM exactly once, unless their content
     hash shows we already have a digest for identical text (cache hit = 0 tokens).
@@ -141,6 +161,7 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             if len(text) < 120:
                 db.set_article(conn, art["id"], status="error", summary=None)
                 continue
+            _cache_image(conn, art, resp.text)
             body_hash = hashlib.sha256(text.encode()).hexdigest()
             if feed and not feed["summarize"]:
                 # raw mode: cleaned extracted text IS the digest (zero tokens)

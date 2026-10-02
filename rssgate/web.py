@@ -4,7 +4,9 @@ from __future__ import annotations
 import os
 import threading
 
-from flask import Flask, jsonify, render_template, request
+from flask import (
+    Flask, abort, jsonify, make_response, render_template, request,
+    send_file)
 
 from . import db
 from .config import load_config, save_config, masked_config, DEFAULTS, _merge
@@ -17,6 +19,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     cfg = load_config(config_path)
     data_dir = cfg["server"]["data_dir"]
     os.makedirs(data_dir, exist_ok=True)
+    from . import imgstore
+    imgstore.init(os.path.join(data_dir, "images"))
     if conn is None:
         conn = db.connect(os.path.join(data_dir, "rssgate.sqlite"))
         db.init_db(conn)
@@ -79,6 +83,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "categories": parse_categories(r["categories"]),
                 "auto_categories": parse_categories(r["auto_categories"]),
                 "post_categories": parse_categories(r["post_categories"]),
+                "image": r["image"],
                 "unread": bool(r["unread"]),
             })
         return jsonify({"items": items, "has_more": has_more,
@@ -150,7 +155,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         url = (data.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return jsonify({"error": "url must start with http(s)://"}), 400
-        cats = [c.strip() for c in (data.get("categories") or []) if c.strip()]
+        cats = [c.strip().lower() for c in (data.get("categories") or []) if c.strip()]
         try:
             feed_row = db.add_feed(conn, url, data.get("type", "auto"), "", cats)
         except Exception as exc:  # unique constraint etc.
@@ -182,7 +187,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         fields = {}
         if "categories" in data:
             fields["categories"] = ",".join(
-                c.strip() for c in data["categories"] if c.strip())
+                c.strip().lower() for c in data["categories"] if c.strip())
         if "enabled" in data:
             fields["enabled"] = 1 if data["enabled"] else 0
         if "summarize" in data:
@@ -234,7 +239,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def api_rename_category():
         data = request.get_json(force=True)
         old = (data.get("from") or "").strip()
-        new = (data.get("to") or "").strip()
+        new = (data.get("to") or "").strip().lower()
         if not old or not new:
             return jsonify({"error": "from and to are required"}), 400
         n = db.rename_category(conn, old, new)
@@ -311,6 +316,17 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             results = refresh_all(conn, load_config(config_path), llm())
         threading.Thread(target=_bg, daemon=True).start()
         return jsonify({"started": True})
+
+    @app.route("/image/<name>")
+    def image_route(name):
+        """Serve a locally cached article image (hash-named files only)."""
+        p = imgstore.safe_path(name)
+        if p is None:
+            abort(404)
+        from flask import make_response
+        resp = make_response(send_file(p))
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
 
     @app.route("/api/status")
     def api_status():

@@ -80,6 +80,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE articles ADD COLUMN llm_ms INTEGER NOT NULL DEFAULT 0")
     if "started_at" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN started_at TEXT")
+    if "image_url" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN image_url TEXT")
+    if "image" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN image TEXT")
 
 
 def norm_ts(value):
@@ -202,47 +206,72 @@ def _cat_effective_sql() -> str:
     return "(" + _cat_sql("a.categories") + " OR " + _cat_sql("f.categories") + ")"
 
 
+def _variant_map(rows) -> dict[str, str]:
+    """casefold-key -> display variant: the spelling that appears most often
+    across the given comma-strings (ties: case-sensitive alphabetical)."""
+    from collections import Counter
+    freq: Counter = Counter()
+    for raw in rows:
+        freq.update(parse_categories(raw))
+    best: dict[str, tuple] = {}
+    for name, n in freq.items():
+        k = name.casefold()
+        rank = (n, name[0].isupper(), name)   # frequent, then Title-case wins
+        if k not in best or rank > best[k]:
+            best[k] = rank
+    return {k: v[2] for k, v in best.items()}
+
+
 def category_list(conn) -> list[dict]:
-    """Category names that the filter can actually match (per-post tags and
-    user-assigned feed labels) with visible-article counts. Exact comma
-    membership, not substrings; zero-count names are never listed."""
-    names: set[str] = set()
-    for row in conn.execute(
+    """Category names the filter can actually match (per-post tags and
+    user-assigned feed labels) with visible-article counts. Case-insensitive:
+    'Tech News' and 'tech news' share ONE entry (modal spelling) and one
+    count. Exact comma membership, not substrings; zero-count: not listed."""
+    variants = _variant_map(
+        r["c"] for r in conn.execute(
             "SELECT categories c FROM feeds WHERE categories != ''"
-            " UNION SELECT categories FROM articles WHERE categories != ''"):
-        names |= set(parse_categories(row["c"]))
+            " UNION ALL SELECT categories FROM articles WHERE categories != ''"))
     out = []
-    for n in sorted(names):
+    for k in sorted(variants):
         cnt = conn.execute(
             "SELECT COUNT(*) c FROM articles a JOIN feeds f ON f.id=a.feed_id"
             " WHERE a.status != 'hidden' AND " + _cat_effective_sql(),
-            (n, n)).fetchone()["c"]
-        out.append({"name": n, "count": cnt}) if cnt else None
+            (k, k)).fetchone()["c"]
+        out.append({"name": variants[k], "count": cnt}) if cnt else None
     return out
 
 
 def all_categories(conn) -> list[dict]:
-    """Distinct user-assigned categories with usage counts."""
-    counts: dict[str, int] = {}
+    """Distinct user-assigned categories with usage counts, case-insensitive
+    grouping (modal spelling displayed)."""
+    variants = _variant_map(
+        r["categories"] for r in conn.execute(
+            "SELECT categories FROM feeds WHERE categories != ''"))
+    counts = {k: 0 for k in variants}
     for row in conn.execute("SELECT categories FROM feeds"):
-        for cat in parse_categories(row["categories"]):
-            counts[cat] = counts.get(cat, 0) + 1
-    return sorted(({"name": k, "count": v} for k, v in counts.items()),
-                  key=lambda d: d["name"])
+        for cat in {c.casefold() for c in parse_categories(row["categories"])}:
+            counts[cat] += 1
+    return sorted(({"name": variants[k], "count": counts[k]}
+                   for k in variants if counts[k]),
+                  key=lambda d: d["name"].casefold())
 
 
 def rename_category(conn, old: str, new: str) -> int:
-    """Rename (or create-and-reassign) a category across all feeds."""
+    """Rename (or create-and-reassign) a category across all feeds.
+    Case-insensitive on both ends: every stored variant of `old` is replaced."""
+    old_cf, new_cf = old.casefold(), new.casefold()
     touched = 0
     for row in conn.execute("SELECT id, categories FROM feeds"):
         cats = parse_categories(row["categories"])
-        if old in cats:
-            cats = [new if c == old else c for c in cats]
-            # dedupe, preserve order
+        if any(c.casefold() == old_cf for c in cats):
+            cats = [new if c.casefold() == old_cf else c for c in cats]
+            # dedupe (case-insensitively), preserve order
             seen: list[str] = []
+            seen_cf = set()
             for c in cats:
-                if c not in seen:
+                if c.casefold() not in seen_cf:
                     seen.append(c)
+                    seen_cf.add(c.casefold())
             conn.execute("UPDATE feeds SET categories=? WHERE id=?",
                          (",".join(seen), row["id"]))
             touched += 1
@@ -251,11 +280,13 @@ def rename_category(conn, old: str, new: str) -> int:
 
 
 def remove_category(conn, name: str) -> int:
+    """Remove a category everywhere, case-insensitively (all stored variants)."""
+    name_cf = name.casefold()
     touched = 0
     for row in conn.execute("SELECT id, categories FROM feeds"):
         cats = parse_categories(row["categories"])
-        if name in cats:
-            cats = [c for c in cats if c != name]
+        if any(c.casefold() == name_cf for c in cats):
+            cats = [c for c in cats if c.casefold() != name_cf]
             conn.execute("UPDATE feeds SET categories=? WHERE id=?",
                          (",".join(cats), row["id"]))
             touched += 1
@@ -266,9 +297,11 @@ def remove_category(conn, name: str) -> int:
 # ---------------------------------------------------------------- articles
 
 def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
-                   published_at: str | None, categories: list[str] | None = None) -> int | None:
-    """Insert a new article (with its own category tags). Returns its id, or
-    None if already known -- known articles get refreshed category tags only."""
+                   published_at: str | None, categories: list[str] | None = None,
+                   image_url: str | None = None) -> int | None:
+    """Insert a new article (with its own category tags and any declared hero
+    image URL). Returns its id, or None if already known -- known articles get
+    refreshed category tags only."""
     cats = ",".join(categories or [])
     published_at = norm_ts(published_at) if published_at else None
     known = conn.execute("SELECT 1 FROM articles WHERE feed_id=? AND guid=?",
@@ -281,8 +314,8 @@ def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
         return None
     cur = conn.execute(
         "INSERT INTO articles(feed_id, guid, link, title, published_at, fetched_at,"
-        " categories, status) VALUES(?,?,?,?,?,?,?, 'pending')",
-        (feed_id, guid, link, title, published_at, now_iso(), cats))
+        " categories, image_url, status) VALUES(?,?,?,?,?,?,?, ?, 'pending')",
+        (feed_id, guid, link, title, published_at, now_iso(), cats, image_url))
     conn.commit()
     return cur.lastrowid
 
@@ -325,7 +358,8 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                    a.published_at, a.fetched_at, a.tokens_in, a.tokens_out,
                    f.id AS feed_id, f.title AS feed_title, f.description AS feed_description,
                    f.categories AS categories, f.auto_categories AS auto_categories,
-                   a.categories AS post_categories, f.summarize AS feed_summarize,
+                   a.categories AS post_categories, a.image AS image,
+                   f.summarize AS feed_summarize,
                    CASE WHEN COALESCE(f.last_read_ts, '') = '' THEN 1
                         WHEN {_TS_EXPR} > f.last_read_ts THEN 1 ELSE 0 END AS unread
             FROM articles a JOIN feeds f ON f.id = a.feed_id

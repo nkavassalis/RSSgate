@@ -70,3 +70,23 @@ def test_api(client):
     assert {"name": "ai", "count": 1} in data
     admin = client.get("/api/categories").get_json()            # scope intact
     assert {d["name"] for d in admin} == {"technology", "cooking", "ghost"}
+
+
+def test_case_insensitive_chips_and_ops(conn):
+    # same category stored with two spellings (feed label lc, post tag tc)
+    f1 = db.add_feed(conn, "https://ex/mixed", categories=["tech news"])["id"]
+    a1 = db.upsert_article(conn, f1, "g1", "l1", "T1", None, categories=["Tech News"])
+    a2 = db.upsert_article(conn, f1, "g2", "l2", "T2", None, categories=["tech news"])
+    for a in (a1, a2):
+        db.set_article(conn, a, status="ready", summary="s")
+    lst = [d for d in db.category_list(conn) if d["name"].casefold() == "tech news"]
+    assert len(lst) == 1 and lst[0]["count"] == 2       # ONE merged chip
+    # filter works from either spelling
+    assert len(db.articles_page(conn, limit=10, category="Tech News")) == 2
+    assert len(db.articles_page(conn, limit=10, category="tech news")) == 2
+    # admin list merges user-assigned variants too
+    adm = [d for d in db.all_categories(conn) if d["name"].casefold() == "tech news"]
+    assert len(adm) == 1 and adm[0]["count"] == 1       # one FEED uses it
+    # remove kills every spelling
+    assert db.remove_category(conn, "Tech News") == 1
+    assert db.get_feed(conn, f1)["categories"] == ""

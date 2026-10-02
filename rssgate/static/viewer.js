@@ -58,10 +58,14 @@
       : a.status === 'error'
         ? `<div class="unsummarized">\u26a0 could not summarize \u2014 <a href="${esc(a.link)}">read original</a></div>`
         : `<div class="unsummarized">\u23f3 waiting for AI transcription\u2026</div>`;
+    const thumb = a.image
+      ? `<img class="card-thumb" src="/image/${esc(a.image)}" alt="" loading="lazy">`
+      : '';
     return `<article class="card${a.unread ? ' unread' : ''}" data-ts="${esc(a.ts)}"
         data-id="${a.id}" data-feed="${a.feed_id}">
       <div class="card-meta">${a.unread ? '<span class="newdot" title="unread"></span>' : ''}<span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
         ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time></div>
+      ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
       ${body}</article>`;

@@ -85,3 +85,40 @@ def extract_candidate_links(html: str, base_url: str) -> list[dict]:
         seen.add(href)
         out.append({"title": title[:300], "link": href})
     return out[:60]
+
+
+def extract_images(html: str, base_url: str) -> list[str]:
+    """Candidate hero images from an article page: og:image / twitter:image
+    first, then the first plausible content <img>. Junk/icon-ish sources and
+    data URIs are skipped; returns absolute URLs, best first, max 4."""
+    soup = BeautifulSoup(html, "html.parser")
+    out: list[str] = []
+
+    def add(u):
+        if not u:
+            return
+        u = urljoin(base_url, u.strip())
+        if u.startswith(("http://", "https://")) and u not in out:
+            out.append(u)
+
+    for attrs in ({"property": "og:image"}, {"property": "og:image:url"},
+                  {"name": "twitter:image"}):
+        m = soup.find("meta", attrs=attrs)
+        if m and m.get("content"):
+            add(m["content"])
+    for img in soup.find_all("img", limit=40):
+        src = img.get("src") or img.get("data-src") or img.get("data-original")
+        if not src or src.startswith("data:"):
+            continue
+        blob = " ".join(filter(None, [str(img.get("class", "")),
+                                      str(img.get("id", "")), src]))
+        if JUNK_RE.search(blob):
+            continue
+        for dim in ("width", "height"):
+            v = str(img.get(dim) or "")
+            digits = "".join(ch for ch in v if ch.isdigit())
+            if digits and int(digits) < 150:
+                src = None
+                break
+        add(src)
+    return out[:4]

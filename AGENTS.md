@@ -26,12 +26,16 @@ rssgate/
                         articles: status pending -> processing -> ready
                         |error|hidden; categories = per-post tags;
                         started_at/llm_ms = per-article LLM timing;
+                        image_url (declared) + image (cached filename)
                         UNIQUE(feed_id, guid)
                         claim_pending() = atomic claim (UPDATE..RETURNING)
                         state table: resume position, queue_peak, cache_hits
                         _migrate() = additive ALTER TABLE migrations on init
+  imgstore.py           local image cache: store(url) magic-byte-sniffs and
+                        writes data/images/<sha256[:24]>.<ext>; safe_path()
+                        gates the /image route. init(dir) from create_app
   extract.py            article-text extraction (junk class/id regex that
-                        NEVER strips <body>/<html>), candidate link harvest
+                        NEVER strips <body>/<html>), candidate link harvest; extract_images() = og/twitter image + first plausible content <img>
   llm.py                LLMClient: chat(model= override)/list_models()/
                         resolve_model(). openai-compatible (local/openai/
                         openrouter) + anthropic. extra_body passthrough.

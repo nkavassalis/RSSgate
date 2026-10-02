@@ -31,6 +31,18 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.5.0] — 2026-10-02
+
+### Added
+- **Post images, cached and served locally.** Hero image per article from
+  feed-declared URLs (media:thumbnail/og:image/enclosures — free) or the
+  page HTML already fetched during digest/raw extraction (zero LLM tokens).
+  Downloads are magic-byte verified, size-capped (5 MB), stored hash-named
+  under `<data_dir>/images/` and served via `GET /image/<name>` (whitelist
+  regex, immutable caching, no traversal/SSRF surface). Articles gained
+  `image_url`/`image` columns (additive migration); `/api/articles` items
+  expose `image`; reader cards render a lazy thumbnail.
+
 ## [1.4.0] — 2026-10-02
 
 ### Changed
