@@ -22,6 +22,7 @@ class LLMClient:
         self.base_url = (llm.get("base_url") or "").rstrip("/")
         self.api_key = expand_env(llm.get("api_key", ""))
         self.model = llm.get("model") or ""
+        self.extra_body = llm.get("extra_body") or {}
 
     # ----------------------------------------------------------- models
 
@@ -61,17 +62,21 @@ class LLMClient:
             headers["authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def chat(self, messages: list[dict], max_tokens: int = 1200) -> tuple[str, dict]:
-        """messages: [{'role','content'}]. Returns (text, {prompt_tokens, completion_tokens})."""
+    def chat(self, messages: list[dict], max_tokens: int = 1200,
+             model: str = "") -> tuple[str, dict]:
+        """messages: [{'role','content'}]. model overrides the configured model
+        (per-purpose). Returns (text, {prompt_tokens, completion_tokens})."""
         if self.provider == "anthropic":
-            return self._chat_anthropic(messages, max_tokens)
-        return self._chat_openai(messages, max_tokens)
+            return self._chat_anthropic(messages, max_tokens, model)
+        return self._chat_openai(messages, max_tokens, model)
 
-    def _chat_openai(self, messages, max_tokens) -> tuple[str, dict]:
-        model = self.resolve_model()
+    def _chat_openai(self, messages, max_tokens, model_override="") -> tuple[str, dict]:
+        model = model_override or self.resolve_model()
         if not model:
             raise LLMError("no model configured and auto-selection failed")
         body = {"model": model, "messages": messages, "max_tokens": max_tokens}
+        if self.extra_body:
+            body.update(self.extra_body)
         resp = requests.post(f"{self.base_url}/chat/completions", json=body,
                              headers=self._headers(), timeout=TIMEOUT)
         if resp.status_code != 200:
@@ -82,8 +87,8 @@ class LLMClient:
         return text, {"prompt_tokens": int(usage.get("prompt_tokens", 0)),
                       "completion_tokens": int(usage.get("completion_tokens", 0))}
 
-    def _chat_anthropic(self, messages, max_tokens) -> tuple[str, dict]:
-        model = self.model or "claude-sonnet-4-5"
+    def _chat_anthropic(self, messages, max_tokens, model_override="") -> tuple[str, dict]:
+        model = model_override or self.model or "claude-sonnet-4-5"
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         turns = [m for m in messages if m["role"] != "system"]
         body = {"model": model, "max_tokens": max_tokens, "system": system, "messages": turns}

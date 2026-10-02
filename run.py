@@ -26,15 +26,21 @@ def main():
 
     cfg = load_config(args.config)
     os.makedirs(cfg["server"]["data_dir"], exist_ok=True)
-    conn = db.connect(os.path.join(cfg["server"]["data_dir"], "rssgate.sqlite"))
+    db_path = os.path.join(cfg["server"]["data_dir"], "rssgate.sqlite")
+    conn = db.connect(db_path)
     db.init_db(conn)
     app = create_app(args.config, conn=conn)
-    sched = Scheduler(conn, cfg, lambda: LLMClient(load_config(args.config)))
+    sched = Scheduler(conn, cfg, lambda: LLMClient(load_config(args.config)),
+                      db_path=db_path)
     if cfg["polling"]["fetch_on_start"]:
         from rssgate.refresh import refresh_all
         import threading
-        threading.Thread(target=lambda: refresh_all(
-            conn, cfg, LLMClient(cfg)), daemon=True).start()
+
+        def _startup_poll():
+            import contextlib
+            with contextlib.closing(db.connect(db_path)) as pconn:
+                refresh_all(pconn, cfg, LLMClient(cfg))
+        threading.Thread(target=_startup_poll, daemon=True).start()
     sched.start()
 
     print(f"RSSgate listening on http://{cfg['server']['host']}:{cfg['server']['port']}")

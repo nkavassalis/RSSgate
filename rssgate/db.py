@@ -329,7 +329,9 @@ def llm_stats(conn) -> dict:
     cache_hits = int(get_state(conn, "cache_hits", "0") or 0)
     s = one("SELECT COUNT(*) n, COALESCE(AVG(duration_ms),0) avg_ms,"
             " COALESCE(MIN(duration_ms),0) min_ms, COALESCE(MAX(duration_ms),0) max_ms"
-            " FROM token_usage WHERE purpose='summarize' AND duration_ms > 0")
+            " FROM (SELECT duration_ms FROM token_usage"
+            "       WHERE purpose='summarize' AND duration_ms > 0"
+            "       ORDER BY id DESC LIMIT 50)")
     t = one("SELECT COUNT(*) calls, COALESCE(SUM(total_tokens),0) tokens"
             " FROM token_usage WHERE day = date('now')")
     avg_s = s["avg_ms"] / 1000.0

@@ -32,7 +32,7 @@ def client(tmp_path, monkeypatch):
     # stub the LLM client used by /api/llm/test and /api/models
     import rssgate.llm as llm_mod
     monkeypatch.setattr(llm_mod.LLMClient, "chat",
-                        lambda self, messages, max_tokens=1200:
+                        lambda self, messages, max_tokens=1200, model="":
                         ("OK", {"prompt_tokens": 5, "completion_tokens": 1}))
     monkeypatch.setattr(llm_mod.LLMClient, "list_models", lambda self: ["alpha", "beta"])
     from rssgate.web import create_app

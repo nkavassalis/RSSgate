@@ -158,7 +158,7 @@ DISCOVER_PROMPT = (
 )
 
 
-def discover_page_articles(html: str, base_url: str, llm) -> list[dict]:
+def discover_page_articles(html: str, base_url: str, llm, model: str = "") -> dict:
     """For pages without feeds: harvest candidate links, let the LLM pick the real
     articles. Falls back to raw candidates if the LLM call fails."""
     candidates = extract_candidate_links(html, base_url)
@@ -168,7 +168,8 @@ def discover_page_articles(html: str, base_url: str, llm) -> list[dict]:
     try:
         prompt = DISCOVER_PROMPT.replace(
             "{candidates}", json.dumps(slim, ensure_ascii=False)[:16000])
-        text, usage = llm.chat([{"role": "user", "content": prompt}], max_tokens=800)
+        text, usage = llm.chat([{"role": "user", "content": prompt}], max_tokens=800,
+                               model=model)
         match = re.search(r"\[.*\]", text, re.S)
         picked = json.loads(match.group(0)) if match else []
         valid = [p for p in picked

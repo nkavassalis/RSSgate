@@ -19,7 +19,7 @@ class FakeLLM:
     provider = "local"
     model = "m"
     calls = 0
-    def chat(self, messages, max_tokens=1200):
+    def chat(self, messages, max_tokens=1200, model=""):
         FakeLLM.calls += 1
         return ("DIGEST TEXT " + str(FakeLLM.calls)), {"prompt_tokens": 50, "completion_tokens": 10}
 

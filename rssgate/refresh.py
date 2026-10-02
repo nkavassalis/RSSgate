@@ -16,6 +16,10 @@ log = logging.getLogger("rssgate.refresh")
 LENGTH_TARGETS = LENGTH_TARGETS  # re-export for tests
 
 
+def _purpose_model(cfg, key: str) -> str:
+    return (cfg.get("llm", {}).get(key) or "").strip()
+
+
 def refresh_feed(conn, feed, cfg, llm=None) -> str:
     """Fetch one feed/page. Returns a status string. Never summarizes here;
     new articles are queued as 'pending' for the summarizer."""
@@ -64,7 +68,8 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
     if llm is None:
         return "error: LLM required for bare pages"
     disc_started = time.perf_counter()
-    disc = discover_page_articles(res["html"], url, llm)
+    disc = discover_page_articles(res["html"], url, llm,
+                                  model=_purpose_model(cfg, "model_discover"))
     disc_ms = int((time.perf_counter() - disc_started) * 1000)
     db.log_usage(conn, llm.provider, llm.model or "auto",
                  disc["usage"]["prompt_tokens"], disc["usage"]["completion_tokens"],
@@ -131,7 +136,8 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             digest, usage = llm.chat(
                 [{"role": "system", "content": system_prompt(cfg)},
                  {"role": "user", "content": user}],
-                max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)))
+                max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)),
+                model=_purpose_model(cfg, "model_summarize"))
             dur_ms = int((time.perf_counter() - t0) * 1000)
             db.log_usage(conn, llm.provider, llm.model or "auto",
                          usage["prompt_tokens"], usage["completion_tokens"],

@@ -94,6 +94,8 @@ async function loadConfig() {
   $('cfg-base-url').value = cfg.llm.base_url || '';
   $('cfg-api-key').placeholder = cfg.llm.api_key_set ? '(unchanged)' : 'not set';
   $('cfg-model').value = cfg.llm.model || '';
+  $('cfg-model-discover').value = cfg.llm.model_discover || '';
+  $('cfg-extra-body').value = JSON.stringify(cfg.llm.extra_body ?? {}, null, 1);
   $('cfg-feed-min').value = cfg.polling.feed_interval_minutes;
   $('cfg-page-min').value = cfg.polling.page_interval_minutes;
   $('cfg-length').value = cfg.summarizer.length;
@@ -112,7 +114,8 @@ async function loadConfig() {
 $('save-btn').addEventListener('click', async () => {
   const patch = {
     llm: { provider: $('cfg-provider').value, base_url: $('cfg-base-url').value.trim(),
-           model: $('cfg-model').value },
+           model: $('cfg-model').value,
+           model_discover: $('cfg-model-discover').value.trim() },
     polling: { feed_interval_minutes: +$('cfg-feed-min').value,
                page_interval_minutes: +$('cfg-page-min').value },
     summarizer: { length: $('cfg-length').value,
@@ -122,6 +125,11 @@ $('save-btn').addEventListener('click', async () => {
   };
   const key = $('cfg-api-key').value.trim();
   if (key) patch.llm.api_key = key;
+  const ebRaw = $('cfg-extra-body').value.trim();
+  if (ebRaw) {
+    try { patch.llm.extra_body = JSON.parse(ebRaw); }
+    catch { alert('Extra request body must be valid JSON'); return; }
+  }
   await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
   $('save-result').textContent = 'saved ✓';
   setTimeout(() => $('save-result').textContent = '', 3000);

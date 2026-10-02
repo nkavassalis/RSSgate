@@ -17,6 +17,16 @@ llm:
   # Model name. Leave empty to auto-select: if the endpoint serves exactly
   # one model it is used by default, otherwise pick one in the admin panel.
   model: ""
+  # Optional per-purpose models (empty = use `model`). Digesting is extractive
+  # work that doesn't need reasoning; bare-page discovery benefits from it.
+  model_summarize: ""
+  model_discover: ""
+  # Extra JSON merged into chat requests (openai-compatible providers only).
+  # For `local` the default disables thinking tokens on vLLM/Qwen3-style
+  # servers (digests don't need them; they cost latency you'd rather not pay).
+  # Set to {} for strict endpoints that reject unknown parameters.
+  extra_body:
+    chat_template_kwargs: {enable_thinking: false}
 
 polling:
   # Minutes between fetches. Bare web pages are far more token intensive,

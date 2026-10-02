@@ -69,6 +69,18 @@ cp config.example.yaml config.yaml     # optional; run.py generates defaults
 `llm.api_key` supports `env:VARNAME` so secrets can stay out of the file.
 The key is never echoed to the browser (the API returns `***`).
 
+### Tuning thinking tokens (local reasoning servers)
+
+Digesting is extractive work — it does not benefit from chain-of-thought, and
+thinking tokens dominate both cost and latency. For `provider: local`, RSSgate
+by default sends `chat_template_kwargs: {enable_thinking: false}` with every
+chat request (vLLM/SGLang-style servers), which on our hardware cut a gizmodo
+digest from **51.8 s / 3,127 output tokens to 7.4 s / 405** with equal quality.
+Set `llm.extra_body: {}` if your server rejects the parameter. Per-purpose
+model overrides (`llm.model_summarize`, `llm.model_discover`) let a cheap
+instruct model do the digesting while a reasoning model handles bare-page
+discovery, when you have more than one model available.
+
 ## Categories
 
 Feeds can be categorized two ways, both displayed as chips next to the feed

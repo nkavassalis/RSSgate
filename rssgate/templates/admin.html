@@ -60,6 +60,10 @@
         <select id="cfg-model"><option value="">auto</option></select></label>
       <label>Base URL <input id="cfg-base-url" placeholder="http://host:port/v1"></label>
       <label>API key <input id="cfg-api-key" type="password" placeholder="unchanged"></label>
+      <label>Discovery model <span class="hint">(optional; bare-page article picking. Empty = same as above)</span>
+        <input id="cfg-model-discover" placeholder="e.g. a reasoning model"></label>
+      <label>Extra request body JSON <span class="hint">(openai-compatible only; default disables thinking for local reasoning servers — set <code>{}</code> to send nothing extra)</span>
+        <textarea id="cfg-extra-body" rows="2" spellcheck="false"></textarea></label>
     </div>
     <div class="row">
       <button class="btn" id="llm-test-btn">Test connection</button>

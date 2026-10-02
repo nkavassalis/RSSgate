@@ -22,6 +22,14 @@ DEFAULTS: dict = {
         "base_url": "http://10.1.13.99:8000/v1",
         "api_key": "",
         "model": "",                  # empty => auto-select (single model endpoint)
+        # Optional per-purpose model overrides (empty => use `model`).
+        "model_summarize": "",
+        "model_discover": "",
+        # Extra JSON merged into every chat request body (openai-compatible
+        # providers only). For local vLLM/Qwen3-style servers the default
+        # disables thinking tokens: digests don't need them and they dominate
+        # latency/cost. Remove (set {}) for strict servers that reject it.
+        "extra_body": {},
     },
     "polling": {
         "feed_interval_minutes": 30,
@@ -77,14 +85,23 @@ def expand_env(value: str) -> str:
     return value or ""
 
 
+NO_THINK_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
 def load_config(path: str = "config.yaml") -> dict:
     cfg = copy.deepcopy(DEFAULTS)
+    file_cfg: dict = {}
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as fh:
             file_cfg = yaml.safe_load(fh) or {}
         if not isinstance(file_cfg, dict):
             raise ValueError(f"config file {path} must contain a YAML mapping")
         cfg = _merge(cfg, file_cfg)
+    # sensible default for self-hosted reasoning endpoints: disable thinking
+    # unless the user configured extra_body explicitly
+    explicit = (file_cfg.get("llm") or {}).get("extra_body")
+    if explicit is None and cfg["llm"]["provider"] == "local":
+        cfg["llm"]["extra_body"] = copy.deepcopy(NO_THINK_EXTRA_BODY)
     return cfg
 
 

@@ -77,7 +77,7 @@ def test_discover_page_articles_parses_llm_json(monkeypatch):
     </body></html>"""
     class FakeLLM:
         provider = "local"; model = "m"
-        def chat(self, messages, max_tokens=1200):
+        def chat(self, messages, max_tokens=1200, model=""):
             return ('here you go:\n[{"title": "Real Article One With Long Title", '
                     '"link": "https://ex.com/posts/real-article-one-with-long-title"}] junk',
                     {"prompt_tokens": 10, "completion_tokens": 2})

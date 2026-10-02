@@ -1,6 +1,7 @@
 """Background scheduler: polls feeds/pages on their own timers, digests in batches."""
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -8,11 +9,14 @@ from concurrent.futures import ThreadPoolExecutor
 from . import db
 from .refresh import refresh_feed, summarize_pending
 
+log = logging.getLogger("rssgate.scheduler")
+
 
 class Scheduler(threading.Thread):
-    def __init__(self, conn, cfg, llm_factory, tick_seconds: int = 30):
+    def __init__(self, conn, cfg, llm_factory, tick_seconds: int = 30, db_path: str = ""):
         super().__init__(daemon=True, name="rssgate-scheduler")
         self.conn = conn
+        self.db_path = db_path   # workers open per-call connections
         self.cfg = cfg
         self.llm_factory = llm_factory
         self.tick = tick_seconds
@@ -55,12 +59,20 @@ class Scheduler(threading.Thread):
         try:
             llm = llm or self.llm_factory()
             workers = max(1, int(self.cfg["summarizer"].get("concurrency", 2)))
+
+            def _worker(_):
+                # one connection per thread: shared sqlite handles corrupt
+                # commit state under interleaved transactions
+                if not self.db_path:
+                    return summarize_pending(self.conn, self.cfg, llm, limit=1)
+                import contextlib
+                with contextlib.closing(db.connect(self.db_path)) as wconn:
+                    return summarize_pending(wconn, self.cfg, llm, limit=1)
+
             for _ in range(4):  # rounds; each round runs `workers` in parallel
                 with ThreadPoolExecutor(max_workers=workers) as pool:
-                    results = list(pool.map(
-                        lambda _: summarize_pending(self.conn, self.cfg, llm, limit=1),
-                        range(workers)))
+                    results = list(pool.map(_worker, range(workers)))
                 if sum(results) == 0:
                     break
         except Exception:  # noqa: BLE001
-            pass
+            log.exception("summarize round failed")

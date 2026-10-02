@@ -54,7 +54,7 @@ def test_summarize_records_duration_and_processing_state(conn, cfg, monkeypatch)
 
     class SlowLLM:
         provider = "local"; model = "m"
-        def chat(self, messages, max_tokens=1200):
+        def chat(self, messages, max_tokens=1200, model=""):
             time.sleep(0.05)
             return "digest", {"prompt_tokens": 10, "completion_tokens": 2}
 
