@@ -282,3 +282,19 @@ def test_force_backfill_replaces_existing(conn, tmp_path, monkeypatch):
 def test_backfill_route_accepts_force(client):
     r = client.post("/api/images/backfill", json={"force": True})
     assert r.get_json() == {"ok": True, "started": True}
+
+
+def test_junk_ancestors_rejected():
+    """Sidebar/related-post modules leak images even when the <img> tag
+    itself looks innocent - junk words in the ancestor chain reject."""
+    from rssgate.extract import extract_images
+    html = """<html><head><meta property="og:image" content="/hero.jpg"></head>
+    <body><main><article><h1>T</h1>
+    <p>text</p><img src="/real.png" width="900" height="500">
+    <ul class="related-posts"><li><a href="/x">
+      <img src="/other-post.jpg" width="400" height="225"></a></li></ul>
+    <div class="newsletter-promo"><img src="/promo.jpg"></div>
+    </article></main></body></html>"""
+    urls = extract_images(html, "https://blog.example/post")
+    assert urls == ["https://blog.example/hero.jpg",
+                    "https://blog.example/real.png"]

@@ -31,6 +31,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.9.3] — 2026-10-02
+
+### Fixed
+- **Sidebar/related-post image leaks**: junk markers (related, promo,
+  sidebar, newsletter...) are now checked in the img's 4-ancestor chain,
+  not just the tag itself; content-image scanning is scoped to the
+  article root (the <article>/<main>/entry-content containing the <h1>)
+  when identifiable, chrome tags (aside/nav/header/footer) always rejected,
+  and whole-page fallback enforces an after-<h1> positional floor.
+  Fixes other posts' thumbnails entering galleries (Gizmodo).
+
 ## [1.9.2] — 2026-10-02
 
 ### Fixed

@@ -94,12 +94,50 @@ AVATAR_RE = re.compile(
     r"signature|reaction|face[-_/]|\?s=\d{1,3}\b|&s=\d{1,3}\b)", re.I)
 
 
+CHROME_TAGS = ("aside", "nav", "header", "footer")
+ROOT_CLASS_RE = re.compile(
+    r"(entry|post|article)[-_ ]?(content|body|text)|article[-_]?main|"
+    r"^content$|^article-body$", re.I)
+
+
+def _in_chrome(img) -> bool:
+    el = img
+    for _ in range(12):
+        el = el.parent
+        if el is None:
+            break
+        if el.name in CHROME_TAGS:
+            return True
+    return False
+
+
+def _content_root(soup):
+    """The container holding the real article body, when identifiable:
+    the <article>/<main>/entry-content ancestor of the <h1> first, then
+    the text-heaviest candidate, else None (whole-page scan)."""
+    h1 = soup.find("h1")
+    cands = [el for el in soup.find_all(["article", "main"])
+             if el.find("img") is not None]
+    if h1 is not None:
+        for el in cands:
+            if h1 in el.descendants:
+                return el
+        for el in soup.find_all(attrs={"class": ROOT_CLASS_RE}):
+            if h1 in el.descendants and el.find("img") is not None:
+                return el
+    for el in cands:
+        if h1 is None and len(el.get_text()) > 800:
+            return el
+    return None
+
+
 def extract_images(html: str, base_url: str) -> list[str]:
     """Candidate hero/gallery images from an article page: og:image /
-    twitter:image first, then plausible content <img>s. Avatars, author-box
-    faces, comment-user pics, icons/emojis/logos and tiny or square-small
-    images are rejected by inspecting the tag, its alt text, and up to four
-    ancestor class/id levels. Returns absolute URLs, best first, max 8."""
+    twitter:image first, then content <img>s. Content images are scoped to
+    the article root (<article>/<main>/entry-content when present), never
+    inside chrome tags (aside/nav/header/footer), never before the <h1>,
+    and must survive the avatar/icon/size filter. Returns absolute URLs,
+    best first, max 8."""
     soup = BeautifulSoup(html, "html.parser")
     out: list[str] = []
 
@@ -121,7 +159,7 @@ def extract_images(html: str, base_url: str) -> list[str]:
                  str(img.get("src") or img.get("data-src") or ""),
                  str(img.get("alt", "")), str(img.get("title", ""))]
         el = img
-        for _ in range(4):                      # ancestor context scan
+        for _ in range(4):
             el = el.parent
             if el is None or el.name in (None, "body", "html"):
                 break
@@ -130,21 +168,32 @@ def extract_images(html: str, base_url: str) -> list[str]:
         blob = " ".join(parts)
         if AVATAR_RE.search(blob):
             return True
-        if JUNK_RE.search(" ".join([str(img.get("class", "")),
-                                     str(img.get("id", "")),
-                                     str(img.get("src", ""))])):
+        if JUNK_RE.search(blob):          # junk anywhere in the 4-ancestor chain
             return True
         w = "".join(c for c in str(img.get("width") or "") if c.isdigit())
         h = "".join(c for c in str(img.get("height") or "") if c.isdigit())
         if w and int(w) < 150:
             return True
-        if w and h and w == h and int(w) <= 200:   # square+smallish = avatar
+        if w and h and w == h and int(w) <= 200:
             return True
         return False
 
-    for img in soup.find_all("img", limit=60):
+    h1 = soup.find("h1")
+    root = _content_root(soup)
+    scope = root if root is not None else soup
+    # positional floor: content images live after the headline
+    order = {id(el): i for i, el in enumerate(soup.find_all(True))}
+    floor = order.get(id(h1), -1) if h1 is not None else -1
+
+    for img in scope.find_all("img", limit=60):
         src = img.get("src") or img.get("data-src") or img.get("data-original")
-        if not src or src.startswith("data:") or reject(img):
+        if not src or src.startswith("data:"):
+            continue
+        if _in_chrome(img):
+            continue
+        if root is None and h1 is not None and order.get(id(img), 0) <= floor:
+            continue
+        if reject(img):
             continue
         add(src)
     return out[:8]

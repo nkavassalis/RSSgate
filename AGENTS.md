@@ -38,7 +38,7 @@ rssgate/
                         writes data/images/<sha256[:24]>.<ext>; safe_path()
                         gates the /image route. init(dir) from create_app
   extract.py            article-text extraction (junk class/id regex that
-                        NEVER strips <body>/<html>), candidate link harvest; extract_images() = og/twitter + content imgs with AVATAR_RE tag/alt/4-ancestor filtering
+                        NEVER strips <body>/<html>), candidate link harvest; extract_images() = og/twitter first; content imgs scoped to h1-ancestor article root, AVATAR_RE+JUNK_RE over 4-ancestor chain, chrome tags rejected, after-h1 floor
   llm.py                LLMClient: chat(model= override)/list_models()/
                         resolve_model(). openai-compatible (local/openai/
                         openrouter) + anthropic. extra_body passthrough.
