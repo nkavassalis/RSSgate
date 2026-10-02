@@ -24,7 +24,7 @@
   }
 
   let cursor = null, loading = false, exhausted = false, started = false,
-      saveTimer = null, bootResume = '';
+      saveTimer = null, bootResume = '', order = 'newest';
 
   const fmt = ts => {
     const d = new Date(ts), now = new Date();
@@ -66,9 +66,10 @@
   async function loadNext() {
     if (loading || exhausted) return;
     loading = true;
-    const params = new URLSearchParams({ limit: PAGE });
+    const params = new URLSearchParams({ limit: PAGE, order });
     if (cursor) { params.set('before_ts', cursor.ts); params.set('before_id', cursor.id); }
-    else if (store.mode === 'new' && !store.feed) params.set('fresh', '1');
+    else if (store.mode === 'new' && !store.feed && order === 'newest')
+      params.set('fresh', '1');   // oldest mode: no fresh => continue at resume
     if (store.feed) params.set('feed_id', store.feed);
     if (store.mode === 'since') params.set('since_ts', store.since + 'T00:00:00Z');
     const res = await fetch('/api/articles?' + params);
@@ -94,10 +95,11 @@
 
   function showEnd() {
     endBanner.hidden = false;
-    if (store.mode === 'since') {
+    if (store.mode === 'since' || order === 'oldest') {
       $('end-new').hidden = true; $('end-since').hidden = false;
-      $('end-since-text').textContent =
-        `That's everything since ${store.since}.`;
+      $('end-since-text').textContent = store.mode === 'since'
+        ? `That's everything since ${store.since}.`
+        : "You're all caught up — new arrivals appear at the end of this list.";
     } else {
       $('end-new').hidden = false; $('end-since').hidden = true;
       $('jump-date').value = yesterdayStr();
@@ -129,9 +131,13 @@
       const f = c.dataset.feed, t = c.dataset.ts;
       if (f && (!reads[f] || t > reads[f])) reads[f] = t;
     }
-    const oldest = passed[passed.length - 1];
+    // newest mode: resume = deepest (oldest) card passed;
+    // oldest mode: resume = frontier (newest) card passed
+    let pos = passed[passed.length - 1];
+    if (order === 'oldest')
+      for (const c of passed) if (c.dataset.ts > pos.dataset.ts) pos = c;
     const body = JSON.stringify({
-      ts: oldest.dataset.ts, id: +oldest.dataset.id, reads,
+      ts: pos.dataset.ts, id: +pos.dataset.id, reads,
       global: store.mode === 'new' && !store.feed,
     });
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
@@ -216,10 +222,12 @@
     renderFeedFilter(),
   ]).then(([s]) => {
     bootResume = s.resume_ts || '';
+    order = s.order === 'oldest' ? 'oldest' : 'newest';
     // Stream ALWAYS boots at newest (what "caught up" means).
-    // The saved resume position becomes an explicit "continue" option.
-    if (store.mode === 'new' && !store.feed && s.resume_ts && s.newest_ts
-        && s.resume_ts < s.newest_ts) {
+    // The saved resume position becomes an explicit "continue" option —
+    // except in oldest mode, where continuing at resume IS the boot.
+    if (order === 'newest' && store.mode === 'new' && !store.feed
+        && s.resume_ts && s.newest_ts && s.resume_ts < s.newest_ts) {
       const d = s.resume_ts.slice(0, 10);
       $('new-above-btn').innerHTML =
         `&#8681; Continue reading from ${d}`;

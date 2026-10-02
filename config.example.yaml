@@ -63,3 +63,7 @@ ui:
   # 'auto' follows the OS/browser dark-mode setting; 'light'/'dark' force it.
   theme: auto
   items_per_page: 20
+  # Stream direction. newest = classic reverse-chronological scroller;
+  # oldest = chronological catch-up (continue at your position, read
+  # forward to now). Editable in the admin panel.
+  order: newest

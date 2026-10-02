@@ -58,6 +58,7 @@ DEFAULTS: dict = {
     "ui": {
         "theme": "auto",              # auto | light | dark
         "items_per_page": 20,
+        "order": "newest",            # newest | oldest (chronological catch-up)
     },
 }
 

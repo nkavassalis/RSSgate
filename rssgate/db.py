@@ -257,15 +257,21 @@ _TS_EXPR = "COALESCE(published_at, fetched_at)"
 
 def articles_page(conn, before_ts: str | None = None, before_id: int | None = None,
                   limit: int = 20, feed_id: int | None = None,
-                  category: str | None = None, since_ts: str | None = None) -> list[sqlite3.Row]:
-    """Reverse-chronological page of articles older than (before_ts, before_id),
-    optionally floored at since_ts (inclusive)."""
+                  category: str | None = None, since_ts: str | None = None,
+                  order: str = "newest") -> list[sqlite3.Row]:
+    """Page of articles. order='newest': reverse-chronological, cursor is an
+    exclusive UPPER bound (older-than). order='oldest': chronological, cursor
+    is an exclusive LOWER bound (newer-than) — the catch-up flow.
+    Optionally floored at since_ts (inclusive)."""
     where, params = ["a.status != 'hidden'"], []
     if since_ts is not None:
         where.append(f"{_TS_EXPR} >= ?")
         params.append(since_ts)
     if before_ts is not None:
-        where.append(f"({_TS_EXPR} < ? OR ({_TS_EXPR} = ? AND a.id < ?))")
+        if order == "oldest":
+            where.append(f"({_TS_EXPR} > ? OR ({_TS_EXPR} = ? AND a.id > ?))")
+        else:
+            where.append(f"({_TS_EXPR} < ? OR ({_TS_EXPR} = ? AND a.id < ?))")
         params += [before_ts, before_ts, before_id or 0]
     if feed_id:
         where.append("a.feed_id = ?")
@@ -284,7 +290,8 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                         WHEN {_TS_EXPR} > f.last_read_ts THEN 1 ELSE 0 END AS unread
             FROM articles a JOIN feeds f ON f.id = a.feed_id
             WHERE {' AND '.join(where)}
-            ORDER BY ts DESC, a.id DESC LIMIT ?""",
+            ORDER BY ts {'ASC' if order == 'oldest' else 'DESC'},
+                     a.id {'ASC' if order == 'oldest' else 'DESC'} LIMIT ?""",
         (*params, limit),
     ).fetchall()
     return rows

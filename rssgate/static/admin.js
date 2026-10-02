@@ -178,6 +178,7 @@ async function loadConfig() {
   $('cfg-extra-body').value = JSON.stringify(cfg.llm.extra_body ?? {}, null, 1);
   $('cfg-feed-min').value = cfg.polling.feed_interval_minutes;
   $('cfg-page-min').value = cfg.polling.page_interval_minutes;
+  $('cfg-order').value = (cfg.ui && cfg.ui.order) || 'newest';
   $('cfg-length').value = cfg.summarizer.length;
   $('cfg-max-chars').value = cfg.summarizer.max_input_chars;
   $('cfg-concurrency').value = cfg.summarizer.concurrency ?? 2;
@@ -198,6 +199,7 @@ $('save-btn').addEventListener('click', async () => {
            model_discover: $('cfg-model-discover').value.trim() },
     polling: { feed_interval_minutes: +$('cfg-feed-min').value,
                page_interval_minutes: +$('cfg-page-min').value },
+    ui: { order: $('cfg-order').value },
     summarizer: { length: $('cfg-length').value,
                   max_input_chars: +$('cfg-max-chars').value,
                   concurrency: +$('cfg-concurrency').value,

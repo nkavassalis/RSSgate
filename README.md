@@ -89,12 +89,18 @@ The viewer has a left sidebar (a slide-out drawer under 800 px):
 - **Feeds list** — click a feed to filter the stream to it; “All feeds” to
   clear. Selection persists in the browser (localStorage), as do the mode and
   date. Resume-position saving only applies to the unfiltered New view.
-- **New / Since toggle** — *New* is the classic flow: resume where you left off
-  and scroll into the past until “You’ve seen it all!”. *Since* puts a floor
-  under the stream: it shows everything from your chosen date onward and
-  politely stops there (“That’s everything since 2026-09-25”). Preset chips
-  (24h / 7d / 30d / 90d) make the common cases one tap; the “Jump to date”
-  picker on the end banner simply switches into Since mode — one mental model.
+- **New / Since toggle** — *New* starts at the newest article and pages
+  through your reading; *Since* puts a floor under the stream: it shows
+  everything from your chosen date onward and politely stops there
+  (“That’s everything since 2026-09-25”). Preset chips (24h / 7d / 30d /
+  90d) make the common cases one tap; the “Jump to date” picker on the end
+  banner simply switches into Since mode — one mental model.
+- **Stream order** (admin → *Polling & summarizer → Article order*):
+  *Newest first* is the classic reverse-chronological scroller; *Oldest
+  first* turns the reader into a chronological catch-up list — you boot at
+  your saved position and read forward to now, and “new” always appears at
+  the end of the list. Keyset pagination is direction-aware; default is
+  newest.
 
 ## Categories
 

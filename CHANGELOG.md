@@ -31,6 +31,23 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.2.0] — 2026-10-02
+
+### Added
+- **Configurable stream order** — admin panel → Polling & summarizer →
+  *Article order*: *Newest first* (default, unchanged) or *Oldest first*,
+  which turns the reader into a chronological catch-up list: boot at your
+  saved position, read forward to now, new arrivals at the end.
+  - `ui.order` config key (`newest`|`oldest`); `PUT /api/config` now
+    accepts `ui.order` specifically (rest of `ui`/`server` remain file-only)
+  - `articles_page(order=…)` direction-aware keyset: in oldest mode the
+    cursor is a strictly-newer lower bound; resume acts as the boot floor
+  - `/api/articles?order=…` explicit override; `/api/resume` now reports
+    `order` so the viewer boots with the right direction and beacons
+  - read beacons are direction-proof: per-feed `reads` map is max-ts;
+    global resume tracks the deepest card (newest mode) or the frontier
+    card (oldest mode)
+
 ## [1.1.0] — 2026-10-02
 
 ### Changed

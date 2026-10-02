@@ -57,12 +57,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def api_articles():
         cfg = load_config(config_path)
         limit = min(int(request.args.get("limit", cfg["ui"]["items_per_page"])), 100)
+        order = request.args.get("order") or cfg["ui"].get("order", "newest")
+        if order not in ("newest", "oldest"):
+            order = "newest"
         before_ts, before_id = _cursor_from_request()
         rows = db.articles_page(
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
             category=request.args.get("category"),
-            since_ts=request.args.get("since_ts"))
+            since_ts=request.args.get("since_ts"), order=order)
         has_more = len(rows) > limit
         items = []
         for r in rows[:limit]:
@@ -113,7 +116,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             "ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 1").fetchone()
         return jsonify({"resume_ts": db.get_state(conn, "resume_ts"),
                         "resume_id": db.get_state(conn, "resume_id", "0"),
-                        "newest_ts": newest["ts"] if newest else None})
+                        "newest_ts": newest["ts"] if newest else None,
+                        "order": load_config(config_path)["ui"].get(
+                            "order", "newest")})
 
     # ------------------------------------------------------------- feeds
 
@@ -247,8 +252,10 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/config", methods=["PUT"])
     def api_put_config():
         patch = request.get_json(force=True)
-        for section in ("server", "ui"):
-            patch.pop(section, None)  # host/port/theme changes via file only
+        patch.pop("server", None)   # host/port changes via file only
+        ui = patch.pop("ui", None)
+        if isinstance(ui, dict) and ui.get("order") in ("newest", "oldest"):
+            patch["ui"] = {"order": ui["order"]}  # rest of ui: file only
         patch.get("llm", {}).pop("api_key_set", None)
         if patch.get("llm", {}).get("api_key") == "***":
             del patch["llm"]["api_key"]

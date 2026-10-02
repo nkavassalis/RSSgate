@@ -12,7 +12,8 @@ run.py                  entry point (config -> app -> scheduler -> flask)
 rssgate/
   config.py             DEFAULTS dict, deep-merge load/save, env: secret
                         expansion, masked_config(); injects no-thinking
-                        extra_body for provider=local unless configured
+                        extra_body for provider=local unless configured.
+                        ui.order = newest|oldest (stream direction, admin-editable)
   db.py                 ALL SQL lives here. Plain sqlite3, no ORM, WAL.
                         feeds: type auto|feed|page, categories (user, comma),
                         auto_categories (feed-declared), summarize (raw mode
@@ -63,9 +64,11 @@ CHANGELOG.md            version criteria + history — update on every release
    `_merge` → `save_config`. Don't store config in the DB. API keys never
    leave the server except masked (`***`).
 3. **All SQL in `db.py`**; routes stay thin.
-4. **Cursors are (ts, id) keyset** — strictly-older pagination, never OFFSET.
-   Read cursors (global + per-feed) advance FORWARD only. The resume cursor
-   bounds ONLY legacy unfiltered no-fresh requests; the viewer boots fresh.
+4. **Cursors are (ts, id) keyset** — strictly-older pagination (newest mode)
+   or strictly-newer (oldest mode), never OFFSET. Read cursors (global +
+   per-feed) advance FORWARD only. The resume cursor bounds ONLY legacy
+   unfiltered no-fresh requests; the viewer boots fresh in newest mode and
+   at-resume in oldest mode.
 5. **Threading + sqlite**: each worker opens its OWN connection; a shared
    handle across threads corrupts commit state (this stranded articles in
    'processing' once — see stale-requeue).
@@ -84,10 +87,13 @@ CHANGELOG.md            version criteria + history — update on every release
   POST /api/position → mark_feed_read per feed (+ global cursor only when
   `global:true`, i.e. New + All-feeds view). Sidebar pills from
   `db.feed_unread`; card dots from `unread` column in /api/articles.
-- **Viewer boot**: ALWAYS at newest (`?fresh=1`); GET /api/resume shows a
-  "Continue reading" button when resume < newest → reloads stream at resume.
-  GET /api/articles (cursor + feed_id + since_ts) → IntersectionObserver →
-  beacons `{ts,id,reads:{feed:ts},global}` → per-feed cursors precisely.
+- **Viewer boot**: order from /api/resume. Newest mode: at newest
+  (`?fresh=1`), resume shown as "Continue reading" button. Oldest mode:
+  boot AT resume (catch-up), end banner says "all caught up".
+  GET /api/articles (cursor + feed_id + since_ts + order) →
+  IntersectionObserver → beacons `{ts,id,reads:{feed:ts},global}` →
+  per-feed cursors precisely; global resume = deepest passed (newest mode)
+  or frontier (oldest mode).
 
 ## Versioning policy (cut releases the same way every time)
 Given `MAJOR.MINOR.PATCH`, tagged `vX.Y.Z`, `__version__` in

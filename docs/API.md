@@ -7,9 +7,9 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 
 | Method/Path | Description |
 |---|---|
-| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive), `before_id`, `limit` (≤100), `feed_id`, `category`, `since_ts` (ISO floor, inclusive — powers the “Since” mode; `from_date` YYYY-MM-DD accepted as sugar). Defaults to stored resume position when no cursor given (back-compat); `fresh=1` opts out and starts at newest - the viewer always sends it on boot. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[]}], has_more, next}`. |
+| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive *or* inclusive-newer in oldest mode), `before_id`, `limit` (≤100), `feed_id`, `category`, `since_ts` (ISO floor, inclusive — powers “Since” mode; `from_date` YYYY-MM-DD accepted as sugar), `order` (`newest`|`oldest`, defaults to configured `ui.order`). Defaults to stored resume position when no cursor given (back-compat); `fresh=1` opts out and starts at newest - the viewer always sends it on boot. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[]}], has_more, next}`. |
 | `POST /api/position` | Save read state. Body `{ts, id, reads?, global}` — `reads` is a `{feed_id: ts}` map advancing per-feed read cursors precisely; `global:true` also moves the New-view resume cursor (legacy `{ts,id}` or `{feeds:[ids]}` payloads still work). Resume cursor bounds only the unfiltered New first page; filtered/since views always start at newest. |
-| `GET /api/resume` | `{resume_ts, resume_id, newest_ts}` — client boot call. |
+| `GET /api/resume` | `{resume_ts, resume_id, newest_ts, order}` — client boot call. |
 
 ## Feeds
 
