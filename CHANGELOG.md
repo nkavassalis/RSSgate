@@ -31,6 +31,13 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.3.1] — 2026-10-02
+
+### Changed
+- Category chips: most-used first, selected chips always visible, and the
+  long tail (your DB has 100+ names) collapsed behind a "more (N) …"
+  expander instead of flooding the sidebar.
+
 ## [1.3.0] — 2026-10-02
 
 ### Added

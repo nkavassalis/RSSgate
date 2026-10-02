@@ -264,16 +264,23 @@
     restart();
   }
   // ---- category chips (multi-select; empty = all) -------------------------
-  async function renderCats() {
+  async function renderCats(expanded) {
     const cats = await fetch('/api/categories?viewer=1').then(r => r.json());
     const sel = store.cats;
+    // most-used first; selected always visible; long tails behind "more"
+    cats.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const shown = expanded ? cats
+      : cats.filter(c => sel.includes(c.name) || cats.indexOf(c) < 12);
+    const hidden = cats.length - shown.length;
     const box = $('cat-filter');
     box.innerHTML = `<button class="chip${sel.length ? '' : ' active'}"
         data-cat="">All</button>`
-      + cats.map(c => `<button class="chip${sel.includes(c.name) ? ' active' : ''}"
-          data-cat="${esc(c.name)}" title="${c.count} article${c.count === 1 ? '' : 's'}">${esc(c.name)}<small>${c.count}</small></button>`).join('');
+      + shown.map(c => `<button class="chip${sel.includes(c.name) ? ' active' : ''}"
+          data-cat="${esc(c.name)}" title="${c.count} article${c.count === 1 ? '' : 's'}">${esc(c.name)}<small>${c.count}</small></button>`).join('')
+      + (hidden ? `<button class="chip more" data-cat="" data-more="1">more (${hidden}) &#8230;</button>` : '');
     box.querySelectorAll('.chip').forEach(b =>
       b.addEventListener('click', () => {
+        if (b.dataset.more) { renderCats(true); return; }
         const name = b.dataset.cat;
         let sel2 = name ? [...store.cats] : [];
         if (!name) sel2 = [];                                  // All clears
