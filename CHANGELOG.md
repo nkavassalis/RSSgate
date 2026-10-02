@@ -31,6 +31,14 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.8.1] — 2026-10-02
+
+### Fixed
+- Backfill starvation: pages fetched without usable images are marked
+  (sentinel in `articles.images`, sanitized out of API and GC-reference
+  sets) so the per-pass page budget advances toward older articles
+  (baka.jp) instead of re-fetching imageless pages forever.
+
 ## [1.8.0] — 2026-10-02
 
 ### Added

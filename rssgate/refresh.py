@@ -147,9 +147,12 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
     article pages are re-fetched for og/content images."""
     import requests
     from .fetcher import UA
+    # images='-' marks "page fetched, no usable images" so the page budget
+    # advances instead of re-fetching imageless pages every pass forever
     rows = conn.execute(
-        "SELECT * FROM articles WHERE (image IS NULL OR images = '')"
-        " AND status IN ('ready','error')"
+        "SELECT * FROM articles WHERE status IN ('ready','error')"
+        " AND COALESCE(images,'') NOT IN ('-')"
+        " AND (image IS NULL OR images = '' OR images = '-')"
         " ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ?",
         (limit,)).fetchall()
     imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
@@ -167,6 +170,8 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40) -> int:
                                 timeout=25)
             if resp.ok and _cache_image(conn, art, resp.text):
                 stored += 1
+            else:
+                db.set_article(conn, art["id"], images="-")  # no retry
         except Exception:  # noqa: BLE001
             continue
     log.info("image backfill: %d enriched (%d pages fetched)", stored, fetched)

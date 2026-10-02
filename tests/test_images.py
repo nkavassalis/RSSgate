@@ -206,3 +206,26 @@ def test_backfill_enriches_hero_only_rows(conn, tmp_path, monkeypatch):
     images = conn.execute("SELECT images FROM articles WHERE id=?",
                           (aid,)).fetchone()["images"]
     assert "," in images or len(images.split(",")) >= 1
+
+
+def test_backfill_marks_imageless_pages_no_retry(conn, tmp_path, monkeypatch):
+    from rssgate.config import load_config
+    img = tmp_path / "images"; img.mkdir()
+    monkeypatch.setattr(imgstore, "_dir", img)
+    def fake_get(url, **kw):
+        return FakeResp(text="<html><body><p>" + "no images here " * 30 +
+                        "</p></body></html>")
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = db.add_feed(conn, "https://ex/nix")["id"]
+    aid = db.upsert_article(conn, fid, "n", "https://blog.example/x",
+                            "T", "2026-10-01T00:00:00Z")
+    db.set_article(conn, aid, status="ready", summary="s" * 40)
+    assert refresh.backfill_images(conn, load_config("__no_such__.yaml")) == 0
+    assert conn.execute("SELECT images FROM articles WHERE id=?",
+                        (aid,)).fetchone()["images"] == "-"
+    # second pass skips it entirely (no page fetch): zero requests made
+    calls = []
+    monkeypatch.setattr("requests.get",
+                        lambda *a, **k: calls.append(a) or FakeResp(text=""))
+    refresh.backfill_images(conn, load_config("__no_such__.yaml"))
+    assert calls == []

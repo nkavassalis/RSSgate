@@ -84,7 +84,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "auto_categories": parse_categories(r["auto_categories"]),
                 "post_categories": parse_categories(r["post_categories"]),
                 "image": r["image"],
-                "gallery": [g for g in (r["gallery"] or "").split(",") if g],
+                "gallery": [] if r["gallery"] == "-" else
+                         [g for g in (r["gallery"] or "").split(",") if g],
                 "unread": bool(r["unread"]),
             })
         return jsonify({"items": items, "has_more": has_more,

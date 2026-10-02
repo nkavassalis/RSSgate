@@ -474,7 +474,7 @@ def referenced_images(conn) -> set[str]:
         if r["image"]:
             out.add(r["image"])
         for name in (r["images"] or "").split(","):
-            if name:
+            if name and name != "-":       # '-' = tried, no images
                 out.add(name)
     return out
 
