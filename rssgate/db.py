@@ -203,9 +203,13 @@ _TS_EXPR = "COALESCE(published_at, fetched_at)"
 
 def articles_page(conn, before_ts: str | None = None, before_id: int | None = None,
                   limit: int = 20, feed_id: int | None = None,
-                  category: str | None = None) -> list[sqlite3.Row]:
-    """Reverse-chronological page of articles older than (before_ts, before_id)."""
+                  category: str | None = None, since_ts: str | None = None) -> list[sqlite3.Row]:
+    """Reverse-chronological page of articles older than (before_ts, before_id),
+    optionally floored at since_ts (inclusive)."""
     where, params = ["a.status != 'hidden'"], []
+    if since_ts is not None:
+        where.append(f"{_TS_EXPR} >= ?")
+        params.append(since_ts)
     if before_ts is not None:
         where.append(f"({_TS_EXPR} < ? OR ({_TS_EXPR} = ? AND a.id < ?))")
         params += [before_ts, before_ts, before_id or 0]

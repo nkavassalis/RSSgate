@@ -1,16 +1,29 @@
-/* RSSgate reader: endless reverse-chronological scroller with resume position. */
+/* RSSgate reader: endless reverse-chronological scroller with resume position,
+   feed filter sidebar, and New / Since date-window modes. */
 (() => {
   const PAGE = window.RSSGATE_PAGE || 20;
-  const stream = document.getElementById('stream');
-  const sentinel = document.getElementById('sentinel');
-  const endBanner = document.getElementById('end-banner');
-  const emptyHint = document.getElementById('empty-hint');
+  const $ = id => document.getElementById(id);
+  const stream = $('stream');
+  const endBanner = $('end-banner');
 
-  let cursor = null;          // {ts, id} of oldest item currently loaded
-  let loading = false;
-  let exhausted = false;
-  let started = false;
-  let saveTimer = null;
+  // ---- persisted UI state -------------------------------------------------
+  const store = {
+    get mode() { return localStorage.getItem('rssgate.mode') || 'new'; },
+    set mode(v) { localStorage.setItem('rssgate.mode', v); },
+    get since() { return localStorage.getItem('rssgate.since') || defaultSince(); },
+    set since(v) { localStorage.setItem('rssgate.since', v); },
+    get feed() { return localStorage.getItem('rssgate.feed') || ''; },
+    set feed(v) { localStorage.setItem('rssgate.feed', v); },
+  };
+  function dateStr(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function defaultSince() {
+    const d = new Date(); d.setDate(d.getDate() - 7); return dateStr(d);
+  }
+
+  let cursor = null, loading = false, exhausted = false, started = false, saveTimer = null;
 
   const fmt = ts => {
     const d = new Date(ts), now = new Date();
@@ -37,53 +50,76 @@
     const body = a.status === 'ready' && a.summary
       ? `<div class="digest">${esc(a.summary)}</div>`
       : a.status === 'error'
-        ? `<div class="unsummarized">⚠ could not summarize — <a href="${esc(a.link)}">read original</a></div>`
-        : `<div class="unsummarized">⏳ waiting for AI transcription…</div>`;
+        ? `<div class="unsummarized">\u26a0 could not summarize \u2014 <a href="${esc(a.link)}">read original</a></div>`
+        : `<div class="unsummarized">\u23f3 waiting for AI transcription\u2026</div>`;
     return `<article class="card" data-ts="${esc(a.ts)}" data-id="${a.id}">
-      <div class="card-meta"><span class="feed-title">${esc(a.feed_title || '—')}</span>${raw}
+      <div class="card-meta"><span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
         ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time></div>
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
       ${body}</article>`;
   }
 
+  // ---- loading ------------------------------------------------------------
   async function loadNext() {
     if (loading || exhausted) return;
     loading = true;
     const params = new URLSearchParams({ limit: PAGE });
     if (cursor) { params.set('before_ts', cursor.ts); params.set('before_id', cursor.id); }
+    if (store.feed) params.set('feed_id', store.feed);
+    if (store.mode === 'since') params.set('since_ts', store.since + 'T00:00:00Z');
     const res = await fetch('/api/articles?' + params);
     const data = await res.json();
     loading = false;
     if (!started) {
       started = true;
-      if (!data.items.length) emptyHint.hidden = false;
+      if (!data.items.length) $('empty-hint').hidden = false;
     }
     if (data.items.length) {
-      emptyHint.hidden = true;
+      $('empty-hint').hidden = true;
       endBanner.hidden = true;
       stream.insertAdjacentHTML('beforeend', data.items.map(cardHtml).join(''));
-      cursor = { ts: data.items[data.items.length - 1].ts,
-                 id: data.items[data.items.length - 1].id };
+      cursor = { ts: data.items.at(-1).ts, id: data.items.at(-1).id };
     }
     if (!data.has_more) {
       exhausted = true;
-      if (started || data.items.length) showEndBanner();
+      if (started || data.items.length) showEnd();
       return;
     }
-    // fill the viewport if the page is still short
     if (document.body.scrollHeight <= window.innerHeight + 200) loadNext();
   }
 
-  // ---- resume position tracking: remember the oldest article in view ----
+  function showEnd() {
+    endBanner.hidden = false;
+    if (store.mode === 'since') {
+      $('end-new').hidden = true; $('end-since').hidden = false;
+      $('end-since-text').textContent =
+        `That's everything since ${store.since}.`;
+    } else {
+      $('end-new').hidden = false; $('end-since').hidden = true;
+      $('jump-date').value = yesterdayStr();
+    }
+  }
+  function yesterdayStr() {
+    const d = new Date(); d.setDate(d.getDate() - 1); return dateStr(d);
+  }
+
+  function restart() {
+    stream.innerHTML = ''; cursor = null; exhausted = false;
+    started = false; endBanner.hidden = true;
+    $('sidebar').classList.remove('open'); $('sidebar-veil').classList.remove('show');
+    loadNext();
+  }
+
+  // ---- resume position (only meaningful in New mode, unfiltered) ----------
+  function canSavePos() { return store.mode === 'new' && !store.feed; }
   function savePosition() {
+    if (!canSavePos()) return;
     const cards = stream.querySelectorAll('.card');
     if (!cards.length) return;
     let best = null;
     const cutoff = window.scrollY + window.innerHeight * 0.6;
-    cards.forEach(c => {
-      if (c.offsetTop <= cutoff) best = c;   // oldest card we've scrolled past
-    });
+    cards.forEach(c => { if (c.offsetTop <= cutoff) best = c; });
     if (!best) best = cards[cards.length - 1];
     const body = JSON.stringify({ ts: best.dataset.ts, id: +best.dataset.id });
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
@@ -96,55 +132,76 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosition(); });
   window.addEventListener('pagehide', savePosition);
 
-  // ---- date jump (defaults to yesterday) ----
-  function yesterdayStr() {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
-      + '-' + String(d.getDate()).padStart(2, '0');
+  // ---- sidebar: mode toggle, presets, feed filter -------------------------
+  function setMode(mode) {
+    store.mode = mode;
+    $('mode-new').classList.toggle('active', mode === 'new');
+    $('mode-since').classList.toggle('active', mode === 'since');
+    $('since-ctrl').hidden = mode !== 'since';
+    restart();
   }
-  function showEndBanner() {
-    document.getElementById('jump-date').value = yesterdayStr();
-    endBanner.hidden = false;
-  }
-  document.getElementById('jump-date').value = yesterdayStr();
-
-  document.getElementById('jump-btn').addEventListener('click', async () => {
-    const v = document.getElementById('jump-date').value || yesterdayStr();
-    if (!v) return;
-    const d = new Date(v + 'T23:59:59');
-    stream.innerHTML = ''; cursor = null; exhausted = false;
-    const res = await fetch('/api/articles?limit=' + PAGE +
-      '&before_ts=' + encodeURIComponent(d.toISOString()));
-    const data = await res.json();
-    exhausted = !data.has_more;
-    endBanner.hidden = true;
-    if (data.items.length) {
-      stream.insertAdjacentHTML('beforeend', data.items.map(cardHtml).join(''));
-      cursor = { ts: data.items.at(-1).ts, id: data.items.at(-1).id };
-    }
-    window.scrollTo(0, 0);
+  $('mode-new').addEventListener('click', () => setMode('new'));
+  $('mode-since').addEventListener('click', () => setMode('since'));
+  $('since-date').addEventListener('change', e => {
+    if (e.target.value) { store.since = e.target.value; restart(); }
   });
-  document.getElementById('back-btn').addEventListener('click', () => {
-    stream.innerHTML = ''; exhausted = false; endBanner.hidden = true;
-    fetch('/api/resume').then(r => r.json()).then(s => {
-      cursor = s.resume_ts ? { ts: s.resume_ts, id: +s.resume_id } : null;
-      exhausted = false; loadNext();
-    });
+  document.querySelectorAll('.presets button').forEach(b =>
+    b.addEventListener('click', () => {
+      const d = new Date(); d.setDate(d.getDate() - (+b.dataset.days));
+      store.since = dateStr(d); $('since-date').value = store.since;
+      setMode('since');
+    }));
+  $('back-now-btn').addEventListener('click', () => setMode('new'));
+  $('jump-btn').addEventListener('click', () => {
+    const v = $('jump-date').value || yesterdayStr();
+    store.since = v; $('since-date').value = v; setMode('since');
   });
-  document.getElementById('refresh-btn').addEventListener('click', async e => {
-    e.target.textContent = '…';
+  $('back-btn').addEventListener('click', () => setMode('new'));
+  $('menu-btn').addEventListener('click', () => {
+    $('sidebar').classList.toggle('open');
+    $('sidebar-veil').classList.toggle('show');
+  });
+  $('sidebar-veil').addEventListener('click', () => {
+    $('sidebar').classList.remove('open'); $('sidebar-veil').classList.remove('show');
+  });
+  $('refresh-btn').addEventListener('click', async e => {
+    e.target.textContent = '\u2026';
     await fetch('/api/poll', { method: 'POST' });
     setTimeout(() => location.reload(), 4000);
   });
 
+  function setFeedFilter(id) {
+    store.feed = id;
+    document.querySelectorAll('#feed-filter li').forEach(li =>
+      li.classList.toggle('active', li.dataset.feed === id));
+    restart();
+  }
+  async function renderFeedFilter() {
+    const feeds = await fetch('/api/feeds').then(r => r.json());
+    const ul = $('feed-filter');
+    ul.innerHTML = '<li data-feed="" class="' + (store.feed ? '' : 'active') + '">All feeds</li>'
+      + feeds.map(f => `<li data-feed="${f.id}" class="${store.feed == f.id ? 'active' : ''}"
+           title="${esc(f.url)}">${esc(f.title || f.url)} <span>${f.article_count}</span></li>`)
+          .join('');
+    ul.querySelectorAll('li').forEach(li =>
+      li.addEventListener('click', () => setFeedFilter(li.dataset.feed)));
+  }
+
+  // ---- boot ---------------------------------------------------------------
+  $('since-date').value = store.since;
+  $('mode-new').classList.toggle('active', store.mode === 'new');
+  $('mode-since').classList.toggle('active', store.mode === 'since');
+  $('since-ctrl').hidden = store.mode !== 'since';
+
   new IntersectionObserver(entries => {
     if (entries[0].isIntersecting) loadNext();
-  }, { rootMargin: '1200px' }).observe(sentinel);
+  }, { rootMargin: '1200px' }).observe($('sentinel'));
 
-  // ---- boot: resume where we left off ----
-  fetch('/api/resume').then(r => r.json()).then(s => {
-    if (s.resume_ts && s.newest_ts) {
+  Promise.all([
+    fetch('/api/resume').then(r => r.json()),
+    renderFeedFilter(),
+  ]).then(([s]) => {
+    if (store.mode === 'new' && !store.feed && s.resume_ts && s.newest_ts) {
       cursor = { ts: s.resume_ts, id: +s.resume_id };
     }
     loadNext();

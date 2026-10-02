@@ -56,7 +56,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         rows = db.articles_page(
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
-            category=request.args.get("category"))
+            category=request.args.get("category"),
+            since_ts=request.args.get("since_ts"))
         has_more = len(rows) > limit
         items = []
         for r in rows[:limit]:

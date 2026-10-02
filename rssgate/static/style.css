@@ -31,7 +31,32 @@ body { margin:0; background:var(--bg); color:var(--text);
 .icon-btn:hover { border-color:var(--accent); }
 
 /* ---------- viewer stream ---------- */
-#stream { max-width:720px; margin:0 auto; padding:16px 12px 40px; }
+.layout { display:flex; max-width:1040px; margin:0 auto; align-items:flex-start; }
+#sidebar { width:210px; flex:none; position:sticky; top:57px; padding:16px 10px;
+  font-size:.9rem; }
+#sidebar h3 { font-size:.75rem; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--muted); margin:18px 0 6px; }
+.seg { display:flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+.seg button { flex:1; border:none; background:var(--card); color:var(--muted);
+  padding:7px 0; cursor:pointer; font-weight:600; }
+.seg button.active { background:var(--accent); color:#fff; }
+#since-ctrl { margin-top:8px; }
+#since-ctrl input[type=date] { font-size:.85rem; padding:6px 8px; }
+.presets { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap; }
+.btn.sm { padding:3px 10px; font-size:.78rem; }
+#feed-filter { list-style:none; padding:0; margin:0; }
+#feed-filter li { padding:7px 9px; border-radius:8px; cursor:pointer; color:var(--text);
+  display:flex; justify-content:space-between; gap:6px; }
+#feed-filter li span { color:var(--muted); font-size:.78rem; }
+#feed-filter li:hover { background:var(--chip); }
+#feed-filter li.active { background:var(--chip); color:var(--chip-text);
+  font-weight:700; }
+#sidebar-veil { display:none; position:fixed; inset:49px 0 0 0; background:rgba(0,0,0,.4);
+  z-index:14; }
+#sidebar-veil.show { display:block; }
+#menu-btn { display:none; }
+
+#stream { flex:1; min-width:0; max-width:720px; margin:0 auto; padding:16px 12px 40px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
   box-shadow:var(--shadow); padding:16px 18px; margin-bottom:14px; }
 .card-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px;
@@ -111,6 +136,13 @@ textarea { resize:vertical; }
 .stat span { display:block; font-size:1.4rem; font-weight:800; }
 .stat label { margin:2px 0 0; }
 
+@media (max-width:800px) {
+  #menu-btn { display:inline-flex; }
+  #sidebar { position:fixed; left:0; top:49px; bottom:0; z-index:15; width:250px;
+    background:var(--card); border-right:1px solid var(--line); overflow-y:auto;
+    transform:translateX(-100%); transition:transform .18s ease; }
+  #sidebar.open { transform:translateX(0); }
+}
 @media (max-width:640px) {
   .grid2,.usage-grid { grid-template-columns:1fr; }
   .feed-table thead { display:none; }

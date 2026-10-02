@@ -97,6 +97,22 @@ Categories appear as chips on each article card, in three flavors:
   rename / remove**. Category filtering matches post tags, your feed tags, or
   the feed union.
 
+## Feed discovery when the URL isn't a feed
+
+In the admin panel you can paste *any* URL (a homepage, a newsroom page).
+Clicking **Add feed** first probes it (`POST /api/feeds/probe`, no LLM):
+
+1. URL itself parses as RSS/Atom → added directly.
+2. Not a feed → the HTML is sniffed for `<link rel="alternate">` declarations
+   (trusted), feed-ish links (`/rss`, `/feed.xml`, anchors labeled "RSS"),
+   hosts named `feeds.`/`rss.` (subdomain heuristic — finds Ars Technica's
+   real feeds from its info page), and finally well-known paths
+   (`/feed`, `/rss.xml`, `/feed.xml`, `/atom.xml`). **Every heuristic
+   candidate is verified by fetching it and parsing as XML** before being
+   offered — so when RSSgate says "found a feed", it is one.
+3. Nothing found → you're asked to confirm adding the URL as a **bare page**
+   (LLM article discovery), or cancel. A bare page is never added silently.
+
 ## Raw mode (per feed, zero LLM tokens)
 
 Some feeds don't need an AI digest — a plain blog or a text-only site is
