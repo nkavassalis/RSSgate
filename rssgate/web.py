@@ -336,12 +336,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         import threading
         data = request.get_json(silent=True) or {}
         force = bool(data.get("force"))
+        limit = int(data.get("limit", 150))
+        page_fetches = int(data.get("page_fetches", 40))
 
         def _go():
             with contextlib.closing(db.connect(
                     os.path.join(data_dir, "rssgate.sqlite"))) as bconn:
                 from .refresh import backfill_images
                 backfill_images(bconn, load_config(config_path),
+                                limit=limit, page_fetches=page_fetches,
                                 force=force)
         threading.Thread(target=_go, daemon=True).start()
         return jsonify({"ok": True, "started": True})

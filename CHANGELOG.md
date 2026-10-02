@@ -31,6 +31,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.9.1] — 2026-10-02
+
+### Fixed
+- Backfill route accepts `limit`/`page_fetches` (force passes now reach
+  older articles like baka.jp instead of burning the 40-page budget on the
+  newest rows first).
+- Maintenance clears references to missing cache files (stale heroes after
+  pruning showed as broken/absent images).
+- Read-the-full-article link uses a dedicated `--link` color: high-contrast
+  blue in both dark and light themes, underlined.
+
 ## [1.9.0] — 2026-10-02
 
 ### Added

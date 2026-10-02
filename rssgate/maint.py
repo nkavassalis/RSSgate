@@ -78,6 +78,13 @@ def run_all(conn, cfg) -> dict:
         report["deleted_articles"] = n
         report["articles_freed_images"] = len(files)
 
+        # references pointing at missing files (pruned/lost) -> clear them
+        d0 = imgstore.directory()
+        if d0:
+            present = {f.name for f in _cache_files()}
+            stale = {n for n in db.referenced_images(conn) if n not in present}
+            db.clear_image_refs(conn, stale)
+
         orphans, osize = prune_orphans(conn)
         report["orphans_removed"] = orphans
         report["orphans_freed_mb"] = round(osize / 1e6, 2)
