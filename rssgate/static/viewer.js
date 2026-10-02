@@ -68,7 +68,7 @@
     }
     if (!data.has_more) {
       exhausted = true;
-      if (started || data.items.length) endBanner.hidden = false;
+      if (started || data.items.length) showEndBanner();
       return;
     }
     // fill the viewport if the page is still short
@@ -96,9 +96,21 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosition(); });
   window.addEventListener('pagehide', savePosition);
 
-  // ---- date jump ----
+  // ---- date jump (defaults to yesterday) ----
+  function yesterdayStr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function showEndBanner() {
+    document.getElementById('jump-date').value = yesterdayStr();
+    endBanner.hidden = false;
+  }
+  document.getElementById('jump-date').value = yesterdayStr();
+
   document.getElementById('jump-btn').addEventListener('click', async () => {
-    const v = document.getElementById('jump-date').value;
+    const v = document.getElementById('jump-date').value || yesterdayStr();
     if (!v) return;
     const d = new Date(v + 'T23:59:59');
     stream.innerHTML = ''; cursor = null; exhausted = false;
