@@ -121,14 +121,18 @@ def system_prompt(cfg) -> str:
     return summ["system_prompt"].replace("{length}", target)
 
 
-def _cache_image(conn, art, page_html: str) -> str | None:
-    """Best-effort images for one article: the URL the feed declared (free)
-    or ALL plausible candidates from the page HTML we already fetched (hero
-    + up to 3 gallery). Cached locally forever; first stored = hero.
-    Never raises; returns the hero filename."""
+def _cache_image(conn, art, page_html: str):
+    """Cache an article's images: page-extracted candidates first (og:image
+    + plausible content imgs, avatar-filtered); the feed-declared URL is only
+    a fallback when the page yields nothing (feeds can declare site icons).
+    Writes image (hero), image_url and images (comma list; a trailing '-'
+    entry marks 'page tried, single image only'). Returns the stored name
+    list or None. Never raises."""
     try:
         decl = art["image_url"] if "image_url" in art.keys() else None
-        urls = [decl] if decl else extract_images(page_html or "", art["link"])[:imgstore.per_post()]
+        urls = extract_images(page_html or "", art["link"])[:imgstore.per_post()]
+        if not urls and decl:
+            urls = [decl]
         if not urls:
             return None
         names = [n for n in (imgstore.store(u) for u in urls) if n]
@@ -136,45 +140,60 @@ def _cache_image(conn, art, page_html: str) -> str | None:
             return None
         db.set_article(conn, art["id"], image=names[0], image_url=urls[0],
                        images=",".join(names))
-        return names[0]
+        return names
     except Exception:  # noqa: BLE001 - images are decorative
         return None
 
 
 def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40,
                     force: bool = False) -> int:
-    """Zero-token catch-up: cache hero images for articles stored before
-    images existed. Feed-declared URLs are free; at most `page_fetches`
-    article pages are re-fetched for og/content images."""
+    """Zero-token catch-up/enrichment for stored articles.
+
+    Non-force: declared heroes are re-saved for free; articles WITHOUT
+    declared metadata get their page fetched (budgeted) for og/content
+    images; tried pages are marked so the budget always advances.
+    Force: page-extract everything, repairing poisoned image_url values
+    (e.g. avatars saved as heroes by pre-v1.9 backfills)."""
     import requests
     from .fetcher import UA
-    # images='-' marks "page fetched, no usable images" so the page budget
-    # advances instead of re-fetching imageless pages every pass forever
-    cond = ("status IN ('ready','error')" if force else
-            "status IN ('ready','error')"
-            " AND COALESCE(images,'') NOT IN ('-')"
-            " AND (image IS NULL OR images = '' OR images = '-')")
+    imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
+    cond = "status IN ('ready','error')" if force else (
+        "status IN ('ready','error')"
+        " AND (image IS NULL OR COALESCE(images,'') IN ('','-')"
+        "      OR images NOT LIKE '%,%')")          # singles w/o marker retry
     rows = conn.execute(
         f"SELECT * FROM articles WHERE {cond}"
         " ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ?",
         (limit,)).fetchall()
-    imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
     stored = fetched = 0
     for art in rows:
-        if art["image_url"]:
-            if _cache_image(conn, art, ""):
-                stored += 1
+        imgs = art["images"] or ""
+        decl = art["image_url"] or None
+        if not force:
+            if imgs == "-" or imgs.endswith(",-"):
+                continue                      # done, nothing more available
+            if decl:
+                if art["image"] or "," in imgs:
+                    continue                  # hero (or gallery) already stored
+                if _cache_image(conn, art, ""):
+                    stored += 1               # free declared hero
+                continue
+        if not art["link"]:
             continue
-        if fetched >= page_fetches or not art["link"]:
-            continue
+        if fetched >= page_fetches:
+            break
         try:
             fetched += 1
             resp = requests.get(art["link"], headers={"user-agent": UA},
                                 timeout=25)
-            if resp.ok and _cache_image(conn, art, resp.text):
+            names = _cache_image(conn, art, resp.text if resp.ok else "")
+            if names and len(names) > 1:
+                stored += 1
+            elif names:                        # single: mark done-no-gallery
+                db.set_article(conn, art["id"], images=names[0] + ",-")
                 stored += 1
             else:
-                db.set_article(conn, art["id"], images="-")  # no retry
+                db.set_article(conn, art["id"], images="-")   # no retry
         except Exception:  # noqa: BLE001
             continue
     log.info("image backfill: %d enriched (%d pages fetched)", stored, fetched)

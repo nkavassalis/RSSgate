@@ -31,6 +31,18 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.9.2] — 2026-10-02
+
+### Fixed
+- **Poisoned `image_url` repair**: pre-v1.9 backfills saved page-extracted
+  (sometimes avatar) URLs back into `image_url`, and later passes trusted
+  them as feed-declared heroes — blocking real galleries forever (baka.jp).
+  The image pipeline now always prefers fresh page extraction; declared
+  URLs are a fallback. `force` re-extracts from the article page.
+- Backfill completion marking: `images` may end in a `-` sentinel
+  ('page tried, single image only'); such rows never re-consume the page
+  budget. Sentinels are stripped from API galleries and GC references.
+
 ## [1.9.1] — 2026-10-02
 
 ### Fixed

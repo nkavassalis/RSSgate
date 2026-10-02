@@ -262,11 +262,15 @@ def test_force_backfill_replaces_existing(conn, tmp_path, monkeypatch):
     old = "old" + "0" * 21 + ".jpg"
     db.set_article(conn, aid, status="ready", summary="s", image=old, images=old)
     cfg = load_config("__no_such__.yaml")
-    # non-force skips it (already enriched)
-    refresh.backfill_images(conn, cfg)
-    assert conn.execute("SELECT image FROM articles WHERE id=?",
-                        (aid,)).fetchone()["image"] == old
-    # force re-extracts and replaces the stale hero+gallery
+    # unmarked single-image rows are retried even without force (new contract)
+    assert refresh.backfill_images(conn, cfg) == 1
+    row = conn.execute("SELECT image, images FROM articles WHERE id=?",
+                       (aid,)).fetchone()
+    assert row["image"] != old
+    assert "," in row["images"] and not row["images"].endswith(",-")
+    # now gallery-complete: another pass leaves it alone
+    assert refresh.backfill_images(conn, cfg) == 0
+    # force still re-extracts it
     assert refresh.backfill_images(conn, cfg, force=True) == 1
     row = conn.execute("SELECT image, images FROM articles WHERE id=?",
                        (aid,)).fetchone()
