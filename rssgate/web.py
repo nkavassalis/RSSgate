@@ -69,6 +69,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "feed_summarize": bool(r["feed_summarize"]),
                 "categories": parse_categories(r["categories"]),
                 "auto_categories": parse_categories(r["auto_categories"]),
+                "post_categories": parse_categories(r["post_categories"]),
             })
         return jsonify({"items": items, "has_more": has_more,
                         "next": items[-1] if items else None})

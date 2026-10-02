@@ -83,13 +83,19 @@ discovery, when you have more than one model available.
 
 ## Categories
 
-Feeds can be categorized two ways, both displayed as chips next to the feed
-title in the viewer:
+Categories appear as chips on each article card, in three flavors:
 
-- **Feed-declared** — `<category>`/`itunes:category`/`dc:subject` tags found in
-  the feed itself (read-only, refreshed with each poll).
-- **User-assigned** — managed entirely from the admin panel: assign per feed,
-  and globally **create / rename / remove** categories.
+- **Post categories** (solid chips, hover: “post categories”) — the category
+  tags the *entry itself* carries in the feed XML, stored per article
+  (`articles.categories`) at fetch time. Shown first when present.
+- **Feed categories** (same chips, hover: “feed categories”) — the feed-declared
+  union (`<category>`/`itunes:category`/`dc:subject` at channel level, else the
+  union over recent entries). Used as fallback for articles that carry no tags
+  of their own, and for bare-page items (which never have tags).
+- **Your categories** (filled accent chips) — user-assigned per feed, managed
+  entirely from the admin panel: assign per feed, and globally **create /
+  rename / remove**. Category filtering matches post tags, your feed tags, or
+  the feed union.
 
 ## Raw mode (per feed, zero LLM tokens)
 

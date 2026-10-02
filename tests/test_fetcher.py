@@ -40,6 +40,9 @@ def test_entry_categories_collected(monkeypatch):
     assert {e["guid"] for e in res["entries"]} == {"https://ex.com/rockets",
                                                   "https://ex.com/gpus"}
     assert res["entries"][0]["published_at"] == "2026-09-30T10:00:00Z"
+    # per-post categories ride along
+    assert res["entries"][0]["categories"] == ["Space", "Rockets"]
+    assert res["entries"][1]["categories"] == ["Hardware"]
 
 
 def test_channel_categories_preferred(monkeypatch):

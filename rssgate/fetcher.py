@@ -71,27 +71,40 @@ def _entry_pubdate(entry) -> str | None:
     return None
 
 
-def _collect_categories(parsed) -> list[str]:
-    """Union of channel/feed-level categories; falls back to entry-level union.
-    Handles <category>, itunes:category, dc:subject, media:keywords."""
-    def norm(seq):
-        out = []
-        for item in seq or []:
-            term = item.get("term") if isinstance(item, dict) else str(item)
-            term = (term or "").strip()
-            term = htmlmod.unescape(term)
-            if term and term.lower() not in [o.lower() for o in out]:
-                out.append(term)
-        return out
+def _norm_cats(seq) -> list[str]:
+    out: list[str] = []
+    for item in seq or []:
+        term = item.get("term") if isinstance(item, dict) else str(item)
+        term = htmlmod.unescape((term or "").strip())
+        if term and term.lower() not in [o.lower() for o in out]:
+            out.append(term)
+    return out
 
-    feed_cats = norm(parsed.feed.get("tags")) + norm(parsed.feed.get("categories"))
+
+def _entry_categories(e) -> list[str]:
+    """Category tags carried by a single feed entry (<category>, itunes, dc:subject,
+    media:keywords)."""
+    cats = _norm_cats(e.get("tags")) + _norm_cats(e.get("categories"))
+    mc = e.get("media_category") or {}
+    if isinstance(mc, dict):
+        cats += _norm_cats(mc.get("tags"))
+    kw = e.get("keywords")
+    if isinstance(kw, str):
+        cats += _norm_cats(kw.split(","))
+    return cats[:6]
+
+
+def _collect_categories(parsed) -> list[str]:
+    """Feed-level union used as display fallback: channel categories if declared,
+    else the union of entry categories."""
+    feed_cats = _norm_cats(parsed.feed.get("tags")) + _norm_cats(parsed.feed.get("categories"))
     kw = parsed.feed.get("media_category") or {}
-    feed_cats += norm(kw.get("tags") if isinstance(kw, dict) else [])
+    feed_cats += _norm_cats(kw.get("tags") if isinstance(kw, dict) else [])
     if feed_cats:
         return feed_cats[:8]
     entry_cats: list[str] = []
     for e in parsed.entries[:20]:
-        for c in norm(e.get("tags")) + norm(e.get("categories")):
+        for c in _entry_categories(e):
             if c.lower() not in [o.lower() for o in entry_cats]:
                 entry_cats.append(c)
     return entry_cats[:8]
@@ -119,6 +132,7 @@ def fetch_feed(url: str, etag: str | None = None, last_modified: str | None = No
             "link": link,
             "title": (e.get("title") or "").strip() or "(untitled)",
             "published_at": _entry_pubdate(e),
+            "categories": _entry_categories(e),
         })
     meta = {
         "title": (parsed.feed.get("title") or "").strip(),

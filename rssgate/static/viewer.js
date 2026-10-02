@@ -24,8 +24,12 @@
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   function cardHtml(a) {
-    const cats = [...(a.auto_categories || []), ...(a.categories || [])]
-      .map(c => `<span class="chip">${esc(c)}</span>`).join(' ');
+    const own = (a.post_categories || []).length > 0;
+    const topic = own ? a.post_categories : (a.auto_categories || []);
+    const cats = topic.map(c =>
+        `<span class="chip" title="${own ? 'post categories' : 'feed categories'}">${esc(c)}</span>`).join(' ')
+      + (a.categories || []).map(c =>
+          `<span class="chip user" title="your category">${esc(c)}</span>`).join(' ');
     const raw = a.feed_summarize === false
       ? ' <span class="chip raw" title="shown as extracted, no LLM used">raw</span>' : '';
     const sub = a.feed_description && a.feed_description !== a.feed_title

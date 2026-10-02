@@ -67,7 +67,7 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
         added = 0
         for e in res["entries"]:
             if db.upsert_article(conn, feed_id, e["guid"], e["link"], e["title"],
-                                 e["published_at"]):
+                                 e["published_at"], e.get("categories")):
                 added += 1
         log.info("feed %s: %d new articles", url, added)
         return f"ok ({added} new)"

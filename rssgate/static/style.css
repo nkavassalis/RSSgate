@@ -41,6 +41,7 @@ body { margin:0; background:var(--bg); color:var(--text);
   padding:1px 9px; font-size:.72rem; font-weight:600; white-space:nowrap; }
 .chip.raw { background:transparent; border:1px dashed var(--muted);
   color:var(--muted); font-weight:500; }
+.chip.user { background:var(--accent); color:#fff; }
 .card-meta time { margin-left:auto; white-space:nowrap; }
 .feed-sub { color:var(--muted); font-size:.82rem; font-style:italic; margin-top:2px; }
 .card h2 { margin:.5rem 0 .35rem; font-size:1.15rem; line-height:1.35; }

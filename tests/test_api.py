@@ -48,9 +48,12 @@ def test_article_cards_carry_feed_categories(client):
     seed(client, 1, cats="tech, science")
     conn = client.conn
     conn.execute("UPDATE feeds SET auto_categories='Space,Rockets'")
+    conn.execute("UPDATE articles SET categories='Physics,Gene Editing'")
+    conn.commit()
     item = client.get("/api/articles").get_json()["items"][0]
-    assert item["categories"] == ["tech", "science"]
-    assert item["auto_categories"] == ["Space", "Rockets"]
+    assert item["categories"] == ["tech", "science"]        # user-assigned (feed)
+    assert item["auto_categories"] == ["Space", "Rockets"]  # feed-level fallback
+    assert item["post_categories"] == ["Physics", "Gene Editing"]  # the post's own
 
 
 def test_add_feed_validates_and_stores_categories(client):

@@ -50,6 +50,20 @@ def test_category_helpers(conn):
     assert db.all_categories(conn) == [{"count": 2, "name": "ai2"}]
 
 
+def test_per_post_categories(conn):
+    fid = db.add_feed(conn, "https://ex/feed")
+    aid = db.upsert_article(conn, fid, "g1", "l1", "T", None, ["Space", "Rockets"])
+    row = conn.execute("SELECT categories FROM articles WHERE id=?", (aid,)).fetchone()
+    assert row["categories"] == "Space,Rockets"
+    # known article: categories refreshed, still not 'new'
+    assert db.upsert_article(conn, fid, "g1", "l1", "T", None, ["AI"]) is None
+    assert conn.execute("SELECT categories FROM articles WHERE id=?",
+                        (aid,)).fetchone()["categories"] == "AI"
+    # filter matches per-post categories
+    assert len(db.articles_page(conn, category="AI")) == 1
+    assert db.articles_page(conn, category="nope") == []
+
+
 def test_category_filter_in_articles_page(conn):
     fid, _ = seed(conn, 2)
     db.update_feed(conn, fid, categories="tech")

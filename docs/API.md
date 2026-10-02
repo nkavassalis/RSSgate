@@ -7,7 +7,7 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 
 | Method/Path | Description |
 |---|---|
-| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive), `before_id`, `limit` (≤100), `feed_id`, `category`, `from_date` (YYYY-MM-DD alias of before_ts=23:59 of that day). Defaults to stored resume position. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[]}], has_more, next}`. |
+| `GET /api/articles` | Keyset-paginated reverse-chronological articles. Query params: `before_ts` (ISO, exclusive), `before_id`, `limit` (≤100), `feed_id`, `category`, `from_date` (YYYY-MM-DD alias of before_ts=23:59 of that day). Defaults to stored resume position. Returns `{items:[{id,title,link,summary,status,ts,feed_id,feed_title,feed_description,feed_summarize,categories[],auto_categories[],post_categories[]}], has_more, next}`. |
 | `POST /api/position` | Save resume position. Body `{ts, id}` (the oldest article card the user passed). |
 | `GET /api/resume` | `{resume_ts, resume_id, newest_ts}` — client boot call. |
 

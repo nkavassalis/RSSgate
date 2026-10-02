@@ -71,6 +71,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "summarize" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN summarize INTEGER NOT NULL DEFAULT 1")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
+    if "categories" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN categories TEXT NOT NULL DEFAULT ''")
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
     if "llm_ms" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN llm_ms INTEGER NOT NULL DEFAULT 0")
     if "started_at" not in cols:
@@ -175,15 +178,24 @@ def remove_category(conn, name: str) -> int:
 # ---------------------------------------------------------------- articles
 
 def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
-                   published_at: str | None) -> int | None:
-    """Insert a new article. Returns its id, or None if already known."""
+                   published_at: str | None, categories: list[str] | None = None) -> int | None:
+    """Insert a new article (with its own category tags). Returns its id, or
+    None if already known -- known articles get refreshed category tags only."""
+    cats = ",".join(categories or [])
+    known = conn.execute("SELECT 1 FROM articles WHERE feed_id=? AND guid=?",
+                         (feed_id, guid)).fetchone()
+    if known:
+        if cats:
+            conn.execute("UPDATE articles SET categories=? WHERE feed_id=? AND guid=?",
+                         (cats, feed_id, guid))
+            conn.commit()
+        return None
     cur = conn.execute(
-        "INSERT OR IGNORE INTO articles(feed_id, guid, link, title, published_at,"
-        " fetched_at, status) VALUES(?,?,?,?,?,?, 'pending')",
-        (feed_id, guid, link, title, published_at, now_iso()),
-    )
+        "INSERT INTO articles(feed_id, guid, link, title, published_at, fetched_at,"
+        " categories, status) VALUES(?,?,?,?,?,?,?, 'pending')",
+        (feed_id, guid, link, title, published_at, now_iso(), cats))
     conn.commit()
-    return cur.lastrowid if cur.rowcount else None
+    return cur.lastrowid
 
 
 _TS_EXPR = "COALESCE(published_at, fetched_at)"
@@ -201,15 +213,15 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
         where.append("a.feed_id = ?")
         params.append(feed_id)
     if category:
-        where.append("(f.categories LIKE ? OR f.auto_categories LIKE ?)")
-        params += [f"%{category}%", f"%{category}%"]
+        where.append("(a.categories LIKE ? OR f.categories LIKE ? OR f.auto_categories LIKE ?)")
+        params += [f"%{category}%"] * 3
     rows = conn.execute(
         f"""SELECT a.id, a.title, a.link, a.summary, a.status,
                    {_TS_EXPR.replace('published_at', 'a.published_at').replace('fetched_at', 'a.fetched_at')} AS ts,
                    a.published_at, a.fetched_at, a.tokens_in, a.tokens_out,
                    f.id AS feed_id, f.title AS feed_title, f.description AS feed_description,
                    f.categories AS categories, f.auto_categories AS auto_categories,
-                   f.summarize AS feed_summarize
+                   a.categories AS post_categories, f.summarize AS feed_summarize
             FROM articles a JOIN feeds f ON f.id = a.feed_id
             WHERE {' AND '.join(where)}
             ORDER BY ts DESC, a.id DESC LIMIT ?""",
