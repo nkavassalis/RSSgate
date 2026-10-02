@@ -23,15 +23,17 @@
       <tbody></tbody>
     </table>
     <div class="add-feed">
-      <input id="new-url" placeholder="https://example.com/feed  (RSS, Atom or bare web page)">
+      <input id="new-url" placeholder="https://example.com  (page or feed URL; we'll look for the feed)">
       <select id="new-type">
         <option value="auto">auto-detect</option>
         <option value="feed">feed</option>
         <option value="page">bare page</option>
       </select>
-      <input id="new-cats" placeholder="categories, comma separated">
+      <input id="new-cats" placeholder="categories" list="all-cats">
+      <datalist id="all-cats"></datalist>
       <button class="btn" id="add-feed-btn">Add feed</button>
     </div>
+    <div id="add-suggest" class="suggest" hidden></div>
   </section>
 
   <section class="panel">

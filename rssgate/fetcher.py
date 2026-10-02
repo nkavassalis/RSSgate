@@ -6,12 +6,12 @@ import html as htmlmod
 import json
 import re
 from email.utils import parsedate_to_datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import requests
 
-from .extract import extract_candidate_links
+from .extract import extract_candidate_links, page_title
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 rssgate/0.1")
@@ -160,6 +160,77 @@ def fetch_page(url: str, etag: str | None = None, last_modified: str | None = No
     digest = hashlib.sha256(res["content"]).hexdigest()
     return {"ok": True, "changed": True, "html": html, "title": "", "etag": res["etag"],
             "last_modified": res["last_modified"], "fingerprint": digest}
+
+
+COMMON_FEED_PATHS = ("feed", "rss.xml", "feed.xml", "atom.xml")
+FEED_CONTENT_TYPES = ("application/rss+xml", "application/atom+xml",
+                      "application/xml", "text/xml")
+FEED_HREF_RE = re.compile(r"/(rss|feed|atom)([._/-].*)?(\.xml|/rss)?$", re.I)
+FEED_LABEL_RE = re.compile(r"\b(rss|atom|feed)s?\b", re.I)
+
+
+def _same_site(a: str, b: str) -> bool:
+    from urllib.parse import urlparse
+    ha = urlparse(a).netloc.lower().removeprefix("www.")
+    hb = urlparse(b).netloc.lower().removeprefix("www.")
+    return ha == hb or ha.endswith("." + hb) or hb.endswith("." + ha)
+
+
+def find_feeds(url: str) -> dict:
+    """Given a URL that may or may not be a feed, discover the real feed.
+    Returns {type: feed|page|unknown|error, candidates: [{url,title}],
+             page_title?, error?}. No LLM used -- pure sniffing."""
+    res = _get(url)
+    if not res["ok"]:
+        return {"type": "error", "error": f"HTTP {res['status']}", "candidates": []}
+    if looks_like_feed(res["content"]):
+        return {"type": "feed", "candidates": []}
+    html = res["content"].decode("utf-8", "replace")
+    if "html" not in res["content_type"].lower() and "<html" not in html[:600].lower():
+        return {"type": "unknown", "candidates": []}
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    cands, seen = [], {url}
+
+    def add(href, title=""):
+        u = urljoin(url, href).split("#")[0]
+        if u and u not in seen:
+            seen.add(u)
+            cands.append({"url": u, "title": (title or "").strip()})
+
+    for link in soup.find_all("link", href=True):
+        rel = link.get("rel") or ([link.get("rel")] if isinstance(link.get("rel"), str) else [])
+        if "alternate" in [r.lower() for r in rel] \
+           and (link.get("type", "").lower() in FEED_CONTENT_TYPES):
+            add(link["href"], link.get("title", ""))
+    declared = list(cands)  # publisher-declared <link rel=alternate>: trusted
+    for a in soup.find_all("a", href=True):  # feed-ish anchors or feed-hosted urls
+        href = urljoin(url, a["href"]).split("?")[0]
+        label = " ".join(((a.get("title") or "") + " " + a.get_text(" ", strip=True)).split())
+        host = urlparse(href).netloc.lower().removeprefix("www.").split(".")[0]
+        if host in ("feed", "feeds", "rss", "atom") or FEED_HREF_RE.search(href) or \
+           (FEED_LABEL_RE.search(label) and _same_site(href, url)):
+            add(href, label[:60])
+    if not cands:  # common well-known paths, root-relative
+        root = "/".join(url.split("/")[:3])
+        for p in COMMON_FEED_PATHS:
+            probe_url = f"{root}/{p}"
+            if probe_url == url or probe_url in seen:
+                continue
+            add(probe_url, "")
+    # heuristic (non-declared) candidates must actually parse as feeds
+    verified = list(declared)
+    for c in cands:
+        if len(verified) >= 6:
+            break
+        if c in declared:
+            continue
+        r = _get(c["url"])
+        if r["ok"] and looks_like_feed(r["content"]):
+            c["title"] = c["title"] or feedparser.parse(r["content"]).feed.get("title", "")
+            verified.append(c)
+    return {"type": "page", "candidates": verified[:6],
+            "page_title": page_title(html)}
 
 
 DISCOVER_PROMPT = (

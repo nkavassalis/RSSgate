@@ -136,6 +136,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             threading.Thread(target=_bg, daemon=True).start()
         return jsonify(_feed_dict(db.get_feed(conn, fid))), 201
 
+    @app.route("/api/feeds/probe", methods=["POST"])
+    def api_probe_feed():
+        from .fetcher import find_feeds
+        url = (request.get_json(force=True).get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            return jsonify({"error": "url must start with http(s)://"}), 400
+        return jsonify(find_feeds(url))
+
     @app.route("/api/feeds/<int:fid>", methods=["PUT"])
     def api_update_feed(fid):
         feed = db.get_feed(conn, fid)

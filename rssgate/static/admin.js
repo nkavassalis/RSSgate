@@ -11,8 +11,13 @@ async function api(path, opts = {}) {
 }
 
 // ------------------------------------------------------------------ feeds
+let ALLCATS = [];
+const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
+
 async function renderFeeds() {
   const feeds = await api('/api/feeds');
+  ALLCATS = (await api('/api/categories')).map(c => c.name);
+  $('all-cats').innerHTML = ALLCATS.map(c => `<option>${esc(c)}</option>`).join('');
   const tbody = $('feed-table').querySelector('tbody');
   tbody.innerHTML = feeds.map(f => `
     <tr data-id="${f.id}">
@@ -20,8 +25,8 @@ async function renderFeeds() {
           <div class="hint">${esc(f.last_status || '')}</div></td>
       <td><span class="type-tag">${esc(f.type)}</span></td>
       <td class="cats">
-        <input value="${esc((f.categories || []).join(', '))}" placeholder="e.g. tech, science"
-               data-role="cats">
+        <div class="catchips" data-role="cats">${(f.categories || []).map(catChip).join('')}</div>
+        <select data-role="catadd"><option value="">+ category…</option></select>
         ${(f.auto_categories || []).length
           ? `<span class="auto-cat">feed says: ${esc(f.auto_categories.join(', '))}</span>`
           : ''}
@@ -44,12 +49,31 @@ async function renderFeeds() {
 
   tbody.querySelectorAll('tr').forEach(tr => {
     const id = tr.dataset.id;
+    const chips = tr.querySelector('[data-role=cats]');
+    const dd = tr.querySelector('[data-role=catadd]');
+    dd.innerHTML = '<option value="">+ category…</option>'
+      + ALLCATS.map(c => `<option>${esc(c)}</option>`).join('')
+      + '<option value="__new">✚ create new…</option>';
+    dd.addEventListener('change', () => {
+      let v = dd.value;
+      if (!v) return;
+      if (v === '__new') { v = (prompt('New category name:') || '').trim(); dd.value = ''; }
+      if (!v) return;
+      if ([...chips.querySelectorAll('.chip')].some(c =>
+            c.dataset.name.toLowerCase() === v.toLowerCase())) return;
+      chips.insertAdjacentHTML('beforeend', catChip(v));
+      if (!ALLCATS.some(c => c.toLowerCase() === v.toLowerCase())) ALLCATS.push(v);
+    });
+    chips.addEventListener('click', e => {
+      if (e.target.closest('b')) e.target.closest('.chip').remove();
+    });
+
     tr.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
       if (btn.dataset.act === 'save')
-        await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(
-          { categories: tr.querySelector('[data-role=cats]').value.split(','),
-            summarize: tr.querySelector('[data-role=llm]').checked,
-            hide_sponsored: tr.querySelector('[data-role=spons]').checked }) });
+        await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
+          categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
+          summarize: tr.querySelector('[data-role=llm]').checked,
+          hide_sponsored: tr.querySelector('[data-role=spons]').checked }) });
       if (btn.dataset.act === 'del' && confirm('Delete this feed and its articles?'))
         await api(`/api/feeds/${id}`, { method: 'DELETE' });
       if (btn.dataset.act === 'refresh') {
@@ -61,15 +85,62 @@ async function renderFeeds() {
   });
 }
 
+// ---- add feed: probe the URL, find a real feed if we can, ask before page mode
+async function addFeed(url, type, cats) {
+  await api('/api/feeds', { method: 'POST',
+    body: JSON.stringify({ url, type, categories: cats, refresh: true }) });
+  $('new-url').value = ''; $('new-cats').value = '';
+  $('add-suggest').hidden = true;
+  renderFeeds();
+}
+
+function suggestBox(html) {
+  const box = $('add-suggest');
+  box.innerHTML = html; box.hidden = false;
+  return box;
+}
+
 $('add-feed-btn').addEventListener('click', async () => {
   const url = $('new-url').value.trim();
   if (!url) return;
-  const body = { url, type: $('new-type').value,
-                 categories: $('new-cats').value.split(',').map(s => s.trim()).filter(Boolean) };
-  try { await api('/api/feeds', { method: 'POST', body: JSON.stringify(body) });
-    $('new-url').value = ''; $('new-cats').value = '';
-    renderFeeds();
-  } catch (e) { alert(e.message); }
+  const cats = $('new-cats').value.split(',').map(s => s.trim()).filter(Boolean);
+  const btn = $('add-feed-btn');
+  btn.disabled = true; btn.textContent = 'probing\u2026';
+  try {
+    const p = await api('/api/feeds/probe', { method: 'POST', body: JSON.stringify({ url }) });
+    btn.disabled = false; btn.textContent = 'Add feed';
+    if (p.type === 'feed') {
+      suggestBox('<span>That URL is itself a feed \u2713 adding it.</span>');
+      await addFeed(url, 'auto', cats); return;
+    }
+    if (p.type === 'error') throw new Error(p.error || 'could not fetch URL');
+    if (p.candidates.length) {
+      const box = suggestBox(`<span>No feed at that URL \u2014 but I found one nearby:</span>
+        <select id="sugg">${p.candidates.map((c, i) =>
+          `<option value="${i}">${esc(c.title || c.url)}</option>`).join('')}</select>
+        <button class="btn" id="sugg-add">Add this feed</button>
+        <button class="btn ghost" id="sugg-page">Add original URL as bare page</button>
+        <button class="btn ghost" id="sugg-no">Cancel</button>`);
+      box.querySelector('#sugg-add').onclick = () =>
+        addFeed(p.candidates[+box.querySelector('#sugg').value].url, 'feed', cats);
+      box.querySelector('#sugg-page').onclick = () => addFeed(url, 'page', cats);
+      box.querySelector('#sugg-no').onclick = () => box.hidden = true;
+      return;
+    }
+    const box = suggestBox(`<span>No feed found at <b>${esc(p.page_title || url)}</b>. We could add it as a
+      <b>bare page</b> \u2014 the LLM discovers its articles each poll (slower, costs tokens).</span>
+      <button class="btn" id="pg-add">Add as bare page</button>
+      <button class="btn ghost" id="pg-no">Cancel</button>`);
+    box.querySelector('#pg-add').onclick = () => addFeed(url, 'page', cats);
+    box.querySelector('#pg-no').onclick = () => box.hidden = true;
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Add feed';
+    const box = suggestBox(`<span class="hint">Probe failed: ${esc(e.message)}</span>
+      <button class="btn ghost" id="pg-add">Add as bare page anyway</button>
+      <button class="btn ghost" id="pg-no">Cancel</button>`);
+    box.querySelector('#pg-add').onclick = () => addFeed(url, 'page', cats);
+    box.querySelector('#pg-no').onclick = () => box.hidden = true;
+  }
 });
 
 // ------------------------------------------------------------------ categories
