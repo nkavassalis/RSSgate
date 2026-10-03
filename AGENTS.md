@@ -139,5 +139,7 @@ smaller and fix forward. Release checklist: pytest green → bump → changelog
 ## Running
 ```
 .venv/bin/python run.py --config config.yaml   # http://0.0.0.0:8088
-.venv/bin/python -m pytest                     # hermetic suite
+.venv/bin/python -m pytest                     # hermetic suite (ui tier excluded by default)
+.venv/bin/python -m pytest -m ui               # REAL BROWSER tier - required before any UI/template/CSS change
 ```
+See docs/TESTING.md. UI changes are not done until the browser tier passes; never verify UI by grepping sources - assert computed style, geometry, and page errors.
