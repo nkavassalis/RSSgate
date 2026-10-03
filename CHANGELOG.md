@@ -35,6 +35,13 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.25.3] — 2026-10-03
+
+### Removed
+- 'feed says: ...' auto-category echo in the feed table - redundant now
+  that the gear panel's per-feed category census (with counts and
+  allow/deny) covers it properly.
+
 ## [0.25.2] — 2026-10-03
 
 ### Added

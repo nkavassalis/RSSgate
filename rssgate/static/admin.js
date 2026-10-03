@@ -29,9 +29,7 @@ async function renderFeeds() {
       <td class="cats">
         <div class="catchips" data-role="cats">${(f.categories || []).map(catChip).join('')}</div>
         <select data-role="catadd"><option value="">+ category…</option></select>
-        ${(f.auto_categories || []).length
-          ? `<span class="auto-cat">feed says: ${esc(f.auto_categories.join(', '))}</span>`
-          : ''}
+
       </td>
       <td style="text-align:center; white-space:nowrap">
         <label style="display:inline; margin:0"><input type="checkbox" data-role="llm" style="width:auto"
