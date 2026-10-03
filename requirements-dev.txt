@@ -1,0 +1,2 @@
+# dev/test extras (app itself has none beyond requirements.txt)
+playwright>=1.45

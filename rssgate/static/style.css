@@ -263,9 +263,13 @@ tr.feed-cfg td { background:var(--bg); padding:0 !important; }
 
 /* pull to refresh */
 html { overscroll-behavior-y: contain; }   /* kill browser-native PTR */
-#ptr { position:sticky; top:0; display:flex; gap:8px; align-items:center;
-  justify-content:center; height:0; overflow:hidden; color:var(--muted);
-  font-size:.8rem; transition:transform .12s ease; z-index:5; }
+#ptr { position:fixed; top:54px; left:50%; width:200px; margin-left:-100px;
+  display:flex; gap:8px; align-items:center; justify-content:center;
+  padding:8px 0; border-radius:999px; background:var(--card);
+  border:1px solid var(--line); box-shadow:0 6px 24px rgba(0,0,0,.25);
+  color:var(--muted); font-size:.8rem; opacity:0; pointer-events:none;
+  transform:translate(-50%,-80px); transition:transform .15s ease, opacity .15s;
+  z-index:40; }
 #ptr .ptr-arrow { display:inline-block; font-size:1.1rem; transition:transform .15s; }
 #ptr.ready { color:var(--link); }
 #ptr.ready .ptr-arrow { transform:rotate(180deg); }

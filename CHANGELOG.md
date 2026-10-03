@@ -35,6 +35,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.31.1] — 2026-10-03
+
+### Fixed
+- Pull-to-refresh broke the mobile layout (the pill was a direct child of
+  the flex .layout container, becoming a third flex item - the left gap)
+  and was invisible (self-clipping height:0). Now a position:fixed pill
+  that slides in with proper visibility states.
+- Layout-class contract test: overlays must be fixed/absolute, and the
+  flex container's child set is pinned - this exact bug class is now
+  CI-forbidden.
+
 ## [0.31.0] — 2026-10-03
 
 ### Added

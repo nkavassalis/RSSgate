@@ -106,3 +106,16 @@ def test_rendered_classes_have_css_rules():
             f".{cls} used in markup but never styled"
     assert "color:var(--link)" in CSS
     assert 'id="ptr"' in VIEWER_HTML and "#ptr" in CSS  # pull-to-refresh wired
+
+
+def test_overlays_never_ride_the_flex_flow():
+    """v0.31.0 incident: #ptr as a direct child of the flex .layout row
+    became a third flex item. Anything floating over the UI must be
+    position:fixed/absolute (out of flow). Real geometry is verified by
+    tests/test_ui_real.py - this guard is the cheap smoke."""
+    for sel in ("#ptr", "#lightbox", "#toast", ".modal-veil", "#sidebar-veil"):
+        rule = re.search(re.escape(sel) + r" \{[^}]*\}", CSS)
+        assert rule, f"{sel} has no CSS rule"
+        assert "position:fixed" in rule.group(0) \
+            or "position:absolute" in rule.group(0), \
+            f"{sel} must be fixed/absolute - in-flow overlays break flex"

@@ -340,7 +340,8 @@ async function renderUsage() {
 }
 
 async function renderLlmStats() {
-  const s = await api('/api/llm/stats');
+  const s = await api('/api/llm/stats').catch(() => null);
+  if (!s) return;
   const n = x => (x ?? 0).toLocaleString();
   $('st-queue').textContent = n(s.queue);
   $('st-peak').textContent = n(s.queue_peak);

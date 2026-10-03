@@ -251,7 +251,9 @@
   let ptrY = 0, ptrDist = 0, ptrArmed = false, ptrBusy = false;
   const PTR_MIN = 8, PTR_GO = 72;
   window.addEventListener('touchstart', e => {
-    if (window.scrollY > 2 || e.target.closest('#sidebar, #lightbox, .modal')) return;
+    if (window.scrollY > 2) return;
+    const tgt = e.target instanceof Element ? e.target : null;
+    if (tgt && tgt.closest('#sidebar, #lightbox, .modal')) return;
     ptrY = e.touches[0].clientY; ptrDist = 0; ptrArmed = true;
     ptr.classList.remove('spin');
   }, { passive: true });
@@ -260,7 +262,8 @@
     const d = e.touches[0].clientY - ptrY;
     if (d < PTR_MIN || window.scrollY > 2) { ptrDist = 0; return; }
     ptrDist = Math.min(120, d * 0.5);           // rubber-band resistance
-    ptr.style.transform = `translateY(${ptrDist}px)`;
+    ptr.style.transform = `translate(-50%, ${-80 + ptrDist}px)`;
+    ptr.style.opacity = Math.min(1, ptrDist / 40);
     ptrLabel.textContent = ptrDist >= PTR_GO ? 'Release to refresh' : 'Pull to refresh';
     ptr.classList.toggle('ready', ptrDist >= PTR_GO);
   }, { passive: true });
@@ -269,7 +272,8 @@
     ptrArmed = false;
     const go = ptrDist >= PTR_GO && !ptrBusy;
     ptrDist = 0;
-    ptr.style.transform = '';
+    ptr.style.transform = 'translate(-50%,-80px)';
+    ptr.style.opacity = 0;
     ptr.classList.remove('ready');
     if (go) doPullRefresh();
   }
@@ -278,13 +282,15 @@
   async function doPullRefresh() {
     ptrBusy = true;
     ptr.classList.add('spin');
-    ptr.style.transform = 'translateY(46px)';
+    ptr.style.transform = 'translate(-50%,46px)';
+    ptr.style.opacity = 1;
     ptrLabel.textContent = 'Refreshing\u2026';
     try { await fetch('/api/poll', { method: 'POST' }); } catch {}
     await new Promise(r => setTimeout(r, 2500));   // let the fetchers land
     restart();
     ptrBusy = false;
-    ptr.style.transform = '';
+    ptr.style.transform = 'translate(-50%,-80px)';
+    ptr.style.opacity = 0;
     ptrLabel.textContent = 'Pull to refresh';
   }
 

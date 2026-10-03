@@ -396,7 +396,11 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/llm/stats")
     def api_llm_stats():
-        return jsonify(db.llm_stats(conn))
+        try:
+            return jsonify(db.llm_stats(conn))
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({"error": str(exc), "avg_duration_s": None,
+                            "windows": []}, 200)
 
     @app.route("/api/workqueue")
     def api_workqueue():
