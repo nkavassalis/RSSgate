@@ -35,6 +35,15 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.25.1] — 2026-10-03
+
+### Fixed
+- Re-process dialog showed itself whenever the admin panel opened (the
+  veil's `display:flex` beat the `hidden` attribute, and its buttons only
+  get handlers when deliberately summoned). Added a global
+  `[hidden] { display:none !important }` so the attribute always wins —
+  this also immunizes every other hidden-classed element in the app.
+
 ## [0.25.0] — 2026-10-03
 
 ### Added

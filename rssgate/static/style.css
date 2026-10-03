@@ -189,6 +189,8 @@ textarea { resize:vertical; }
   border:1px solid var(--line); background:var(--chip); display:block; }
 @media (max-width:640px) { .gallery img { width:84px; height:64px; } }
 
+[hidden] { display:none !important; }   // never let class display rules beat 'hidden'
+
 /* lightbox */
 #lightbox { position:fixed; inset:0; z-index:100; background:rgba(10,12,16,.92);
   display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
