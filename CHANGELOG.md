@@ -35,6 +35,24 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.25.0] — 2026-10-03
+
+### Added
+- **Re-process confirmation popup**: changing a feed's LLM on/off or its
+  digest settings now asks whether to regenerate its stored digests.
+  Confirming (`POST /api/feeds/<id>/redigest`) re-queues every ready/error
+  article with body hashes cleared (so the hash cache cannot serve stale
+  settings), then a toast reports the queue count. Declining keeps
+  everything as-is; feeds with nothing digested never prompt.
+- **Optional custom system prompt per feed** (config panel textarea):
+  replaces the global digest prompt for that feed; `{length}` token works;
+  empty = global. The digest-length directive still layers on top.
+
+### Changed
+- `PUT /api/feeds/<id>` no longer auto-requeues raw articles when LLM is
+  toggled on (the confirm dialog owns that decision now).
+- `/api/feeds` payload gains `ready_count`.
+
 ## [0.24.0] — 2026-10-03
 
 ### Fixed

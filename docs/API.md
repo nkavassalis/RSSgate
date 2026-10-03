@@ -19,8 +19,9 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 | `POST /api/feeds` | Add. Body `{url, type?: auto\|feed\|page, categories?: [str], refresh?: bool}`. 400 bad url, 409 duplicate. |
 | `POST /api/feeds/probe` | Given any URL, find the real feed: `{type: feed\|page\|unknown\|error, candidates:[{url,title}], page_title?, error?}`. Heuristic candidates are verified (fetched + XML-parsed) before being returned; `<link rel=alternate>` declarations trusted as-is. No LLM used. |
 | `GET /api/feeds/<id>/categories` | Per-feed category census: `[{name, count, allowed}]` (post tags + feed-declared, incl. hidden). |
-| `PUT /api/feeds/<id>` | Update `{categories?: [str], enabled?: bool, type?: ..., hide_sponsored?: bool, summarize?: bool}`. `summarize: false` = raw mode (extracted text, no LLM); turning it back on re-queues raw items. Clearing `hide_sponsored` un-hides that feed's hidden articles. | Accepts `categories`, `enabled`, `summarize`, `hide_sponsored`, `digest_length` (default|terse|normal|detailed), `category_block` (list of blocked post categories; hides pre-LLM, retroactive).
+| `PUT /api/feeds/<id>` | Update `{categories?: [str], enabled?: bool, type?: ..., hide_sponsored?: bool, summarize?: bool}`. `summarize: false` = raw mode (extracted text, no LLM); turning it back on re-queues raw items. Clearing `hide_sponsored` un-hides that feed's hidden articles. | Accepts `categories`, `enabled`, `summarize`, `hide_sponsored`, `digest_length` (default|terse|normal|detailed), `system_prompt` (optional per-feed prompt override), `category_block` (list of blocked post categories; hides pre-LLM, retroactive).
 | `DELETE /api/feeds/<id>` | Delete feed + its articles. |
+| `POST /api/feeds/<id>/redigest` | User-confirmed re-processing: re-queues ready/error articles with hashes cleared so new prompts/lengths apply. Returns `{ok, requeued}`. |
 | `POST /api/feeds/<id>/refresh` | Poll this feed immediately. |
 
 ## Categories

@@ -147,6 +147,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 (f["id"],)).fetchone()["c"]
             out.append({k: f[k] for k in f.keys() if k not in ("etag", "last_modified")}
                        | {"article_count": n, "hidden_count": hid,
+                          "ready_count": db.feed_ready_count(conn, f["id"]),
                           "unread": db.feed_unread(conn, f["id"], f["last_read_ts"]),
                           "categories": db.parse_categories(f["categories"]),
                           "auto_categories": db.parse_categories(f["auto_categories"])})
@@ -194,11 +195,13 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if "enabled" in data:
             fields["enabled"] = 1 if data["enabled"] else 0
         if "summarize" in data:
-            want = 1 if data["summarize"] else 0
-            if want and not feed["summarize"]:   # raw -> LLM: re-digest the feed
-                conn.execute("UPDATE articles SET status='pending'"
-                             " WHERE feed_id=? AND status='ready' AND llm_ms=0", (fid,))
-            fields["summarize"] = want
+            # no auto re-digest: the admin UI asks first, then calls
+            # POST /api/feeds/<id>/redigest if you confirm
+            fields["summarize"] = 1 if data["summarize"] else 0
+        if "system_prompt" in data:
+            sp = data["system_prompt"]
+            fields["system_prompt"] = (str(sp)[:4000].strip()
+                                       if isinstance(sp, str) else "")
         if "digest_length" in data:
             val = data["digest_length"]
             fields["digest_length"] = (val if val in
@@ -249,6 +252,13 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if request.args.get("viewer"):
             return jsonify(db.category_list(conn))
         return jsonify(db.all_categories(conn))
+
+    @app.route("/api/feeds/<int:fid>/redigest", methods=["POST"])
+    def api_redigest_feed(fid):
+        if not db.get_feed(conn, fid):
+            return jsonify({"error": "not found"}), 404
+        n = db.requeue_ready(conn, fid)
+        return jsonify({"ok": True, "requeued": n})
 
     @app.route("/api/feeds/<int:fid>/categories")
     def api_feed_categories(fid):

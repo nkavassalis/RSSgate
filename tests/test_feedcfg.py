@@ -129,3 +129,52 @@ def test_digest_length_persists_and_validates(client, fake_feed):
     f = [x for x in client.get("/api/feeds").get_json()
          if x["id"] == fake_feed][0]
     assert f["digest_length"] == "default"
+
+
+def test_custom_prompt_override_and_merge(client):
+    from rssgate.config import load_config
+    cfg = load_config("__no_such__.yaml")
+    feed = {"digest_length": "terse", "system_prompt": "You are HF. {length} max."}
+    p = refresh.system_prompt(cfg, feed)
+    assert p.startswith("You are HF.")
+    assert "ONE sentence" in p                       # digest length still applies
+    # empty custom prompt falls back to global (optional by design)
+    assert refresh.system_prompt(cfg, {"digest_length": "default",
+                                       "system_prompt": "  "}) \
+        == refresh.system_prompt(cfg)
+
+
+def test_system_prompt_persists(client, fake_feed):
+    client.put(f"/api/feeds/{fake_feed}",
+               json={"system_prompt": "one short bullet only"})
+    f = [x for x in client.get("/api/feeds").get_json()
+         if x["id"] == fake_feed][0]
+    assert f["system_prompt"] == "one short bullet only"
+    client.put(f"/api/feeds/{fake_feed}", json={"system_prompt": None})
+    f = [x for x in client.get("/api/feeds").get_json()
+         if x["id"] == fake_feed][0]
+    assert f["system_prompt"] == ""
+
+
+def test_redigest_endpoint(client, fake_feed):
+    conn = client.conn
+    for i in range(3):
+        aid = db.upsert_article(conn, fake_feed, f"g{i}", f"https://x/{i}",
+                                "t", None)
+        db.set_article(conn, aid, status="ready", summary="s", body_hash="h" * 64,
+                       llm_ms=50)
+    r = client.post(f"/api/feeds/{fake_feed}/redigest").get_json()
+    assert r["requeued"] == 3
+    row = conn.execute("SELECT status, body_hash, llm_ms FROM articles"
+                       " LIMIT 1").fetchone()
+    assert (row[0], row[1], row[2]) == ("pending", None, 0)
+    assert client.post(f"/api/feeds/{fake_feed}/redigest").get_json()["requeued"] == 0
+    assert client.post("/api/feeds/999/redigest").status_code == 404
+
+
+def test_ready_count_in_feeds_payload(client, fake_feed):
+    conn = client.conn
+    aid = db.upsert_article(conn, fake_feed, "g", "https://x/1", "t", None)
+    db.set_article(conn, aid, status="ready", summary="s")
+    f = [x for x in client.get("/api/feeds").get_json() if x["id"] == fake_feed][0]
+    assert f["ready_count"] == 1

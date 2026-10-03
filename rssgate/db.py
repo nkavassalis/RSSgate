@@ -76,6 +76,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "category_block" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN category_block TEXT NOT NULL"
                      " DEFAULT ''")
+    if "system_prompt" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN system_prompt TEXT NOT NULL"
+                     " DEFAULT ''")
     if "last_read_ts" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -297,6 +300,24 @@ def requeue_unblocked(conn, feed_id: int) -> int:
         n += 1
     conn.commit()
     return n
+
+
+def requeue_ready(conn, feed_id: int) -> int:
+    """User-confirmed re-processing: every digested (or failed) article of a
+    feed goes back to the queue with its body_hash cleared, so the new LLM
+    settings (or new custom prompt / digest length) genuinely apply instead
+    of hitting the hash cache. Summaries are dropped and regenerate."""
+    cur = conn.execute(
+        "UPDATE articles SET status='pending', summary=NULL, body_hash=NULL,"
+        " llm_ms=0, started_at=NULL WHERE feed_id=? AND status IN"
+        " ('ready','error')", (feed_id,))
+    conn.commit()
+    return cur.rowcount
+
+
+def feed_ready_count(conn, feed_id: int) -> int:
+    return conn.execute("SELECT COUNT(*) c FROM articles WHERE feed_id=?"
+                        " AND status='ready'", (feed_id,)).fetchone()["c"]
 
 
 def category_list(conn) -> dict:

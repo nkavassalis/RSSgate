@@ -129,9 +129,15 @@ DIGEST_DIRECTIVES = {
 
 
 def system_prompt(cfg, feed=None) -> str:
+    """Global prompt, or the feed's CUSTOM one when set (optional override;
+    {length} works in both). The per-feed digest-length directive is always
+    appended so the select keeps authority even over custom prompts."""
     summ = cfg["summarizer"]
     target = LENGTH_TARGETS.get(summ.get("length", "medium"), "200-300 words")
-    base = summ["system_prompt"].replace("{length}", target)
+    custom = ""
+    if feed is not None and "system_prompt" in feed.keys():
+        custom = (feed["system_prompt"] or "").strip()
+    base = (custom or summ["system_prompt"]).replace("{length}", target)
     dl = feed["digest_length"] if (feed is not None
                                    and "digest_length" in feed.keys()) else "default"
     return base + DIGEST_DIRECTIVES.get(dl, "")

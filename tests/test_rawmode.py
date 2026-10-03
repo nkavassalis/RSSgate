@@ -50,7 +50,11 @@ def test_api_raw_flag_and_requeue(client, monkeypatch):
     _db.set_article(conn, aid, status="ready", summary="raw text", llm_ms=0)
     r = client.put(f"/api/feeds/{fid}", json={"summarize": False}).get_json()
     assert r["summarize"] == 0
-    # back to LLM mode: raw-digested items (llm_ms=0) are re-queued
+    # back to LLM mode: re-digest is user-confirmed, not automatic
     client.put(f"/api/feeds/{fid}", json={"summarize": True})
-    assert conn.execute("SELECT status FROM articles WHERE id=?", (aid,)).fetchone()["status"] == "pending"
+    assert conn.execute("SELECT status FROM articles WHERE id=?", (aid,)).fetchone()["status"] == "ready"
+    r = client.post(f"/api/feeds/{fid}/redigest").get_json()
+    assert r == {"ok": True, "requeued": 1}
+    assert conn.execute("SELECT status, body_hash, summary FROM articles WHERE id=?",
+                        (aid,)).fetchone()[:2] == ("pending", None)
     assert client.get("/api/articles").get_json()["items"][0]["feed_summarize"] is True

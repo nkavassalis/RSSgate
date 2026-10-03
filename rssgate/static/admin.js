@@ -12,15 +12,17 @@ async function api(path, opts = {}) {
 
 // ------------------------------------------------------------------ feeds
 let ALLCATS = [];
+let ALLFEEDS = [];
 const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
 
 async function renderFeeds() {
   const feeds = await api('/api/feeds');
   ALLCATS = (await api('/api/categories')).map(c => c.name);
+  ALLFEEDS = feeds;
   $('all-cats').innerHTML = ALLCATS.map(c => `<option>${esc(c)}</option>`).join('');
   const tbody = $('feed-table').querySelector('tbody');
   tbody.innerHTML = feeds.map(f => `
-    <tr data-id="${f.id}">
+    <tr data-id="${f.id}" data-was-llm="${f.summarize === 0 ? 0 : 1}">
       <td><a href="${esc(f.url)}" target="_blank">${esc(f.title || f.url)}</a>
           <div class="hint">${esc(f.last_status || '')}</div></td>
       <td><span class="type-tag">${esc(f.type)}</span></td>
@@ -86,11 +88,17 @@ async function renderFeeds() {
         }
         return;
       }
-      if (btn.dataset.act === 'save')
+      if (btn.dataset.act === 'save') {
+        const was = tr.dataset.wasLlm === '1';
+        const now = tr.querySelector('[data-role=llm]').checked;
         await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
           categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
-          summarize: tr.querySelector('[data-role=llm]').checked,
+          summarize: now,
           hide_sponsored: tr.querySelector('[data-role=spons]').checked }) });
+        renderFeeds(); renderCategories();
+        if (was !== now) await maybeRedigest(id);
+        return;
+      }
       if (btn.dataset.act === 'del' && confirm('Delete this feed and its articles?'))
         await api(`/api/feeds/${id}`, { method: 'DELETE' });
       if (btn.dataset.act === 'refresh') {
@@ -363,12 +371,21 @@ const DLEN = { default: 'Feed default', terse: 'Terse (one sentence, <=20 words)
                normal: 'Normal (~150 words)', detailed: 'Detailed (300-500 words)' };
 async function loadCfg(row, id) {
   const cats = await api(`/api/feeds/${id}/categories`);
-  const dlen = row.querySelector('.cfg-panel').dataset.dlen || 'default';
-  row.querySelector('.cfg-panel').innerHTML = `
+  const panel = row.querySelector('.cfg-panel');
+  const dlen = panel.dataset.dlen || 'default';
+  const feed = (ALLFEEDS.find(f => String(f.id) === id) || {});
+  const curPrompt = feed.system_prompt || '';
+  panel.dataset.wasPrompt = curPrompt; panel.dataset.wasDlen = dlen;
+  panel.innerHTML = `
     <div class="cfg-grid">
       <label>Digest length
         <select data-role="dlen">${Object.entries(DLEN).map(([v, t]) =>
           `<option value="${v}"${v === dlen ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      </label>
+      <label class="sp-label">Custom system prompt <small>(optional — replaces the
+        global digest prompt for this feed only; <code>{length}</code> available)</small>
+        <textarea data-role="sprompt" rows="4" spellcheck="false"
+          placeholder="(empty = use the global prompt)">${esc(curPrompt)}</textarea>
       </label>
       <div class="cat-allow">
         <h4>Post categories <small>checked = allowed; unchecked are hidden BEFORE the LLM (zero tokens). New categories arrive checked.</small></h4>
@@ -384,10 +401,16 @@ async function loadCfg(row, id) {
     const blocked = [...row.querySelectorAll('.cat-pick input:not(:checked)')]
       .map(i => i.dataset.cat);
     const patch = { digest_length: row.querySelector('[data-role=dlen]').value,
+                    system_prompt: row.querySelector('[data-role=sprompt]').value,
                     category_block: blocked };
     await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
     row.querySelector('.cfg-status').textContent = 'saved \u2713';
-    setTimeout(() => renderFeedsKeepingOpen(), 600);
+    const promptChanged = patch.system_prompt !== panel.wasPrompt
+      || patch.digest_length !== panel.wasDlen;
+    setTimeout(async () => {
+      renderFeedsKeepingOpen();
+      if (promptChanged) await maybeRedigest(id);
+    }, 500);
   });
 }
 function renderFeedsKeepingOpen() {
@@ -398,4 +421,45 @@ function renderFeedsKeepingOpen() {
     if (row) { row.hidden = false; row.dataset.loaded = '1';
                loadCfg(row, id); }
   }));
+}
+
+// ---- re-process confirmation ----------------------------------------------
+function maybeRedigest(id) {
+  const f = ALLFEEDS.find(x => String(x.id) === String(id));
+  const n = (f && f.ready_count) || 0;
+  if (!n) return Promise.resolve(false);          // nothing to redo, stay quiet
+  return confirmRedigest(id, f.title || f.url, n);
+}
+function confirmRedigest(id, title, n) {
+  return new Promise(resolve => {
+    const veil = $('rd-modal');
+    $('rd-text').innerHTML = `Re-process <b>${esc(title)}</b>? Its
+      <b>${n}</b> stored digest${n === 1 ? '' : 's'} will be regenerated with the
+      new settings (LLM tokens will be used for LLM feeds).`;
+    veil.hidden = false;
+    const done = async (yes) => {
+      veil.hidden = true;
+      $('rd-yes').onclick = $('rd-no').onclick = null;
+      if (yes) {
+        const r = await api(`/api/feeds/${id}/redigest`, { method: 'POST' });
+        toast(`re-queued ${r.requeued} article${r.requeued === 1 ? '' : 's'} \u2192 queue`);
+      }
+      resolve(yes);
+    };
+    $('rd-yes').onclick = () => done(true);
+    $('rd-no').onclick = () => done(false);
+  });
+}
+
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._h);
+  toast._h = setTimeout(() => t.classList.remove('show'), 3200);
 }
