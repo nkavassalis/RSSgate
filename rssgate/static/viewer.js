@@ -351,7 +351,7 @@
     const ul = $('feed-filter');
     ul.innerHTML = '<li data-feed="" class="' + (store.feed ? '' : 'active') + '">All feeds' + '</li>'
       + feeds.map(f => `<li data-feed="${f.id}" class="${store.feed == f.id ? 'active' : ''}"
-           title="${esc(f.url)}"><span class="fname">${esc(f.title || f.url)}</span>
+           title="${esc(f.url)}"><span class="fname">${esc(f.display_title || f.title || f.url)}</span>
            ${f.unread ? `<b class="unread-pill">${f.unread}</b>`
                       : `<span>${f.article_count}</span>`}</li>`)
           .join('');

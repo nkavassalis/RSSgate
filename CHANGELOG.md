@@ -35,6 +35,13 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.27.1] — 2026-10-03
+
+### Fixed
+- Sidebar feed list ignored renames (showed the raw feed title while cards
+  showed the friendly name). `/api/feeds` now provides `display_title`
+  (custom > feed's own > url) and the viewer uses it.
+
 ## [0.27.0] — 2026-10-03
 
 ### Added

@@ -148,6 +148,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             out.append({k: f[k] for k in f.keys() if k not in ("etag", "last_modified")}
                        | {"article_count": n, "hidden_count": hid,
                           "ready_count": db.feed_ready_count(conn, f["id"]),
+                          "display_title": (f["custom_title"] or f["title"] or f["url"]),
                           "unread": db.feed_unread(conn, f["id"], f["last_read_ts"]),
                           "categories": db.parse_categories(f["categories"]),
                           "auto_categories": db.parse_categories(f["auto_categories"])})
