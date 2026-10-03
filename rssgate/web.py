@@ -198,6 +198,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             # no auto re-digest: the admin UI asks first, then calls
             # POST /api/feeds/<id>/redigest if you confirm
             fields["summarize"] = 1 if data["summarize"] else 0
+        if "max_input_chars" in data:
+            try:
+                fields["max_input_chars"] = max(0, min(200000, int(data["max_input_chars"])))
+            except (TypeError, ValueError):
+                fields["max_input_chars"] = 0
+        if "custom_title" in data:
+            ct = data["custom_title"]
+            fields["custom_title"] = (str(ct)[:200].strip()
+                                      if isinstance(ct, str) else "")
         if "system_prompt" in data:
             sp = data["system_prompt"]
             fields["system_prompt"] = (str(sp)[:4000].strip()
@@ -235,7 +244,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/feeds/<int:fid>", methods=["DELETE"])
     def api_delete_feed(fid):
+        files = db.feed_files(conn, fid)
         db.delete_feed(conn, fid)
+        db.release_files(conn, files)          # proactive orphan reclaim
         return jsonify({"ok": True})
 
     @app.route("/api/feeds/<int:fid>/refresh", methods=["POST"])
@@ -252,6 +263,11 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if request.args.get("viewer"):
             return jsonify(db.category_list(conn))
         return jsonify(db.all_categories(conn))
+
+    @app.route("/api/feed-errors")
+    def api_feed_errors():
+        rows = db.recent_errors(conn, min(int(request.args.get("limit", 20)), 100))
+        return jsonify([dict(r) for r in rows])
 
     @app.route("/api/feeds/<int:fid>/redigest", methods=["POST"])
     def api_redigest_feed(fid):

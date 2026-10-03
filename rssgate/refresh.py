@@ -128,6 +128,16 @@ DIGEST_DIRECTIVES = {
 }
 
 
+def fail(conn, cfg, article_id: int, why: str) -> None:
+    """Mark an article failed; with troubleshooting.log_llm_failures the
+    reason is stored on the article and surfaced in the admin panel."""
+    if cfg.get("troubleshooting", {}).get("log_llm_failures"):
+        db.set_article(conn, article_id, status="error",
+                       error_msg=str(why)[:500])
+    else:
+        db.set_article(conn, article_id, status="error")
+
+
 def system_prompt(cfg, feed=None) -> str:
     """Global prompt, or the feed's CUSTOM one when set (optional override;
     {length} works in both). The per-feed digest-length directive is always
@@ -160,8 +170,15 @@ def _cache_image(conn, art, page_html: str):
         names = [n for n in (imgstore.store(u) for u in urls) if n]
         if not names:
             return None
+        old = set()
+        if art["image"]:
+            old.add(art["image"])
+        for n in (art["images"] or "").split(","):
+            if n and n != "-":
+                old.add(n)
         db.set_article(conn, art["id"], image=names[0], image_url=urls[0],
                        images=",".join(names))
+        db.release_files(conn, old - set(names))   # proactive orphan reclaim
         return names
     except Exception:  # noqa: BLE001 - images are decorative
         return None
@@ -246,11 +263,14 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             from .fetcher import UA
             resp = requests.get(art["link"], headers={"user-agent": UA}, timeout=30)
             if not resp.ok:
-                db.set_article(conn, art["id"], status="error")
+                fail(conn, cfg, art["id"], f"fetch HTTP {resp.status_code}")
                 continue
-            text = extract_article_text(resp.text, cfg["summarizer"]["max_input_chars"])
+            cap = cfg["summarizer"]["max_input_chars"]
+            if "max_input_chars" in feed.keys() and feed["max_input_chars"]:
+                cap = min(cap, feed["max_input_chars"])   # per-feed tighter cap
+            text = extract_article_text(resp.text, cap)
             if len(text) < 120:
-                db.set_article(conn, art["id"], status="error", summary=None)
+                fail(conn, cfg, art["id"], f"extracted text too short ({len(text)} ch)")
                 continue
             _cache_image(conn, art, resp.text)
             body_hash = hashlib.sha256(text.encode()).hexdigest()
@@ -311,6 +331,7 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                            summarized_at=db.now_iso())
             done += 1
         except Exception as exc:  # noqa: BLE001
+            fail(conn, cfg, art["id"], f"{type(exc).__name__}: {exc}")
             log.warning("summarize failed for %s: %s", art["link"], exc)
             db.set_article(conn, art["id"], status="error")
     return done

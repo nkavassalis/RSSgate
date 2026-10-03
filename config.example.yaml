@@ -69,6 +69,9 @@ ui:
   order: newest
 
 # Maintenance: article retention + image cache hygiene (also in the admin panel)
+troubleshooting:
+  log_llm_failures: false     # true: store why each digest failed (admin panel list)
+
 maintenance:
   retention_months: 0        # 0 = keep articles forever; N = delete older than N months
   images_max_mb: 0           # 0 = unlimited; N = prune <data_dir>/images to ~N MB

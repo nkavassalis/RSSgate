@@ -298,3 +298,36 @@ def test_junk_ancestors_rejected():
     urls = extract_images(html, "https://blog.example/post")
     assert urls == ["https://blog.example/hero.jpg",
                     "https://blog.example/real.png"]
+
+
+def test_overwrite_releases_old_image_immediately(client, tmp_path, monkeypatch):
+    img = tmp_path / "images"; img.mkdir()
+    monkeypatch.setattr(imgstore, "_dir", img)
+    def fake_get(url, **kw):
+        if url.endswith((".jpg", ".png")):
+            return FakeResp(PNG if url.endswith(".png") else JPEG)
+        return FakeResp(text=ARTICLE_HTML)
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = db.add_feed(client.conn, "https://ex/orph", type_="feed")["id"]
+    aid = db.upsert_article(client.conn, fid, "o", "https://blog.example/post",
+                            "T", "2026-10-02T00:00:00Z")
+    old = "0" * 24 + ".jpg"
+    (img / old).write_bytes(JPEG)
+    db.set_article(client.conn, aid, status="ready", summary="s",
+                   image=old, images=old)
+    refresh.backfill_images(client.conn, {"maintenance": {}}, force=True)
+    assert not (img / old).exists()               # released on replace, not swept
+    assert (img / client.conn.execute("SELECT image FROM articles WHERE id=?",
+                                      (aid,)).fetchone()[0]).exists()
+
+
+def test_feed_delete_releases_images(client, tmp_path, monkeypatch):
+    img = tmp_path / "images"; img.mkdir()
+    monkeypatch.setattr(imgstore, "_dir", img)
+    fid = db.add_feed(client.conn, "https://ex/del", type_="feed")["id"]
+    aid = db.upsert_article(client.conn, fid, "d", "https://x/1", "T", None)
+    name = "1" * 24 + ".png"
+    (img / name).write_bytes(PNG)
+    db.set_article(client.conn, aid, image=name, images=name, status="ready")
+    client.delete(f"/api/feeds/{fid}")
+    assert not (img / name).exists()

@@ -35,6 +35,27 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.27.0] — 2026-10-03
+
+### Added
+- **Failure troubleshooting mode** (`troubleshooting.log_llm_failures`,
+  default off): stores WHY each article failed to transcribe (HTTP code,
+  too-short extraction, LLM error class) on the article; the admin panel
+  gains a 'Transcription failures' section (GET /api/feed-errors).
+- **Per-feed max input chars** (gear panel): tighter cap than the global
+  one for verbose sources (model cards, PDFs) - smaller prompts, faster
+  digests. `feeds.max_input_chars`, 0 = global.
+- **Proactive orphan prevention**: replaced images (backfill/re-digest)
+  and feed deletion release their cache files IMMEDIATELY when no other
+  article references them; maintenance remains the belt-and-braces sweeper.
+- Feed rename pencils + disable toggle shipped alongside (0.26.0 dev).
+
+### Notes
+- Admin feed table: 'On' checkbox disables polling AND digesting without
+  losing any settings/articles (dimmed row; resume anytime).
+- Feed titles: inline pencil rename (custom_title); the feed's own title
+  keeps refreshing underneath, 'revert' clears the override.
+
 ## [0.25.3] — 2026-10-03
 
 ### Removed

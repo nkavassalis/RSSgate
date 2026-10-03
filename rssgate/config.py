@@ -55,6 +55,9 @@ DEFAULTS: dict = {
             "only."
         ),
     },
+    "troubleshooting": {
+        "log_llm_failures": False,     # store per-article failure reasons
+    },
     "maintenance": {
         "retention_months": 0,           # 0 = forever
         "images_max_mb": 0,              # 0 = unlimited

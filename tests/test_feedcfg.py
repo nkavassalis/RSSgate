@@ -178,3 +178,57 @@ def test_ready_count_in_feeds_payload(client, fake_feed):
     db.set_article(conn, aid, status="ready", summary="s")
     f = [x for x in client.get("/api/feeds").get_json() if x["id"] == fake_feed][0]
     assert f["ready_count"] == 1
+
+
+def _fake_page(monkeypatch, html):
+    class R:
+        ok = True; status_code = 200; text = html
+    monkeypatch.setattr("requests.get", lambda *a, **k: R())
+
+
+def test_failure_logging_gated(client, monkeypatch):
+    from rssgate.config import load_config
+    fid = db.add_feed(client.conn, "https://ex/fail", type_="feed")["id"]
+    aid = db.upsert_article(client.conn, fid, "g", "https://blog.example/p",
+                            "t", "2026-10-01T00:00:00Z")
+    _fake_page(monkeypatch, "<html><body><p>tiny</p></body></html>")  # <120 chars
+    cfg = load_config("__no_such__.yaml")
+    refresh.summarize_pending(client.conn, cfg, None)
+    row = client.conn.execute("SELECT status, error_msg FROM articles"
+                              " WHERE id=?", (aid,)).fetchone()
+    assert row["status"] == "error" and row["error_msg"] == ""   # off by default
+    cfg["troubleshooting"]["log_llm_failures"] = True
+    db.set_article(client.conn, aid, status="pending")
+    refresh.summarize_pending(client.conn, cfg, None)
+    row = client.conn.execute("SELECT status, error_msg FROM articles"
+                              " WHERE id=?", (aid,)).fetchone()
+    assert "too short" in row["error_msg"]
+    errs = client.get("/api/feed-errors").get_json()
+    assert errs[0]["feed_id"] == fid and "too short" in errs[0]["error_msg"]
+
+
+def test_per_feed_input_cap(client, monkeypatch, fake_feed):
+    from rssgate.config import load_config
+    captured = {}
+    class RecLLM:
+        provider = "local"; model = "m"
+        def chat(self, msgs, **kw):
+            captured["user"] = msgs[1]["content"]
+            return "ok", {"prompt_tokens": 1, "completion_tokens": 1}
+    long_html = "<article>" + "".join(
+        f"<p>{'word%d ' * 40 % tuple([i] * 40)}</p>" for i in range(80)) + "</article>"
+    _fake_page(monkeypatch, long_html)
+    fid = fake_feed
+    aid = db.upsert_article(client.conn, fid, "g", "https://blog.example/p",
+                            "t", "2026-10-01T00:00:00Z")
+    cfg = load_config("__no_such__.yaml")
+    cfg["summarizer"]["min_text_chars"] = 10
+    refresh.summarize_pending(client.conn, cfg, RecLLM())
+    full = len(captured["user"])
+    client.put(f"/api/feeds/{fid}", json={"max_input_chars": 1500})
+    captured.clear()
+    db.set_article(client.conn, aid, status="pending", body_hash=None)
+    db.update_feed(client.conn, fid, categories="")
+    feed = db.get_feed(client.conn, fid)
+    refresh.summarize_pending(client.conn, cfg, RecLLM())
+    assert len(captured["user"]) < full          # per-feed cap applied

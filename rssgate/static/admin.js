@@ -22,8 +22,13 @@ async function renderFeeds() {
   $('all-cats').innerHTML = ALLCATS.map(c => `<option>${esc(c)}</option>`).join('');
   const tbody = $('feed-table').querySelector('tbody');
   tbody.innerHTML = feeds.map(f => `
-    <tr data-id="${f.id}" data-was-llm="${f.summarize === 0 ? 0 : 1}">
-      <td><a href="${esc(f.url)}" target="_blank">${esc(f.title || f.url)}</a>
+    <tr data-id="${f.id}" data-was-llm="${f.summarize === 0 ? 0 : 1}"
+        class="${f.enabled ? '' : 'off'}">
+      <td><span class="fname-cell" data-role="fname">
+          <a href="${esc(f.url)}" target="_blank">${esc(f.custom_title || f.title || f.url)}</a>
+          ${f.custom_title ? ' <b class="hint" title="renamed">(you)</b>' : ''}
+          <button class="btn ghost sm" data-act="rename" title="rename feed">&#9998;</button>
+        </span>
           <div class="hint">${esc(f.last_status || '')}</div></td>
       <td><span class="type-tag">${esc(f.type)}</span></td>
       <td class="cats">
@@ -92,11 +97,13 @@ async function renderFeeds() {
         await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
           categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
           summarize: now,
-          hide_sponsored: tr.querySelector('[data-role=spons]').checked }) });
+          hide_sponsored: tr.querySelector('[data-role=spons]').checked,
+          enabled: tr.querySelector('[data-role=enabled]').checked }) });
         renderFeeds(); renderCategories();
         if (was !== now) await maybeRedigest(id);
         return;
       }
+      if (btn.dataset.act === 'rename') { startFeedRename(tr, id); return; }
       if (btn.dataset.act === 'del' && confirm('Delete this feed and its articles?'))
         await api(`/api/feeds/${id}`, { method: 'DELETE' });
       if (btn.dataset.act === 'refresh') {
@@ -236,6 +243,8 @@ async function loadConfig() {
   $('cfg-retention').value = String(maint.retention_months ?? 0);
   $('cfg-imgcap').value = maint.images_max_mb ?? 0;
   $('cfg-imgperpost').value = maint.images_per_post ?? 4;
+  $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
+  renderFailures();
   $('cfg-length').value = cfg.summarizer.length;
   $('cfg-max-chars').value = cfg.summarizer.max_input_chars;
   $('cfg-concurrency').value = cfg.summarizer.concurrency ?? 2;
@@ -257,6 +266,7 @@ $('save-btn').addEventListener('click', async () => {
     polling: { feed_interval_minutes: +$('cfg-feed-min').value,
                page_interval_minutes: +$('cfg-page-min').value },
     ui: { order: $('cfg-order').value },
+    troubleshooting: { log_llm_failures: $('cfg-logfail').checked },
     maintenance: { retention_months: +$('cfg-retention').value,
                    images_max_mb: +$('cfg-imgcap').value,
                    images_per_post: Math.max(1, Math.min(8, +$('cfg-imgperpost').value || 4)) },
@@ -383,11 +393,15 @@ async function loadCfg(row, id) {
   const feed = (ALLFEEDS.find(f => String(f.id) === id) || {});
   const curPrompt = feed.system_prompt || '';
   panel.dataset.wasPrompt = curPrompt; panel.dataset.wasDlen = dlen;
+  const micap = feed.max_input_chars || 0;
   panel.innerHTML = `
     <div class="cfg-grid">
       <label>Digest length
         <select data-role="dlen">${Object.entries(DLEN).map(([v, t]) =>
           `<option value="${v}"${v === dlen ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      </label>
+      <label>Max input chars <small>(0 = global cap; lower = faster, e.g. 6000)</small>
+        <input type="number" min="0" step="1000" data-role="micap" value="${micap}" style="width:110px;margin-left:8px">
       </label>
       <label class="sp-label">Custom system prompt <small>(optional — replaces the
         global digest prompt for this feed only; <code>{length}</code> available)</small>
@@ -409,6 +423,7 @@ async function loadCfg(row, id) {
       .map(i => i.dataset.cat);
     const patch = { digest_length: row.querySelector('[data-role=dlen]').value,
                     system_prompt: row.querySelector('[data-role=sprompt]').value,
+                    max_input_chars: Math.max(0, +row.querySelector('[data-role=micap]').value || 0),
                     category_block: blocked };
     await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
     row.querySelector('.cfg-status').textContent = 'saved \u2713';
@@ -470,3 +485,41 @@ function toast(msg) {
   clearTimeout(toast._h);
   toast._h = setTimeout(() => t.classList.remove('show'), 3200);
 }
+
+// ---- inline feed rename ---------------------------------------------------
+function startFeedRename(tr, id) {
+  const cell = tr.querySelector('[data-role=fname]');
+  const f = ALLFEEDS.find(x => String(x.id) === String(id)) || {};
+  const cur = f.custom_title || f.title || f.url;
+  const q = cur.replace(/"/g, '&quot;');
+  cell.innerHTML = `<input class="feed-rename" value="${q}" size="28">
+    <button class="btn sm" data-ok title="save">&#10003;</button>
+    <button class="btn ghost sm" data-cancel title="cancel">&#10005;</button>
+    ${f.custom_title ? '<button class="btn ghost sm" data-revert title="back to feed name">revert</button>' : ''}`;
+  const inp = cell.querySelector('input');
+  inp.focus(); inp.select();
+  const commit = async (val) => {
+    await api(`/api/feeds/${id}`, { method: 'PUT',
+      body: JSON.stringify({ custom_title: val }) });
+    renderFeeds();
+  };
+  cell.querySelector('[data-ok]').onclick = () => commit(inp.value.trim());
+  cell.querySelector('[data-cancel]').onclick = () => renderFeeds();
+  if (rv) rv.onclick = () => commit('');
+  inp.onkeydown = ev => {
+    if (ev.key === 'Enter') commit(inp.value.trim());
+    if (ev.key === 'Escape') renderFeeds();
+  };
+}
+
+// ---- transcription failures -----------------------------------------------
+async function renderFailures() {
+  const rows = await api('/api/feed-errors?limit=30');
+  $('failure-list').innerHTML = rows.length
+    ? rows.map(r => `<li><b class="hint">${esc(r.feed_title)}</b>
+        <a href="${esc(r.link)}" target="_blank">${esc(r.title || r.link)}</a>
+        ${r.error_msg ? `<code>${esc(r.error_msg)}</code>` : '<span class="hint">(reason not stored - enable troubleshooting)</span>'}</li>`).join('')
+    : '<li class="hint">no failed articles \u2713</li>';
+}
+$('fail-refresh').addEventListener('click', renderFailures);
+$('cfg-logfail').addEventListener('change', () => {});   // saved with Save config

@@ -79,6 +79,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "system_prompt" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN system_prompt TEXT NOT NULL"
                      " DEFAULT ''")
+    if "custom_title" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN custom_title TEXT NOT NULL"
+                     " DEFAULT ''")
+    if "max_input_chars" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN max_input_chars INTEGER"
+                     " NOT NULL DEFAULT 0")
+    if "error_msg" not in [r["name"] for r in conn.execute(
+            "PRAGMA table_info(articles)")]:
+        conn.execute("ALTER TABLE articles ADD COLUMN error_msg TEXT"
+                     " NOT NULL DEFAULT ''")
     if "last_read_ts" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -315,6 +325,55 @@ def requeue_ready(conn, feed_id: int) -> int:
     return cur.rowcount
 
 
+def release_files(conn, names) -> int:
+    """Immediate orphan prevention: when an image stops being referenced by
+    the article that owned it, delete the file NOW - unless another article
+    still references it. Maintenance stays as a belt-and-braces sweeper."""
+    import os
+    from . import imgstore
+    d = imgstore.directory()
+    if not d:
+        return 0
+    gone = 0
+    for n in set(names):
+        if not n or n == "-" or not imgstore.safe_path(n):
+            continue
+        ref = conn.execute(
+            "SELECT 1 FROM articles WHERE image=? OR ',' || images || ','"
+            " LIKE ?", (n, f"%,{n},%")).fetchone()
+        if ref:
+            continue                      # shared with a live article
+        try:
+            os.unlink(os.path.join(d, n))
+            gone += 1
+        except OSError:
+            pass
+    return gone
+
+
+def feed_files(conn, feed_id: int) -> set:
+    """Image filenames owned by a feed's articles (for delete-time release)."""
+    out: set[str] = set()
+    for r in conn.execute("SELECT image, images FROM articles WHERE feed_id=?",
+                          (feed_id,)):
+        if r["image"]:
+            out.add(r["image"])
+        for n in (r["images"] or "").split(","):
+            if n and n != "-":
+                out.add(n)
+    return out
+
+
+def recent_errors(conn, limit: int = 20) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT a.id, a.title, a.link, a.error_msg,"
+        " CASE WHEN COALESCE(f.custom_title,'') != '' THEN f.custom_title"
+        "      ELSE f.title END AS feed_title, a.feed_id"
+        " FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        " WHERE a.status='error' ORDER BY a.id DESC LIMIT ?",
+        (limit,)).fetchall()
+
+
 def feed_ready_count(conn, feed_id: int) -> int:
     return conn.execute("SELECT COUNT(*) c FROM articles WHERE feed_id=?"
                         " AND status='ready'", (feed_id,)).fetchone()["c"]
@@ -470,7 +529,10 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
         f"""SELECT a.id, a.title, a.link, a.summary, a.status,
                    {_TS_EXPR.replace('published_at', 'a.published_at').replace('fetched_at', 'a.fetched_at')} AS ts,
                    a.published_at, a.fetched_at, a.tokens_in, a.tokens_out,
-                   f.id AS feed_id, f.title AS feed_title, f.description AS feed_description,
+                   f.id AS feed_id,
+                   CASE WHEN COALESCE(f.custom_title, '') != ''
+                        THEN f.custom_title ELSE f.title END AS feed_title,
+                   f.description AS feed_description,
                    f.categories AS categories, f.auto_categories AS auto_categories,
                    a.categories AS post_categories, a.image AS image,
                    a.images AS gallery,
@@ -502,7 +564,8 @@ def claim_pending(conn, limit: int = 1) -> list[sqlite3.Row]:
     Safe with concurrent workers: a row can only be claimed once."""
     cur = conn.execute(
         "UPDATE articles SET status='processing', started_at=? WHERE id IN"
-        " (SELECT id FROM articles WHERE status='pending' ORDER BY id LIMIT ?)"
+        " (SELECT a.id FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        "  WHERE a.status='pending' AND f.enabled=1 ORDER BY a.id LIMIT ?)"
         " RETURNING *",
         (now_iso(), limit))
     rows = cur.fetchall()
