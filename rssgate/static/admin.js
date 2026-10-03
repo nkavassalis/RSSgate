@@ -41,13 +41,21 @@ async function renderFeeds() {
       <td>${f.article_count}</td>
       <td class="hint">${esc((f.last_fetched_at || '').replace('T', ' ').replace('Z', '')) || 'never'}</td>
       <td style="white-space:nowrap">
+        <button class="btn ghost" data-act="cfg" title="advanced config">&#9881;</button>
         <button class="btn ghost" data-act="save">Save</button>
         <button class="btn ghost" data-act="refresh" title="refresh">&#x21bb;</button>
         <button class="btn ghost" data-act="del">&#10005;</button>
       </td>
-    </tr>`).join('');
+    </tr>
+    <tr class="feed-cfg" data-cfg="${f.id}" hidden><td colspan="7">
+      <div class="cfg-panel"><span class="hint">loading…</span></div>
+    </td></tr>`).join('');
+  tbody.querySelectorAll('tr.feed-cfg').forEach(row => {
+    const feed = feeds.find(f => String(f.id) === row.dataset.cfg);
+    row.querySelector('.cfg-panel').dataset.dlen = feed.digest_length || 'default';
+  });
 
-  tbody.querySelectorAll('tr').forEach(tr => {
+  tbody.querySelectorAll('tr[data-id]').forEach(tr => {
     const id = tr.dataset.id;
     const chips = tr.querySelector('[data-role=cats]');
     const dd = tr.querySelector('[data-role=catadd]');
@@ -317,3 +325,45 @@ $('maint-run-btn').addEventListener('click', async () => {
     $('maint-result').textContent = fmtMaint(r);
   } catch (e) { $('maint-result').textContent = '✗ ' + e.message; }
 });
+
+// ---- per-feed advanced config panel --------------------------------------
+const DLEN = { default: 'Feed default', terse: 'Terse (one sentence, <=20 words)',
+               normal: 'Normal (~150 words)', detailed: 'Detailed (300-500 words)' };
+async function loadCfg(row, id) {
+  const cats = await api(`/api/feeds/${id}/categories`);
+  const dlen = row.querySelector('.cfg-panel').dataset.dlen || 'default';
+  row.querySelector('.cfg-panel').innerHTML = `
+    <div class="cfg-grid">
+      <label>Digest length
+        <select data-role="dlen">${Object.entries(DLEN).map(([v, t]) =>
+          `<option value="${v}"${v === dlen ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      </label>
+      <div class="cat-allow">
+        <h4>Post categories <small>checked = allowed; unchecked are hidden BEFORE the LLM (zero tokens). New categories arrive checked.</small></h4>
+        ${cats.length ? cats.map(c => `<label class="cat-pick">
+            <input type="checkbox" data-cat="${esc(c.name)}" ${c.allowed ? 'checked' : ''}>
+            ${esc(c.name)} <small>${c.count} article${c.count === 1 ? '' : 's'}</small></label>`).join('')
+          : '<span class="hint">no categories seen on this feed yet</span>'}
+      </div>
+    </div>
+    <button class="btn" data-act="apply-cfg">Apply</button>
+    <span class="cfg-status hint"></span>`;
+  row.querySelector('[data-act=apply-cfg]').addEventListener('click', async () => {
+    const blocked = [...row.querySelectorAll('.cat-pick input:not(:checked)')]
+      .map(i => i.dataset.cat);
+    const patch = { digest_length: row.querySelector('[data-role=dlen]').value,
+                    category_block: blocked };
+    await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
+    row.querySelector('.cfg-status').textContent = 'saved \u2713';
+    setTimeout(() => renderFeedsKeepingOpen(), 600);
+  });
+}
+function renderFeedsKeepingOpen() {
+  const open = [...document.querySelectorAll('tr.feed-cfg[data-cfg]')]
+    .filter(r => !r.hidden).map(r => r.dataset.cfg);
+  renderFeeds().then(() => open.forEach(id => {
+    const row = document.querySelector(`tr[data-cfg="${id}"]`);
+    if (row) { row.hidden = false; row.dataset.loaded = '1';
+               loadCfg(row, id); }
+  }));
+}

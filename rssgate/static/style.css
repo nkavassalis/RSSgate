@@ -197,3 +197,19 @@ textarea { resize:vertical; }
 #lightbox .lb-hint { position:absolute; bottom:14px; left:0; right:0;
   text-align:center; color:#9aa3b2; font-size:.78rem; }
 .gallery img, .card-thumb { cursor:zoom-in; }
+
+/* per-feed advanced config */
+tr.feed-cfg td { background:var(--bg); padding:0 !important; }
+.cfg-panel { padding:12px 16px 14px; display:flex; flex-direction:column; gap:10px;
+  align-items:flex-start; }
+.cfg-grid { display:flex; gap:28px; flex-wrap:wrap; width:100%; }
+.cfg-grid label { font-size:.85rem; }
+.cfg-grid select { margin-left:8px; }
+.cat-allow { flex:1; min-width:260px; }
+.cat-allow h4 { margin:0 0 8px; font-size:.8rem; }
+.cat-allow h4 small { font-weight:400; color:var(--muted); }
+.cat-pick { display:inline-flex; align-items:center; gap:6px; margin:0 14px 6px 0;
+  font-size:.85rem; cursor:pointer; }
+.cat-pick input { width:auto; margin:0; }
+.cat-pick small { color:var(--muted); }
+.cfg-status.ok { color:#1a9e5d; }

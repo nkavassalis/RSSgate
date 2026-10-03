@@ -70,6 +70,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
     if "summarize" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN summarize INTEGER NOT NULL DEFAULT 1")
+    if "digest_length" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN digest_length TEXT NOT NULL"
+                     " DEFAULT 'default'")
+    if "category_block" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN category_block TEXT NOT NULL"
+                     " DEFAULT ''")
     if "last_read_ts" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -224,6 +230,73 @@ def _variant_map(rows) -> dict[str, str]:
         if k not in best or rank > best[k]:
             best[k] = rank
     return {k: v[2] for k, v in best.items()}
+
+
+def feed_category_state(conn, feed_id: int) -> list[dict]:
+    """Every category this feed has ever declared (post tags + feed-declared
+    union), with article counts and whether it is currently allowed.
+    Powers the admin per-feed allow list; new arrivals default to allowed."""
+    feed = get_feed(conn, feed_id)
+    if not feed:
+        return []
+    blocked = {c.casefold() for c in parse_categories(
+        feed["category_block"] if "category_block" in feed.keys() else "")}
+    from collections import Counter
+    freq: Counter = Counter()
+    spell: dict[str, str] = {}
+    for r in conn.execute("SELECT categories FROM articles WHERE feed_id=?"
+                         " AND categories != ''", (feed_id,)):
+        for c in parse_categories(r["categories"]):
+            freq[c.casefold()] += 1
+            spell.setdefault(c.casefold(), c)
+    for c in parse_categories(feed["auto_categories"]):
+        freq.setdefault(c.casefold(), 0)
+        spell.setdefault(c.casefold(), c)
+    out = [{"name": spell[k], "count": n, "allowed": k not in blocked}
+           for k, n in freq.items()]
+    out.sort(key=lambda x: (-x["count"], x["name"].casefold()))
+    return out
+
+
+def hide_blocked_categories(conn, feed_id: int) -> int:
+    """Pre-LLM category filter: queued articles whose own tags hit the
+    feed's block list are hidden (zero tokens). Returns rows hidden."""
+    feed = get_feed(conn, feed_id)
+    blocked = parse_categories(feed["category_block"]) if feed else []
+    n = 0
+    for name in blocked:
+        cur = conn.execute(
+            "UPDATE articles SET status='hidden' WHERE feed_id=? AND"
+            " status='pending' AND " + _cat_sql("categories"), (feed_id, name))
+        n += cur.rowcount
+    conn.commit()
+    return n
+
+
+def requeue_unblocked(conn, feed_id: int) -> int:
+    """After (un)blocking categories: hidden rows that no longer hit the
+    block list (and are not sponsored-hidden) go back to the queue."""
+    feed = get_feed(conn, feed_id)
+    if not feed:
+        return 0
+    blocked = {c.casefold() for c in parse_categories(feed["category_block"])}
+    from .refresh import is_sponsored, SPONSORED_DIGEST_RE
+    n = 0
+    for a in conn.execute("SELECT id, title, link, summary, categories"
+                          " FROM articles WHERE feed_id=? AND status='hidden'",
+                          (feed_id,)).fetchall():
+        cats = {c.casefold() for c in parse_categories(a["categories"])}
+        if cats & blocked:
+            continue
+        if (feed["hide_sponsored"] and
+                (is_sponsored(a["title"], a["link"]) or
+                 SPONSORED_DIGEST_RE.search((a["summary"] or "")[:400]))):
+            continue
+        conn.execute("UPDATE articles SET status='pending' WHERE id=?",
+                     (a["id"],))
+        n += 1
+    conn.commit()
+    return n
 
 
 def category_list(conn) -> dict:

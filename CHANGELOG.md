@@ -6,6 +6,10 @@ AI agents working on this repo.
 
 ## Versioning policy
 
+Pre-1.0: this project is versioned 0.x — every minor may add features and
+fix bugs freely; breaking changes get a minor bump and a migration note.
+1.0.0 is reserved for a declared-stable release.
+
 Given `MAJOR.MINOR.PATCH` (tracked in `rssgate/__version__`, tagged `vX.Y.Z`,
 one tag per released state):
 
@@ -31,7 +35,25 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
-## [1.10.0] — 2026-10-03
+## [0.23.0] — 2026-10-03
+
+### Added
+- **Per-feed post-category filter** (`category_block`): admin panel shows
+  every category a feed declares or its posts carry, checked by default
+  (new arrivals auto-allowed). Unchecking hides matching articles BEFORE
+  the LLM (zero tokens); retroactive sweep on save, unblocking re-queues.
+- **Per-feed digest length** (`digest_length`: default|terse|normal|detailed):
+  terse = one sentence <=20 words; detailed = 300-500 words. Overrides the
+  global length knob per feed.
+- **Expandable per-feed config** (gear icon) in the admin feed table.
+
+### Changed
+- **Version reset**: the project is not mature enough for 1.x promises.
+  The entire v1.0.0..v1.10.0 history was renumbered v0.1.0..v0.22.0
+  (chronological); this release is v0.23.0. 1.0.0 will be declared when
+  the feature set and API stabilize, per the versioning policy below.
+
+## [0.22.0] — 2026-10-03
 
 ### Added
 - **Sidebar split into three boxes**: Feed Categories (your feed labels),
@@ -48,7 +70,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   the first read card; server truth re-syncs (debounced) afterwards.
   Clicking a feed pill no longer wipes it (no eager cursor jump).
 
-## [1.9.4] — 2026-10-03
+## [0.21.0] — 2026-10-03
 
 ### Fixed
 - **Queue backlog after adding a feed**: the summarizer ran only 4 rounds
@@ -58,7 +80,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 - Raw-mode feeds show 'preparing...' instead of 'waiting for AI
   transcription' (no AI is involved); error cards say 'transcribe'.
 
-## [1.9.3] — 2026-10-02
+## [0.20.0] — 2026-10-02
 
 ### Fixed
 - **Sidebar/related-post image leaks**: junk markers (related, promo,
@@ -69,7 +91,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   and whole-page fallback enforces an after-<h1> positional floor.
   Fixes other posts' thumbnails entering galleries (Gizmodo).
 
-## [1.9.2] — 2026-10-02
+## [0.19.0] — 2026-10-02
 
 ### Fixed
 - **Poisoned `image_url` repair**: pre-v1.9 backfills saved page-extracted
@@ -81,7 +103,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   ('page tried, single image only'); such rows never re-consume the page
   budget. Sentinels are stripped from API galleries and GC references.
 
-## [1.9.1] — 2026-10-02
+## [0.18.0] — 2026-10-02
 
 ### Fixed
 - Backfill route accepts `limit`/`page_fetches` (force passes now reach
@@ -92,7 +114,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 - Read-the-full-article link uses a dedicated `--link` color: high-contrast
   blue in both dark and light themes, underlined.
 
-## [1.9.0] — 2026-10-02
+## [0.17.0] — 2026-10-02
 
 ### Added
 - **Lightbox**: clicking a card thumbnail or gallery image opens the
@@ -108,7 +130,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   rejects gravatar-style URLs & size params, emoji/sprite/logo paths, and
   square-and-small declared dimensions. Avatars no longer enter galleries.
 
-## [1.8.1] — 2026-10-02
+## [0.16.0] — 2026-10-02
 
 ### Fixed
 - Backfill starvation: pages fetched without usable images are marked
@@ -116,7 +138,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   sets) so the per-pass page budget advances toward older articles
   (baka.jp) instead of re-fetching imageless pages forever.
 
-## [1.8.0] — 2026-10-02
+## [0.15.0] — 2026-10-02
 
 ### Added
 - **`maintenance.images_per_post`** (1-8, default 4): configurable image
@@ -128,7 +150,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   baka.jp) so pre-gallery articles catch up; previously `image IS NOT NULL`
   meant they were skipped forever.
 
-## [1.7.0] — 2026-10-02
+## [0.14.0] — 2026-10-02
 
 ### Added
 - **In-body galleries**: hero + up to 3 content images cached per article
@@ -140,14 +162,14 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   pruning. Runs at startup and every 6 h; report surfaced in the panel.
 - New config section `maintenance: {retention_months, images_max_mb}`.
 
-## [1.6.1] — 2026-10-02
+## [0.13.0] — 2026-10-02
 
 ### Fixed
 - `/image/*` 500s when `server.data_dir` is relative: Flask resolves relative
   `send_file` paths against the package directory. The image cache directory
   is now canonicalized to an absolute path at init.
 
-## [1.6.0] — 2026-10-02
+## [0.12.0] — 2026-10-02
 
 ### Added
 - **Image backfill**: startup pass (and `POST /api/images/backfill`) caches
@@ -155,7 +177,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   nothing but a download; at most 40 article pages are re-fetched per pass.
   Zero LLM tokens, same cache, same safety rules.
 
-## [1.5.0] — 2026-10-02
+## [0.11.0] — 2026-10-02
 
 ### Added
 - **Post images, cached and served locally.** Hero image per article from
@@ -167,7 +189,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   `image_url`/`image` columns (additive migration); `/api/articles` items
   expose `image`; reader cards render a lazy thumbnail.
 
-## [1.4.0] — 2026-10-02
+## [0.10.0] — 2026-10-02
 
 ### Changed
 - **Category filtering is post-precise.** Clicking `Health` returned every
@@ -179,14 +201,14 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   “All”. Sidebar chip counts/visibility use the same rule (zero-count and
   auto-only names are no longer offered as chips).
 
-## [1.3.1] — 2026-10-02
+## [0.9.0] — 2026-10-02
 
 ### Changed
 - Category chips: most-used first, selected chips always visible, and the
   long tail (your DB has 100+ names) collapsed behind a "more (N) …"
   expander instead of flooding the sidebar.
 
-## [1.3.0] — 2026-10-02
+## [0.8.0] — 2026-10-02
 
 ### Added
 - **Sidebar category filter** — multi-select chips above the feed list,
@@ -200,7 +222,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 - Category matching is now EXACT comma-membership (post/user/auto columns)
   instead of raw LIKE substrings — `tech` no longer matches `technology`.
 
-## [1.2.2] — 2026-10-02
+## [0.7.0] — 2026-10-02
 
 ### Added
 - **Viewed = read**: dwelling on an unread card (~1s, ≥55% in viewport)
@@ -209,7 +231,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   fold counted, so an unread card sitting in view (or a re-click of the
   same view) never cleared.
 
-## [1.2.1] — 2026-10-02
+## [0.6.0] — 2026-10-02
 
 ### Fixed
 - Read-state visual sync: cards scrolled past now flip from unread to
@@ -218,7 +240,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   Sidebar pills re-render on every feed switch and whenever cards flip,
   so pill counts and card styling can no longer disagree.
 
-## [1.2.0] — 2026-10-02
+## [0.5.0] — 2026-10-02
 
 ### Added
 - **Configurable stream order** — admin panel → Polling & summarizer →
@@ -235,7 +257,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
     global resume tracks the deepest card (newest mode) or the frontier
     card (oldest mode)
 
-## [1.1.0] — 2026-10-02
+## [0.4.0] — 2026-10-02
 
 ### Changed
 - **The New view now always boots at the newest article.** Previously the
@@ -250,7 +272,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   resume bound (the viewer sends it on fresh boots; legacy requests are
   unchanged).
 
-## [1.0.2] — 2026-10-02
+## [0.3.0] — 2026-10-02
 
 ### Fixed
 - **Unread pills that never cleared.** Three compounding bugs:
@@ -270,7 +292,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 - Verified live: CNN filtered view went from an invisible-empty stream
   (29 unread, no dots) to newest-first with dots; pills clear on scroll.
 
-## [1.0.1] — 2026-10-02
+## [0.2.0] — 2026-10-02
 
 ### Fixed
 - **Read-state never caught up (the bug users saw):** feeds publish
@@ -283,7 +305,7 @@ CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
   existing rows (`db._normalize_timestamps`). Regression tests cover all
   input formats and cross-format cursor advancement.
 
-## [1.0.0] — 2026-10-02 — "Caught up"
+## [0.1.0] — 2026-10-02 — "Caught up"
 
 First stable baseline. Everything to date, grouped:
 

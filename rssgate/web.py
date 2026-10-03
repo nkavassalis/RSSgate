@@ -199,6 +199,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 conn.execute("UPDATE articles SET status='pending'"
                              " WHERE feed_id=? AND status='ready' AND llm_ms=0", (fid,))
             fields["summarize"] = want
+        if "digest_length" in data:
+            val = data["digest_length"]
+            fields["digest_length"] = (val if val in
+                                       ("default", "terse", "normal",
+                                        "detailed") else "default")
+        if "category_block" in data:
+            names = [c.strip().lower() for c in data["category_block"]
+                     if c.strip()]
+            fields["category_block"] = ",".join(names)
         if "hide_sponsored" in data:
             fields["hide_sponsored"] = 1 if data["hide_sponsored"] else 0
             if not data["hide_sponsored"]:  # un-hide everything when flag goes off
@@ -216,6 +225,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if "type" in data and data["type"] in ("auto", "feed", "page"):
             fields["type"] = data["type"]
         db.update_feed(conn, fid, **fields)
+        if "category_block" in fields:
+            db.hide_blocked_categories(conn, fid)   # pre-LLM: zero tokens
+            db.requeue_unblocked(conn, fid)
         return jsonify(_feed_dict(db.get_feed(conn, fid)))
 
     @app.route("/api/feeds/<int:fid>", methods=["DELETE"])
@@ -237,6 +249,10 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if request.args.get("viewer"):
             return jsonify(db.category_list(conn))
         return jsonify(db.all_categories(conn))
+
+    @app.route("/api/feeds/<int:fid>/categories")
+    def api_feed_categories(fid):
+        return jsonify(db.feed_category_state(conn, fid))
 
     @app.route("/api/categories/rename", methods=["POST"])
     def api_rename_category():

@@ -71,6 +71,10 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
                                  e["published_at"], e.get("categories"),
                                  e.get("image")):
                 added += 1
+        if "category_block" in feed.keys() and feed["category_block"]:
+            hidden = db.hide_blocked_categories(conn, feed_id)
+            if hidden:
+                log.info("feed %s: %d hidden by category filter", url, hidden)
         log.info("feed %s: %d new articles", url, added)
         return f"ok ({added} new)"
 
@@ -115,10 +119,22 @@ def refresh_all(conn, cfg, llm=None) -> list[str]:
     return results
 
 
-def system_prompt(cfg) -> str:
+DIGEST_DIRECTIVES = {
+    "terse": " OVERRIDE: the digest must be ONE sentence of at most 20 words"
+             " stating only what happened. No context, no nuance.",
+    "normal": " OVERRIDE: write a digest of about 150 words.",
+    "detailed": " OVERRIDE: write a thorough digest of 300-500 words with"
+                " concrete facts, numbers and named entities.",
+}
+
+
+def system_prompt(cfg, feed=None) -> str:
     summ = cfg["summarizer"]
     target = LENGTH_TARGETS.get(summ.get("length", "medium"), "200-300 words")
-    return summ["system_prompt"].replace("{length}", target)
+    base = summ["system_prompt"].replace("{length}", target)
+    dl = feed["digest_length"] if (feed is not None
+                                   and "digest_length" in feed.keys()) else "default"
+    return base + DIGEST_DIRECTIVES.get(dl, "")
 
 
 def _cache_image(conn, art, page_html: str):
@@ -210,6 +226,13 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
     for art in rows:
         try:
             feed = db.get_feed(conn, art["feed_id"])
+            if feed and feed["category_block"]:
+                acats = {c.casefold() for c in db.parse_categories(art["categories"])}
+                blocked = {c.casefold() for c in
+                           db.parse_categories(feed["category_block"])}
+                if acats & blocked:      # blocked since claim: don't spend tokens
+                    db.set_article(conn, art["id"], status="hidden")
+                    continue
             if feed and feed["hide_sponsored"] and is_sponsored(art["title"], art["link"]):
                 db.set_article(conn, art["id"], status="hidden")  # 0 tokens spent
                 continue
@@ -257,7 +280,7 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                     f"Article: {art['title']}\nSource: {art['link']}\n\n{text}")
             t0 = time.perf_counter()
             digest, usage = llm.chat(
-                [{"role": "system", "content": system_prompt(cfg)},
+                [{"role": "system", "content": system_prompt(cfg, feed)},
                  {"role": "user", "content": user}],
                 max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)),
                 model=_purpose_model(cfg, "model_summarize"))
