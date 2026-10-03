@@ -69,10 +69,13 @@ class Scheduler(threading.Thread):
                 with contextlib.closing(db.connect(self.db_path)) as wconn:
                     return summarize_pending(wconn, self.cfg, llm, limit=1)
 
-            for _ in range(4):  # rounds; each round runs `workers` in parallel
+            deadline = time.time() + max(10, self.tick - 5)
+            for _ in range(32):  # drain rounds; each runs `workers` in parallel
                 with ThreadPoolExecutor(max_workers=workers) as pool:
                     results = list(pool.map(_worker, range(workers)))
                 if sum(results) == 0:
+                    break
+                if time.time() > deadline:   # leave room for the next poll
                     break
         except Exception:  # noqa: BLE001
             log.exception("summarize round failed")

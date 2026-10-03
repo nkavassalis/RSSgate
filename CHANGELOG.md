@@ -31,6 +31,16 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.9.4] — 2026-10-03
+
+### Fixed
+- **Queue backlog after adding a feed**: the summarizer ran only 4 rounds
+  of `concurrency` articles per 30s tick, so a freshly added 100-article
+  feed showed 'waiting' for 15+ minutes. Now drains up to 32 rounds per
+  tick under a wall-clock budget (LLM queues drain proportionally too).
+- Raw-mode feeds show 'preparing...' instead of 'waiting for AI
+  transcription' (no AI is involved); error cards say 'transcribe'.
+
 ## [1.9.3] — 2026-10-02
 
 ### Fixed

@@ -56,8 +56,9 @@
     const body = a.status === 'ready' && a.summary
       ? `<div class="digest">${esc(a.summary)}</div>`
       : a.status === 'error'
-        ? `<div class="unsummarized">\u26a0 could not summarize \u2014 <a href="${esc(a.link)}">read original</a></div>`
-        : `<div class="unsummarized">\u23f3 waiting for AI transcription\u2026</div>`;
+        ? `<div class="unsummarized">\u26a0 could not transcribe \u2014 <a href="${esc(a.link)}">read original</a></div>`
+        : `<div class="unsummarized">\u23f3 ${a.feed_summarize === false
+            ? 'preparing\u2026' : 'waiting for AI transcription\u2026'}</div>`;
     const extra = (a.gallery || []).filter(g => g !== a.image).slice(0, 3);
     const gallery = extra.length
       ? `<div class="gallery">${extra.map(g =>
