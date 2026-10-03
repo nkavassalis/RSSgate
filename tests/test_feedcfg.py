@@ -232,3 +232,50 @@ def test_per_feed_input_cap(client, monkeypatch, fake_feed):
     feed = db.get_feed(client.conn, fid)
     refresh.summarize_pending(client.conn, cfg, RecLLM())
     assert len(captured["user"]) < full          # per-feed cap applied
+
+
+def _entries(*guids):
+    return [{"guid": g, "link": f"https://blog.example/{g}", "title": g,
+             "published_at": "2026-10-01T00:00:00Z", "categories": [],
+             "image": None} for g in guids]
+
+
+def _serve(monkeypatch, entries):
+    monkeypatch.setattr("rssgate.refresh.fetch_feed",
+                        lambda url, etag, lm: {
+                            "ok": True, "not_modified": False,
+                            "meta": {"title": "T", "description": "",
+                                     "categories": []},
+                            "entries": entries, "etag": None,
+                            "last_modified": None,
+                            "fingerprint": "fp" + str(len(entries))})
+
+
+def test_sync_deletes_prunes_vanished_only_when_enabled(client, monkeypatch):
+    fid = db.add_feed(client.conn, "https://ex/snap", type_="feed")["id"]
+    _serve(monkeypatch, _entries("a", "b", "c"))
+    refresh.refresh_feed(client.conn, db.get_feed(client.conn, fid),
+                         {"summarizer": {"max_input_chars": 24000}}, llm=None)
+    assert client.conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 3
+    # off (default): a shrinking feed keeps history
+    _serve(monkeypatch, _entries("a", "b"))
+    refresh.refresh_feed(client.conn, db.get_feed(client.conn, fid),
+                         {"summarizer": {"max_input_chars": 24000}}, llm=None)
+    assert client.conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 3
+    # on: the vanished entry goes
+    client.put(f"/api/feeds/{fid}", json={"sync_deletes": True})
+    refresh.refresh_feed(client.conn, db.get_feed(client.conn, fid),
+                         {"summarizer": {"max_input_chars": 24000}}, llm=None)
+    assert {r[0] for r in client.conn.execute("SELECT guid FROM articles")} == {"a", "b"}
+
+
+def test_sync_deletes_never_prunes_on_empty_or_unchanged(client, monkeypatch):
+    fid = db.add_feed(client.conn, "https://ex/snap2", type_="feed")["id"]
+    _serve(monkeypatch, _entries("a", "b"))
+    refresh.refresh_feed(client.conn, db.get_feed(client.conn, fid),
+                         {"summarizer": {"max_input_chars": 24000}}, llm=None)
+    db.update_feed(client.conn, fid, sync_deletes=1)
+    _serve(monkeypatch, [])          # parse hiccup / empty feed: keep everything
+    refresh.refresh_feed(client.conn, db.get_feed(client.conn, fid),
+                         {"summarizer": {"max_input_chars": 24000}}, llm=None)
+    assert client.conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 2

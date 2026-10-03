@@ -82,6 +82,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "custom_title" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN custom_title TEXT NOT NULL"
                      " DEFAULT ''")
+    if "sync_deletes" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN sync_deletes INTEGER"
+                     " NOT NULL DEFAULT 0")
     if "max_input_chars" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN max_input_chars INTEGER"
                      " NOT NULL DEFAULT 0")
@@ -349,6 +352,20 @@ def release_files(conn, names) -> int:
         except OSError:
             pass
     return gone
+
+
+def prune_vanished(conn, feed_id: int, keep_keys: set, key: str = "guid") -> int:
+    """Snapshot feeds (trending lists, breaking-news pages): delete this
+    feed's articles whose `key` (guid or link) is absent from a SUCCESSFUL,
+    NON-EMPTY latest fetch. Safety: never prune on an empty key set."""
+    if not keep_keys or key not in ("guid", "link"):
+        return 0
+    qs = ",".join("?" * len(keep_keys))
+    cur = conn.execute(
+        f"DELETE FROM articles WHERE feed_id=? AND {key} NOT IN ({qs})",
+        (feed_id, *keep_keys))
+    conn.commit()
+    return cur.rowcount
 
 
 def feed_files(conn, feed_id: int) -> set:

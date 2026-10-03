@@ -400,6 +400,10 @@ async function loadCfg(row, id) {
         <select data-role="dlen">${Object.entries(DLEN).map(([v, t]) =>
           `<option value="${v}"${v === dlen ? ' selected' : ''}>${t}</option>`).join('')}</select>
       </label>
+      <label class="snap-pick"><input type="checkbox" data-role="syncdel"
+        ${feed.sync_deletes ? 'checked' : ''} style="width:auto">
+        Prune entries that vanish from the source <small>(snapshot feeds:
+        trending lists, breaking-news pages; never prunes on an empty/failed fetch)</small></label>
       <label>Max input chars <small>(0 = global cap; lower = faster, e.g. 6000)</small>
         <input type="number" min="0" step="1000" data-role="micap" value="${micap}" style="width:110px;margin-left:8px">
       </label>
@@ -424,6 +428,7 @@ async function loadCfg(row, id) {
     const patch = { digest_length: row.querySelector('[data-role=dlen]').value,
                     system_prompt: row.querySelector('[data-role=sprompt]').value,
                     max_input_chars: Math.max(0, +row.querySelector('[data-role=micap]').value || 0),
+                    sync_deletes: row.querySelector('[data-role=syncdel]').checked,
                     category_block: blocked };
     await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
     row.querySelector('.cfg-status').textContent = 'saved \u2713';

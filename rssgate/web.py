@@ -199,6 +199,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             # no auto re-digest: the admin UI asks first, then calls
             # POST /api/feeds/<id>/redigest if you confirm
             fields["summarize"] = 1 if data["summarize"] else 0
+        if "sync_deletes" in data:
+            fields["sync_deletes"] = 1 if data["sync_deletes"] else 0
         if "max_input_chars" in data:
             try:
                 fields["max_input_chars"] = max(0, min(200000, int(data["max_input_chars"])))

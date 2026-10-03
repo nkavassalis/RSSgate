@@ -75,6 +75,13 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
             hidden = db.hide_blocked_categories(conn, feed_id)
             if hidden:
                 log.info("feed %s: %d hidden by category filter", url, hidden)
+        if "sync_deletes" in feed.keys() and feed["sync_deletes"] and res["entries"]:
+            files = db.feed_files(conn, feed_id)
+            gone = db.prune_vanished(conn, feed_id,
+                                    {e["guid"] for e in res["entries"]})
+            if gone:
+                db.release_files(conn, files)
+                log.info("feed %s: %d vanished entries pruned", url, gone)
         log.info("feed %s: %d new articles", url, added)
         return f"ok ({added} new)"
 
@@ -102,6 +109,13 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
         if db.upsert_article(conn, feed_id, item["link"], item["link"],
                              item.get("title", ""), None):
             added += 1
+    if "sync_deletes" in feed.keys() and feed["sync_deletes"] and disc["items"]:
+        files = db.feed_files(conn, feed_id)
+        gone = db.prune_vanished(conn, feed_id,
+                                 {i["link"] for i in disc["items"]}, key="link")
+        if gone:
+            db.release_files(conn, files)
+            log.info("page %s: %d vanished entries pruned", url, gone)
     db.update_feed(conn, feed_id,
                    title=page_title(res["html"]) or feed["title"],
                    etag=res.get("etag"), last_modified=res.get("last_modified"),

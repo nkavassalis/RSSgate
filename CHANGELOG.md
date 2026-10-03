@@ -35,6 +35,16 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.28.0] — 2026-10-03
+
+### Added
+- **Prune vanished entries** (per-feed `sync_deletes`, gear panel): for
+  SNAPSHOT sources - trending lists, breaking-news pages - entries absent
+  from the latest SUCCESSFUL, NON-EMPTY fetch are deleted (their images
+  released immediately). Off by default: normal RSS keeps history, since
+  item lists legitimately fluctuate. Reappearing entries re-add cheaply
+  (content-hash cache usually returns the old digest for free).
+
 ## [0.27.1] — 2026-10-03
 
 ### Fixed
