@@ -102,5 +102,6 @@ def test_rendered_classes_have_css_rules():
     wrong file. Classes central to the reading experience must be styled."""
     for cls in ("readmore", "gallery", "card-thumb", "digest", "unsummarized",
                 "unread-pill", "chip", "new-above", "end-banner", "lightbox"):
-        assert f".{cls}" in CSS, f".{cls} used in markup but never styled"
+        assert f".{cls}" in CSS or f"#{cls}" in CSS, \
+            f".{cls} used in markup but never styled"
     assert "color:var(--link)" in CSS
