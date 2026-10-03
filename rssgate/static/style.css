@@ -35,7 +35,8 @@ body { margin:0; background:var(--bg); color:var(--text);
 /* ---------- viewer stream ---------- */
 .layout { display:flex; max-width:1040px; margin:0 auto; align-items:flex-start; }
 #sidebar { width:210px; flex:none; position:sticky; top:57px; padding:16px 10px;
-  font-size:.9rem; }
+  font-size:.9rem; max-height:calc(100vh - 65px); overflow-y:auto;
+  overscroll-behavior:contain; }
 #sidebar h3 { font-size:.75rem; text-transform:uppercase; letter-spacing:.06em;
   color:var(--muted); margin:18px 0 6px; }
 .seg { display:flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; }

@@ -31,6 +31,23 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [1.10.0] — 2026-10-03
+
+### Added
+- **Sidebar split into three boxes**: Feed Categories (your feed labels),
+  Feeds by Name, Post Categories (tags declared by the articles
+  themselves). Independent filters: OR within a box, AND across boxes.
+- `GET /api/articles` gains `feed_category=` (user feed labels);
+  `category=` now means POST TAGS ONLY (was: post tags OR feed labels).
+- `GET /api/categories?viewer=1` returns `{post:[...], feed:[...]}`.
+
+### Fixed
+- Sidebar now scrolls independently (tall category lists no longer scroll
+  off the page - `sticky` + own `overflow-y`).
+- Unread pills **count down** as you read articles instead of vanishing on
+  the first read card; server truth re-syncs (debounced) afterwards.
+  Clicking a feed pill no longer wipes it (no eager cursor jump).
+
 ## [1.9.4] — 2026-10-03
 
 ### Fixed

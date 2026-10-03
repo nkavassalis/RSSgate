@@ -67,8 +67,9 @@ def test_per_post_categories(conn):
 def test_category_filter_in_articles_page(conn):
     fid, _ = seed(conn, 2)
     db.update_feed(conn, fid, categories="tech")
-    assert len(db.articles_page(conn, category="tech")) == 2
-    assert db.articles_page(conn, category="cooking") == []
+    assert len(db.articles_page(conn, feed_category="tech")) == 2
+    assert db.articles_page(conn, feed_category="cooking") == []
+    assert db.articles_page(conn, category="tech") == []   # feed label != post tag
 
 
 def test_usage_totals(conn):

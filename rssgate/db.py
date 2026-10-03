@@ -197,15 +197,17 @@ def _cat_sql(col: str) -> str:
     return f"(',' || COALESCE({col},'') || ',') LIKE ('%,' || ? || ',%')"
 
 
-def _cat_effective_sql() -> str:
-    """Canonical category filter (2 bound params, same name each):
-      1. the post's OWN tags,
-      2. user-assigned feed labels (you labeled the whole feed — it matches).
-    Feed-declared tags (feeds.auto_categories) are display-fallback only:
-    a news feed's union tag soup (~40 tags) must never drag its untagged
-    posts into every category view. Untagged posts live under 'All'.
-    """
-    return "(" + _cat_sql("a.categories") + " OR " + _cat_sql("f.categories") + ")"
+def _cat_post_sql() -> str:
+    """Post Categories box: the article's OWN tags only."""
+    return _cat_sql("a.categories")
+
+
+def _cat_feed_sql() -> str:
+    """Feed Categories box: user-assigned feed labels only (matches every
+    post of a labeled feed). feeds.auto_categories stays display-fallback:
+    a news feed's tag soup must never drag untagged posts into category
+    views. Untagged posts live under 'All'."""
+    return _cat_sql("f.categories")
 
 
 def _variant_map(rows) -> dict[str, str]:
@@ -224,23 +226,31 @@ def _variant_map(rows) -> dict[str, str]:
     return {k: v[2] for k, v in best.items()}
 
 
-def category_list(conn) -> list[dict]:
-    """Category names the filter can actually match (per-post tags and
-    user-assigned feed labels) with visible-article counts. Case-insensitive:
-    'Tech News' and 'tech news' share ONE entry (modal spelling) and one
-    count. Exact comma membership, not substrings; zero-count: not listed."""
-    variants = _variant_map(
-        r["c"] for r in conn.execute(
-            "SELECT categories c FROM feeds WHERE categories != ''"
-            " UNION ALL SELECT categories FROM articles WHERE categories != ''"))
-    out = []
-    for k in sorted(variants):
-        cnt = conn.execute(
-            "SELECT COUNT(*) c FROM articles a JOIN feeds f ON f.id=a.feed_id"
-            " WHERE a.status != 'hidden' AND " + _cat_effective_sql(),
-            (k, k)).fetchone()["c"]
-        out.append({"name": variants[k], "count": cnt}) if cnt else None
-    return out
+def category_list(conn) -> dict:
+    """Two independent lists for the viewer's two boxes, each with visible
+    counts, case-insensitive (modal spelling wins), zero-count omitted:
+      'post': categories declared BY the posts themselves,
+      'feed': categories the USER assigned to feeds (counts cover that feed's
+              posts). A post can appear in both boxes' result sets."""
+    def grouped(rows_sql, where_sql):
+        variants = _variant_map(r["c"] for r in conn.execute(rows_sql))
+        out = []
+        for k in sorted(variants):
+            cnt = conn.execute(
+                "SELECT COUNT(*) c FROM articles a JOIN feeds f"
+                " ON f.id=a.feed_id"
+                " WHERE a.status != 'hidden' AND " + where_sql,
+                (k,)).fetchone()["c"]
+            if cnt:
+                out.append({"name": variants[k], "count": cnt})
+        return out
+
+    return {
+        "post": grouped("SELECT categories c FROM articles"
+                        " WHERE categories != ''", _cat_post_sql()),
+        "feed": grouped("SELECT categories c FROM feeds"
+                        " WHERE categories != ''", _cat_feed_sql()),
+    }
 
 
 def all_categories(conn) -> list[dict]:
@@ -328,7 +338,8 @@ _TS_EXPR = "COALESCE(published_at, fetched_at)"
 def articles_page(conn, before_ts: str | None = None, before_id: int | None = None,
                   limit: int = 20, feed_id: int | None = None,
                   category: str | None = None, since_ts: str | None = None,
-                  order: str = "newest") -> list[sqlite3.Row]:
+                  order: str = "newest",
+                  feed_category: str | None = None) -> list[sqlite3.Row]:
     """Page of articles. order='newest': reverse-chronological, cursor is an
     exclusive UPPER bound (older-than). order='oldest': chronological, cursor
     is an exclusive LOWER bound (newer-than) — the catch-up flow.
@@ -346,14 +357,21 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
     if feed_id:
         where.append("a.feed_id = ?")
         params.append(feed_id)
-    if category:
-        cats = [category] if isinstance(category, str) else [c for c in category if c]
-        if cats:
-            ors = []
-            for c in cats:
-                ors.append(_cat_effective_sql())
-                params += [c, c]
-            where.append("(" + " OR ".join(ors) + ")")
+    def _multi(values, sql_frag):
+        if not values:
+            return
+        vals = ([values] if isinstance(values, str)
+                else [v for v in values if v])
+        if not vals:
+            return
+        ors = []
+        for c in vals:
+            ors.append(sql_frag)
+        where.append("(" + " OR ".join(ors) + ")")
+        params.extend(vals)
+
+    _multi(category, _cat_post_sql())          # AND across boxes
+    _multi(feed_category, _cat_feed_sql())     # OR within each box
     rows = conn.execute(
         f"""SELECT a.id, a.title, a.link, a.summary, a.status,
                    {_TS_EXPR.replace('published_at', 'a.published_at').replace('fetched_at', 'a.fetched_at')} AS ts,

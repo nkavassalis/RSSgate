@@ -102,6 +102,12 @@ discovery, when you have more than one model available.
 
 ## Reader UI: sidebar, New/Since modes
 
+The sidebar is an independently scrollable column with three filter boxes:
+**Feed Categories** (labels you assigned to feeds), **Feeds by Name**
+(per-feed view with live unread counts that tick down as you read), and
+**Post Categories** (tags the articles themselves carry). Boxes combine:
+multiple chips within a box OR, different boxes AND.
+
 Every card ends with a **"Read the full article at <feed> ↗"** link to the
 original page.
 

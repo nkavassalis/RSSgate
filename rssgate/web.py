@@ -69,6 +69,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
             category=request.args.getlist("category") or None,
+            feed_category=request.args.getlist("feed_category") or None,
             since_ts=request.args.get("since_ts"), order=order)
         has_more = len(rows) > limit
         items = []

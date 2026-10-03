@@ -14,10 +14,16 @@
     set since(v) { localStorage.setItem('rssgate.since', v); },
     get feed() { return localStorage.getItem('rssgate.feed') || ''; },
     set feed(v) { localStorage.setItem('rssgate.feed', v); },
-    get cats() {
-      try { return JSON.parse(localStorage.getItem('rssgate.cats')) || []; }
+    get pcats() {
+      try { return JSON.parse(localStorage.getItem('rssgate.pcats')) || []; }
       catch { return []; }
     },
+    set pcats(v) { localStorage.setItem('rssgate.pcats', JSON.stringify(v)); },
+    get fcats() {
+      try { return JSON.parse(localStorage.getItem('rssgate.fcats')) || []; }
+      catch { return []; }
+    },
+    set fcats(v) { localStorage.setItem('rssgate.fcats', JSON.stringify(v)); },
     set cats(v) { localStorage.setItem('rssgate.cats', JSON.stringify(v)); },
   };
   function dateStr(d) {
@@ -107,6 +113,7 @@
     const dot = card.querySelector('.newdot');
     if (dot) dot.remove();
     bumpPill(card.dataset.feed);
+    scheduleFeedSync();
     const body = JSON.stringify({
       ts: card.dataset.ts, id: +card.dataset.id,
       reads: { [card.dataset.feed]: card.dataset.ts },
@@ -117,12 +124,21 @@
       || fetch('/api/position', { method: 'POST', body,
           headers: { 'content-type': 'application/json' } });
   }
+  let pillSync = null;
+  function scheduleFeedSync() {
+    clearTimeout(pillSync);
+    pillSync = setTimeout(renderFeedFilter, 2500);   // server truth, debounced
+  }
   function bumpPill(feedId) {
     const li = document.querySelector(`#feed-filter li[data-feed="${feedId}"]`);
     if (!li) return;
     const pill = li.querySelector('.unread-pill');
-    if (pill) pill.remove();   // article_count fallback is stale-ish; a
-  }                           // re-render on next switch fixes it
+    if (!pill) return;
+    const n = +pill.textContent || 0;
+    if (n > 1) pill.textContent = n - 1;   // count DOWN as articles are read
+    else pill.remove();                    // hit zero: fall back to total
+    scheduleFeedSync();
+  }
 
   // ---- loading ------------------------------------------------------------
   async function loadNext() {
@@ -133,7 +149,8 @@
     else if (store.mode === 'new' && !store.feed && order === 'newest')
       params.set('fresh', '1');   // oldest mode: no fresh => continue at resume
     if (store.feed) params.set('feed_id', store.feed);
-    for (const c of store.cats) params.append('category', c);
+    for (const c of store.pcats) params.append('category', c);
+    for (const c of store.fcats) params.append('feed_category', c);
     if (store.mode === 'since') params.set('since_ts', store.since + 'T00:00:00Z');
     const res = await fetch('/api/articles?' + params);
     const data = await res.json();
@@ -295,33 +312,38 @@
     renderFeedFilter();   // pills reflect server truth on every switch
     restart();
   }
-  // ---- category chips (multi-select; empty = all) -------------------------
-  async function renderCats(expanded) {
-    const cats = await fetch('/api/categories?viewer=1').then(r => r.json());
-    const sel = store.cats;
-    // most-used first; selected always visible; long tails behind "more"
+  // ---- category chips: two independent boxes, multi-select ---------------
+  const boxExpanded = {};
+  function drawChipBox(boxId, cats, storeKey, param) {
+    const sel = store[storeKey];
     cats.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const expanded = boxExpanded[boxId];
     const shown = expanded ? cats
       : cats.filter(c => sel.includes(c.name) || cats.indexOf(c) < 12);
     const hidden = cats.length - shown.length;
-    const box = $('cat-filter');
+    const box = $(boxId);
     box.innerHTML = `<button class="chip${sel.length ? '' : ' active'}"
         data-cat="">All</button>`
       + shown.map(c => `<button class="chip${sel.includes(c.name) ? ' active' : ''}"
           data-cat="${esc(c.name)}" title="${c.count} article${c.count === 1 ? '' : 's'}">${esc(c.name)}<small>${c.count}</small></button>`).join('')
-      + (hidden ? `<button class="chip more" data-cat="" data-more="1">more (${hidden}) &#8230;</button>` : '');
+      + (hidden ? `<button class="chip more" data-more="1">more (${hidden}) &#8230;</button>` : '');
     box.querySelectorAll('.chip').forEach(b =>
       b.addEventListener('click', () => {
-        if (b.dataset.more) { renderCats(true); return; }
+        if (b.dataset.more) { boxExpanded[boxId] = true; renderChips(); return; }
         const name = b.dataset.cat;
-        let sel2 = name ? [...store.cats] : [];
-        if (!name) sel2 = [];                                  // All clears
+        let sel2 = name ? [...sel] : [];
+        if (!name) sel2 = [];                                    // All clears box
         else if (sel2.includes(name)) sel2 = sel2.filter(x => x !== name);
         else sel2.push(name);
-        store.cats = sel2;
-        renderCats();
+        store[storeKey] = sel2;
+        renderChips();
         restart(true);   // keep drawer open for multi-select on mobile
       }));
+  }
+  async function renderChips() {
+    const data = await fetch('/api/categories?viewer=1').then(r => r.json());
+    drawChipBox('feedcat-filter', data.feed || [], 'fcats', 'feed_category');
+    drawChipBox('cat-filter', data.post || [], 'pcats', 'category');
   }
 
   async function renderFeedFilter() {
@@ -350,7 +372,7 @@
   Promise.all([
     fetch('/api/resume').then(r => r.json()),
     renderFeedFilter(),
-    renderCats(),
+    renderChips(),
   ]).then(([s]) => {
     bootResume = s.resume_ts || '';
     order = s.order === 'oldest' ? 'oldest' : 'newest';
