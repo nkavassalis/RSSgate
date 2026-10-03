@@ -73,6 +73,12 @@ CHANGELOG.md            version criteria + history — update on every release
    raw-mode feeds and sponsored-filtered items must not trigger *any* LLM
    call. tests/test_refresh.py + test_sponsored.py + test_rawmode.py guard
    this with call-count assertions — extend, never weaken.
+6. **UI contract is test-enforced** (`tests/test_ui_contract.py`): every
+   `hidden` overlay ships hidden AND a global `[hidden]{display:none
+   !important}` rules; every template control id is referenced by its
+   script; every emitted `data-act` has a handler; every `$('id')` hook
+   resolves. When you add a button/dialog/id/act, these tests tell you if
+   you forgot the wiring — never weaken them to pass.
 2. **Config is the source of truth.** Admin edits go PUT /api/config →
    `_merge` → `save_config`. Don't store config in the DB. API keys never
    leave the server except masked (`***`).

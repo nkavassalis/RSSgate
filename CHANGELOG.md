@@ -35,6 +35,22 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.25.2] — 2026-10-03
+
+### Added
+- **UI contract tests** (`tests/test_ui_contract.py`): hermetic static
+  guards for the JS/CSS layer — the bug class pytest couldn't see. They
+  enforce: `[hidden]` is authoritative, overlays ship hidden, every
+  template control id is referenced by its script, every `data-act` has a
+  handler, every `$('id')` hook resolves.
+
+### Fixed (all three found BY the new tests on first run)
+- The feed-type select (`#new-type`) was decorative dead markup: choosing
+  feed/page now forces that type and skips the auto-probe.
+- The admin 'Max images per article' input was never wired to config
+  load/save (shipped unwired in v0.24.0).
+- Re-asserted the modal regression guard as a permanent test, not a fix.
+
 ## [0.25.1] — 2026-10-03
 
 ### Fixed

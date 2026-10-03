@@ -130,6 +130,13 @@ $('add-feed-btn').addEventListener('click', async () => {
   if (!url) return;
   const cats = $('new-cats').value.split(',').map(s => s.trim()).filter(Boolean);
   const btn = $('add-feed-btn');
+  const forced = $('new-type').value;   // explicit type skips the probe
+  if (forced === 'feed' || forced === 'page') {
+    btn.disabled = true; btn.textContent = 'adding\u2026';
+    await addFeed(url, forced, cats);
+    btn.disabled = false; btn.textContent = 'Add feed';
+    return;
+  }
   btn.disabled = true; btn.textContent = 'probing\u2026';
   try {
     const p = await api('/api/feeds/probe', { method: 'POST', body: JSON.stringify({ url }) });
@@ -230,6 +237,7 @@ async function loadConfig() {
   const maint = cfg.maintenance || {};
   $('cfg-retention').value = String(maint.retention_months ?? 0);
   $('cfg-imgcap').value = maint.images_max_mb ?? 0;
+  $('cfg-imgperpost').value = maint.images_per_post ?? 4;
   $('cfg-length').value = cfg.summarizer.length;
   $('cfg-max-chars').value = cfg.summarizer.max_input_chars;
   $('cfg-concurrency').value = cfg.summarizer.concurrency ?? 2;
@@ -252,7 +260,8 @@ $('save-btn').addEventListener('click', async () => {
                page_interval_minutes: +$('cfg-page-min').value },
     ui: { order: $('cfg-order').value },
     maintenance: { retention_months: +$('cfg-retention').value,
-                   images_max_mb: +$('cfg-imgcap').value },
+                   images_max_mb: +$('cfg-imgcap').value,
+                   images_per_post: Math.max(1, Math.min(8, +$('cfg-imgperpost').value || 4)) },
     summarizer: { length: $('cfg-length').value,
                   max_input_chars: +$('cfg-max-chars').value,
                   concurrency: +$('cfg-concurrency').value,
