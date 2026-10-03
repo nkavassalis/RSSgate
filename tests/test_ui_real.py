@@ -212,3 +212,41 @@ def test_status_api_and_app_agree(ui_server, browser):
         "() => fetch('/api/status').then(r => r.text())"))
     assert status["feeds"] >= 1 and "version" in status
     pg.close()
+
+
+def test_inline_category_add_persists(ui_server, browser):
+    """The reported bug: chips appeared but PUT failed silently (no
+    try/catch meant stale DOM masquerading as success). Add a feed, give
+    it an inline category via the prompt flow, Save, then verify against
+    BOTH the re-rendered UI and the API - and after a full reload."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.on("dialog", lambda d: d.accept("inbox"))
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.fill("#new-url", "https://inline.test/feed")
+    pg.select_option("#new-type", "feed")
+    pg.click("#add-feed-btn")
+    pg.wait_for_selector("tr[data-id]", timeout=5000)
+    fid = pg.eval_on_selector("tr[data-id]", "el => el.dataset.id")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    row.locator("select[data-role=catadd]").select_option("__new")
+    row.locator(".chip.cat", has_text="inbox").wait_for()
+    # autosave: no Save click needed; wait for the saved-flash class
+    pg.wait_for_selector("td.cats.saved", timeout=5000)
+    # chips must survive the post-save re-render (which refetches the server)
+    assert row.locator(".chip.cat", has_text="inbox").count() == 1, \
+        "chip vanished after save = not persisted"
+    api_cats = pg.evaluate("() => fetch('/api/feeds').then(r => r.json())"
+                           ".then(f => f.find(x => x.id === "
+                           f"{fid}).categories)")
+    assert api_cats == ["inbox"]
+    pg.reload(wait_until="networkidle")                 # fresh page, fresh JS
+    assert pg.locator(".chip.cat", has_text="inbox").count() == 1
+    # chip REMOVAL must autosave too (same lie otherwise)
+    row.locator(".chip.cat b").first.click()
+    pg.wait_for_selector("td.cats.saved", timeout=5000)
+    api_cats = pg.evaluate("() => fetch('/api/feeds').then(r => r.json())"
+                           ".then(f => f.find(x => x.id === "
+                           f"{fid}).categories)")
+    assert api_cats == []
+    assert pg.errors == []
+    pg.close()

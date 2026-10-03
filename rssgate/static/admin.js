@@ -67,7 +67,23 @@ async function renderFeeds() {
     dd.innerHTML = '<option value="">+ category…</option>'
       + ALLCATS.map(c => `<option>${esc(c)}</option>`).join('')
       + '<option value="__new">✚ create new…</option>';
-    dd.addEventListener('change', () => {
+    async function saveCats() {          // chips ARE the state: autosave
+      const cell = chips.closest('td');
+      cell.classList.add('saving');
+      try {
+        await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
+          categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
+        }) });
+        cell.classList.remove('saving'); cell.classList.add('saved');
+        setTimeout(() => cell.classList.remove('saved'), 1200);
+      } catch (e) {
+        cell.classList.remove('saving'); cell.classList.add('save-fail');
+        setTimeout(() => cell.classList.remove('save-fail'), 2500);
+        alert('Category save failed: ' + e.message);
+        loadFeeds();
+      }
+    }
+    dd.addEventListener('change', async () => {
       let v = dd.value;
       if (!v) return;
       if (v === '__new') { v = (prompt('New category name:') || '').trim(); dd.value = ''; }
@@ -76,9 +92,10 @@ async function renderFeeds() {
             c.dataset.name.toLowerCase() === v.toLowerCase())) return;
       chips.insertAdjacentHTML('beforeend', catChip(v));
       if (!ALLCATS.some(c => c.toLowerCase() === v.toLowerCase())) ALLCATS.push(v);
+      await saveCats();
     });
-    chips.addEventListener('click', e => {
-      if (e.target.closest('b')) e.target.closest('.chip').remove();
+    chips.addEventListener('click', async e => {
+      if (e.target.closest('b')) { e.target.closest('.chip').remove(); await saveCats(); }
     });
 
     tr.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {

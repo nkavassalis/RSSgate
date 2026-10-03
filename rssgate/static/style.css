@@ -275,3 +275,8 @@ html { overscroll-behavior-y: contain; }   /* kill browser-native PTR */
 #ptr.ready .ptr-arrow { transform:rotate(180deg); }
 #ptr.spin .ptr-arrow { animation:ptrspin .8s linear infinite; }
 @keyframes ptrspin { to { transform:rotate(360deg); } }
+
+/* category cell autosave feedback */
+td.cats.saving { opacity:.45; }
+td.cats.saved { box-shadow:inset 0 0 0 2px #2e7d32; }
+td.cats.save-fail { box-shadow:inset 0 0 0 2px #c62828; }
