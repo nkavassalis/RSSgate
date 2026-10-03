@@ -597,10 +597,17 @@ def mark_processing(conn, article_id: int) -> None:
 
 
 def requeue_stale_processing(conn, older_than_minutes: int = 15) -> int:
-    """Crashed mid-run items go back to the queue."""
+    """Crashed mid-run items go back to the queue. The cutoff is built with
+    now_iso() - comparing the canonical '...T...Z' timestamps against
+    sqlite's datetime() format ('... ...') is a string comparison that is
+    NEVER true (T > space), which silently disabled this sweep (v0.28.1)."""
+    import datetime as _dt
+    cutoff = (_dt.datetime.now(_dt.timezone.utc)
+              - _dt.timedelta(minutes=older_than_minutes)
+              ).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         "UPDATE articles SET status='pending' WHERE status='processing'"
-        " AND started_at < datetime('now', ?)", (f'-{older_than_minutes} minutes',))
+        " AND started_at < ?", (cutoff,))
     conn.commit()
     return cur.rowcount
 

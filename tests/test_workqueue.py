@@ -65,3 +65,24 @@ def test_summarize_records_duration_and_processing_state(conn, cfg, monkeypatch)
     assert art["status"] == "ready"
     assert art["llm_ms"] >= 40          # measured wall time
     assert art["started_at"] is not None  # was marked processing first
+
+
+def test_stale_requeue_canonical_formats(conn):
+    """Regression: comparing canonical ...T...Z started_at against
+    datetime('now') strings silently never matched (v0.28.1)."""
+    import datetime as dt
+    from rssgate import db as _db
+    fid = _db.add_feed(conn, "https://ex/stale", type_="feed")["id"]
+    aid = _db.upsert_article(conn, fid, "g", "https://x/1", "t", None)
+    old = (dt.datetime.now(dt.timezone.utc)
+           - dt.timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _db.set_article(conn, aid, status="processing", started_at=old)
+    assert _db.requeue_stale_processing(conn) == 1
+    assert _db.get_article(conn, aid)["status"] == "pending" if hasattr(_db, "get_article") \
+        else conn.execute("SELECT status FROM articles WHERE id=?", (aid,)).fetchone()[0] == "pending"
+    # fresh processing (5 min) is left alone
+    recent = (dt.datetime.now(dt.timezone.utc)
+              - dt.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute("UPDATE articles SET status='processing', started_at=? WHERE id=?",
+                 (recent, aid))
+    assert _db.requeue_stale_processing(conn) == 0

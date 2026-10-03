@@ -35,6 +35,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.28.1] — 2026-10-03
+
+### Fixed
+- **Stale-processing recovery never ran.** The crash-recovery sweep
+  compared canonical `...T...Z` timestamps against sqlite
+  `datetime('now')` format (`... ...`) - as STRINGS, `'T' > ' '` makes the
+  comparison false forever, so an article killed mid-processing (e.g. by a
+  server restart) sat 'processing' indefinitely and the admin work-queue
+  cheerfully counted its uptime ('running 48 min'). Cutoff now built in
+  the same canonical format; regression test added.
+
 ## [0.28.0] — 2026-10-03
 
 ### Added
