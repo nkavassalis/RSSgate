@@ -250,3 +250,47 @@ def test_inline_category_add_persists(ui_server, browser):
     assert api_cats == []
     assert pg.errors == []
     pg.close()
+
+
+def test_edge_swipe_opens_and_closes_drawer(ui_server, browser):
+    """Left-edge swipe reveals the drawer tracking the finger; left swipe
+    over the veil closes it. Vertical drags must not trigger it."""
+    pg = _new_page(browser, viewport={"width": 390, "height": 844},
+                   has_touch=True)
+    pg.goto(ui_server, wait_until="networkidle")
+    assert pg.locator("#sidebar").bounding_box()["x"] < -100  # hidden
+
+    def swipe(x0, y0, x1, steps=6):
+        pg.evaluate("""([x0, y0, x1, steps]) => {
+          const T = (x, y) => new Touch({identifier: 1, target: document.body,
+                                         clientX: x, clientY: y});
+          const fire = (type, x, y) => window.dispatchEvent(
+            new TouchEvent(type, {
+              touches: type === 'touchend' ? [] : [T(x, y)],
+              changedTouches: [T(x, y)], bubbles: true, cancelable: true }));
+          fire('touchstart', x0, y0);
+          for (let i = 1; i <= steps; i++)
+            fire('touchmove', x0 + (x1 - x0) * i / steps, y0);
+          fire('touchend', x1, y0);
+        }""", [x0, y0, x1, steps])
+        pg.wait_for_timeout(250)
+
+    swipe(5, 400, 180)   # open from left edge
+    assert pg.locator("#sidebar").is_visible()
+    assert pg.eval_on_selector("#sidebar-veil",
+                               "el => el.classList.contains('show')")
+    swipe(350, 400, 200)   # swipe left to close
+    assert pg.eval_on_selector("#sidebar", "el => !el.classList.contains('open')")
+    # vertical drag from the edge must NOT open the drawer
+    pg.evaluate("""() => {
+      const T = (x, y) => new Touch({identifier: 1, target: document.body,
+                                     clientX: x, clientY: y});
+      const fire = (type, x, y) => window.dispatchEvent(new TouchEvent(type, {
+        touches: type === 'touchend' ? [] : [T(x, y)],
+        changedTouches: [T(x, y)], bubbles: true, cancelable: true }));
+      fire('touchstart', 5, 300); fire('touchmove', 8, 450); fire('touchend', 8, 450);
+    }""")
+    pg.wait_for_timeout(250)
+    assert pg.eval_on_selector("#sidebar", "el => !el.classList.contains('open')")
+    assert pg.errors == []
+    pg.close()

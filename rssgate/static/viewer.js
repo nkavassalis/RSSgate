@@ -347,6 +347,56 @@
   $('sidebar-veil').addEventListener('click', () => {
     $('sidebar').classList.remove('open'); $('sidebar-veil').classList.remove('show');
   });
+
+  // ---- edge-swipe drawer gesture (mobile) ---------------------------------
+  // Closed: start within 26px of the left edge and drag right to reveal
+  // (tracks the finger). Open: drag left anywhere on the veil to close.
+  const drawer = $('sidebar'), dwVeil = $('sidebar-veil');
+  let dw = { active: false };
+  window.addEventListener('touchstart', e => {
+    const tgt = e.target instanceof Element ? e.target : null;
+    if (tgt && tgt.closest('#lightbox, .modal, #ptr')) return;
+    const touch = e.touches[0];
+    const onSidebar = tgt && tgt.closest('#sidebar');
+    const open = drawer.classList.contains('open');
+    if (!open && (touch.clientX > 26 || onSidebar)) return;  // edge-only when closed
+    if (open && onSidebar) return;                            // scroll inside drawer
+    dw = { active: true, x0: touch.clientX, y0: touch.clientY, axis: null,
+           open, w: 250, x: open ? 250 : 0 };
+    drawer.classList.add('dragging');
+  }, { passive: true });
+  window.addEventListener('touchmove', e => {
+    if (!dw.active) return;
+    const t = e.touches[0];
+    const dx = t.clientX - dw.x0, dy = t.clientY - dw.y0;
+    if (!dw.axis) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      dw.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (dw.axis !== 'x') {                       // vertical: not ours
+        dw.active = false; drawer.classList.remove('dragging'); return;
+      }
+      if (!dw.open) dwVeil.classList.add('show');  // veil rides the reveal
+    }
+    dw.x = Math.max(0, Math.min(dw.w, (dw.open ? dw.w : 0) + dx));
+    drawer.style.transform = `translateX(${dw.x - dw.w}px)`;
+    dwVeil.style.opacity = dw.x / dw.w;
+  }, { passive: true });
+  function dwEnd() {
+    if (!dw.active) return;
+    dw.active = false;
+    drawer.classList.remove('dragging');
+    drawer.style.transform = '';
+    dwVeil.style.opacity = '';
+    if (dw.axis === 'x') {
+      const open = dw.x > dw.w * 0.5;
+      drawer.classList.toggle('open', open);
+      dwVeil.classList.toggle('show', open);
+    } else if (dw.open) {
+      drawer.classList.add('open'); dwVeil.classList.add('show');
+    }
+  }
+  window.addEventListener('touchend', dwEnd, { passive: true });
+  window.addEventListener('touchcancel', dwEnd, { passive: true });
   $('refresh-btn').addEventListener('click', async e => {
     e.target.textContent = '\u2026';
     await fetch('/api/poll', { method: 'POST' });
