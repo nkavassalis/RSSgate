@@ -35,6 +35,18 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.24.0] — 2026-10-03
+
+### Fixed
+- Gear button on feed rows never opened the config panel (handler patch
+  had missed its anchor).
+
+### Changed
+- Category rename is inline: the per-category pencil turns the row into an
+  editable field (Enter saves, Esc cancels, datalist offers existing names
+  so typing one merges). The two-textbox Rename/Remove form is gone;
+  removal was already one click (the row's x).
+
 ## [0.23.0] — 2026-10-03
 
 ### Added

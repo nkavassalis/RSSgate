@@ -77,6 +77,15 @@ async function renderFeeds() {
     });
 
     tr.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
+      if (btn.dataset.act === 'cfg') {
+        const row = tbody.querySelector(`tr[data-cfg="${id}"]`);
+        row.hidden = !row.hidden;
+        if (!row.hidden && !row.dataset.loaded) {
+          row.dataset.loaded = '1';
+          loadCfg(row, id);
+        }
+        return;
+      }
       if (btn.dataset.act === 'save')
         await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
           categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
@@ -155,25 +164,48 @@ $('add-feed-btn').addEventListener('click', async () => {
 async function renderCategories() {
   const cats = await api('/api/categories');
   $('category-list').innerHTML = cats.length
-    ? cats.map(c => `<li>${esc(c.name)} <b class="hint">×${c.count}</b>
-        <button title="remove" data-name="${esc(c.name)}">×</button></li>`).join('')
-    : '<li class="hint">no categories yet — assign some to feeds above</li>';
+    ? cats.map(c => `<li><span class="cname">${esc(c.name)}</span>
+        <b class="hint">\u00d7${c.count}</b>
+        <button class="btn ghost sm" title="rename everywhere"
+          data-rename="${esc(c.name)}">&#9998;</button>
+        <button title="remove from all feeds"
+          data-name="${esc(c.name)}">\u00d7</button></li>`).join('')
+    : '<li class="hint">no categories yet \u2014 assign some to feeds above</li>';
   $('category-list').querySelectorAll('button[data-name]').forEach(b =>
     b.addEventListener('click', async () => {
-      await api('/api/categories/' + encodeURIComponent(b.dataset.name), { method: 'DELETE' });
+      await api('/api/categories/' + encodeURIComponent(b.dataset.name),
+                { method: 'DELETE' });
       renderFeeds(); renderCategories();
     }));
+  $('category-list').querySelectorAll('button[data-rename]').forEach(b =>
+    b.addEventListener('click', e => startCatRename(e, b.dataset.rename)));
 }
 
-$('rename-btn').addEventListener('click', async () => {
-  const from = $('rename-from').value.trim(), to = $('rename-to').value.trim();
-  if (!from) return;
-  if (to) await api('/api/categories/rename', { method: 'POST',
-    body: JSON.stringify({ from, to }) });
-  else await api('/api/categories/' + encodeURIComponent(from), { method: 'DELETE' });
-  $('rename-from').value = $('rename-to').value = '';
-  renderFeeds(); renderCategories();
-});
+function startCatRename(e, old) {
+  const li = e.target.closest('li');
+  const q = old.replace(/"/g, '&quot;');
+  li.innerHTML = `<input class="cat-edit" value="${q}" list="all-cats">
+    <button class="btn sm" data-ok title="rename">&#10003;</button>
+    <button class="btn ghost sm" data-cancel title="cancel">&#10005;</button>
+    <span class="hint">Enter saves, Esc cancels \u2014 pick an existing name to merge</span>`;
+  const inp = li.querySelector('input');
+  inp.focus(); inp.select();
+  const commit = async () => {
+    const to = inp.value.trim().toLowerCase();
+    if (to && to !== old)
+      await api('/api/categories/rename',
+                { method: 'POST', body: JSON.stringify({ from: old, to }) });
+    renderCategories(); renderFeeds();
+  };
+  li.querySelector('[data-ok]').onclick = commit;
+  li.querySelector('[data-cancel]').onclick = () => renderCategories();
+  inp.onkeydown = ev => {
+    if (ev.key === 'Enter') commit();
+    if (ev.key === 'Escape') renderCategories();
+  };
+}
+
+
 
 // ------------------------------------------------------------------ config
 async function loadConfig() {

@@ -213,3 +213,7 @@ tr.feed-cfg td { background:var(--bg); padding:0 !important; }
 .cat-pick input { width:auto; margin:0; }
 .cat-pick small { color:var(--muted); }
 .cfg-status.ok { color:#1a9e5d; }
+
+.category-list .cname { font-weight:600; }
+.category-list input.cat-edit { width:220px; display:inline-block; }
+.category-list .hint { font-weight:400; }
