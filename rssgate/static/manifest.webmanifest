@@ -1,0 +1,13 @@
+{
+  "name": "RSSgate",
+  "short_name": "RSSgate",
+  "description": "Local-first RSS reader with LLM digests",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12141a",
+  "theme_color": "#2733c6",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

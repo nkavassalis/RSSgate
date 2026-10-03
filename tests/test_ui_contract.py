@@ -72,3 +72,12 @@ def test_css_classes_used_in_markup_exist_and_vice_versa():
     for cls in ("modal-veil", "modal"):
         assert f".{cls}" in CSS
     assert "rd-modal" in ADMIN_HTML and "rd-yes" in ADMIN_JS
+
+
+def test_app_icon_links_present():
+    for html, name in ((ADMIN_HTML, "admin"), (VIEWER_HTML, "viewer")):
+        assert 'rel="icon"' in html and "favicon.svg" in html, f"{name} lacks icon link"
+        assert "apple-touch-icon" in html and "manifest" in html
+    for f in ("favicon.svg", "favicon-32.png", "apple-touch-icon.png",
+              "icon-192.png", "icon-512.png", "manifest.webmanifest"):
+        assert (ROOT / "static" / f).exists(), f

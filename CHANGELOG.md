@@ -35,6 +35,15 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.30.0] — 2026-10-03
+
+### Added
+- **App icon**: RSS-signal glyph reimagined as a gate arch over the feed
+  dot, indigo gradient rounded tile. Served as SVG favicon (crisp at any
+  zoom, auto no-emoji-tab), 32px PNG fallback, apple-touch-icon, and a
+  web manifest so installed/home-screen bookmarks get a real branded tile
+  instead of the generic globe.
+
 ## [0.29.0] — 2026-10-03
 
 ### Added
