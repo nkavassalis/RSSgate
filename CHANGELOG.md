@@ -35,6 +35,12 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.30.2] — 2026-10-03
+
+### Changed
+- Full-article link color: white on dark, dark grey on light (was blue -
+  poor contrast for the reader's most-used link).
+
 ## [0.30.1] — 2026-10-03
 
 ### Fixed

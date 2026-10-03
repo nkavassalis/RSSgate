@@ -2,13 +2,13 @@
 :root {
   --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1e; --muted: #6b6b76;
   --line: #e4e4ea; --accent: #3b6ef6; --chip: #eceefb; --chip-text: #3d4a8a;
-  --link: #1b57d6;
+  --link: #3f4147;
   --topbar: #fffffff2; --shadow: 0 1px 3px rgba(20,20,30,.08);
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg:#101014; --card:#1a1a21; --text:#e8e8ee; --muted:#9a9aa6;
     --line:#2a2a34; --accent:#7a9bff; --chip:#24243a; --chip-text:#aab6f0;
-    --link: #8ab6ff;
+    --link: #ffffff;
     --topbar:#15151bf2; --shadow: 0 1px 3px rgba(0,0,0,.5); }
 }
 html[data-theme="light"] { --bg:#f7f7f8; --card:#fff; --text:#1a1a1e; --muted:#6b6b76;
