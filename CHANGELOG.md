@@ -35,6 +35,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.30.3] — 2026-10-03
+
+### Fixed
+- **The .readmore CSS rule never existed.** The v1.8.0 append lived in a
+  script that died early on an unrelated path error, so the footer link
+  shipped UNSTYLED (browser-default blue) - and every follow-up 'fix' was
+  a string-replace against an anchor that was never in the file, i.e. a
+  silent no-op, and my verifications grepped viewer.js (which has the
+  class name) instead of style.css (which never did). Rule restored;
+  contract test now requires core markup classes to have CSS rules.
+
 ## [0.30.2] — 2026-10-03
 
 ### Changed

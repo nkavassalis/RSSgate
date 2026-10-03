@@ -93,3 +93,14 @@ def test_icon_links_are_outside_the_title():
         assert "link" not in chunk and "meta" not in chunk, \
             f"{name}: markup inside <title>"
         assert 'rel="icon"' in html[t1:], "icon links must follow </title>"
+
+
+def test_rendered_classes_have_css_rules():
+    """The v0.30.3 lesson: viewer.js emitted class="readmore" for six
+    versions while style.css had NEVER contained a .readmore rule - the
+    link wore browser-default blue and every 'verification' grepped the
+    wrong file. Classes central to the reading experience must be styled."""
+    for cls in ("readmore", "gallery", "card-thumb", "digest", "unsummarized",
+                "unread-pill", "chip", "new-above", "end-banner", "lightbox"):
+        assert f".{cls}" in CSS, f".{cls} used in markup but never styled"
+    assert "color:var(--link)" in CSS

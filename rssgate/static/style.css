@@ -254,3 +254,9 @@ tr.feed-cfg td { background:var(--bg); padding:0 !important; }
 .inline-check input { width:auto; }
 
 .failure-list .att { color:var(--muted); font-size:.75rem; margin-left:4px; }
+
+/* full-article footer link (restored v0.30.3 - had silently never existed) */
+.readmore { margin:10px 0 2px; clear:both; font-size:.84rem; }
+.readmore a { color:var(--link); font-weight:700; text-decoration:underline;
+  text-underline-offset:3px; }
+.readmore a:hover { opacity:.8; }
