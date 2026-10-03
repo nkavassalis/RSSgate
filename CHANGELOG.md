@@ -35,6 +35,13 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.30.1] — 2026-10-03
+
+### Fixed
+- Icon links were inserted INSIDE <title>, making browsers use the literal
+  tag soup as the page (bookmark) title. Re-anchored after </title>; UI
+  contract test now forbids any markup inside the title element.
+
 ## [0.30.0] — 2026-10-03
 
 ### Added

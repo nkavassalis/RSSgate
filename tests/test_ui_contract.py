@@ -81,3 +81,15 @@ def test_app_icon_links_present():
     for f in ("favicon.svg", "favicon-32.png", "apple-touch-icon.png",
               "icon-192.png", "icon-512.png", "manifest.webmanifest"):
         assert (ROOT / "static" / f).exists(), f
+
+
+def test_icon_links_are_outside_the_title():
+    """v0.30.0 incident: links inserted INSIDE <title> became the literal
+    bookmark title (title content is raw text, never markup)."""
+    for html, name in ((ADMIN_HTML, "admin"), (VIEWER_HTML, "viewer")):
+        t0, t1 = html.index("<title>"), html.index("</title>")
+        assert t1 > t0
+        chunk = html[t0:t1]
+        assert "link" not in chunk and "meta" not in chunk, \
+            f"{name}: markup inside <title>"
+        assert 'rel="icon"' in html[t1:], "icon links must follow </title>"
