@@ -35,6 +35,21 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.29.0] — 2026-10-03
+
+### Added
+- **Transient failures now retry themselves.** 429s, timeouts, connection
+  resets and 5xx go back to the queue automatically (the 30s scheduler
+  tick is the back-off) up to `summarizer.max_retries` (default 2); the
+  stored error reason gains an `[attempt N]` suffix. Persistent failures
+  (paywalls, junk pages, 404s) fail immediately - retrying those is
+  someone else's problem (yours, via the buttons below).
+- **Attempts are counted** (`articles.attempts`) and shown as a badge.
+- **Retry / Drop buttons** on every row of the admin failure list:
+  retry re-queues with a fresh budget; drop hides the article for good
+  (new `dropped` status: gone from feed, counts, and error list).
+  `POST /api/articles/<id>/retry` / `.../drop`.
+
 ## [0.28.1] — 2026-10-03
 
 ### Fixed

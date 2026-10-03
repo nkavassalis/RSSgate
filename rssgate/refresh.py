@@ -142,14 +142,32 @@ DIGEST_DIRECTIVES = {
 }
 
 
-def fail(conn, cfg, article_id: int, why: str) -> None:
-    """Mark an article failed; with troubleshooting.log_llm_failures the
-    reason is stored on the article and surfaced in the admin panel."""
+TRANSIENT_RE = re.compile(
+    r"(429|rate.?limit|timeout|timed out|connection|reset by peer|"
+    r"temporar|try again|502|503|504|overloaded)", re.I)
+
+
+def fail(conn, cfg, article_id: int, why: str) -> str:
+    """Record a transcription failure. Counts attempts; TRANSIENT failures
+    (429s, timeouts, 5xx, connection resets) go back to 'pending' for an
+    automatic retry on the next tick - the 30s scheduler tick is the back-
+    off - until summarizer.max_retries is exhausted, then 'error'.
+    With troubleshooting.log_llm_failures the reason is stored. Returns the
+    resulting status."""
+    conn.execute("UPDATE articles SET attempts=attempts+1 WHERE id=?",
+                 (article_id,))
+    attempts = conn.execute("SELECT attempts FROM articles WHERE id=?",
+                            (article_id,)).fetchone()["attempts"]
+    max_retries = int(cfg.get("summarizer", {}).get("max_retries", 2))
+    retry = bool(TRANSIENT_RE.search(str(why))) and attempts <= max_retries
+    status = "pending" if retry else "error"
+    fields = {"status": status}
     if cfg.get("troubleshooting", {}).get("log_llm_failures"):
-        db.set_article(conn, article_id, status="error",
-                       error_msg=str(why)[:500])
-    else:
-        db.set_article(conn, article_id, status="error")
+        fields["error_msg"] = (f"{str(why)[:400]} "
+                               f"[attempt {attempts}"
+                               f"{', retrying' if retry else ''}]")
+    db.set_article(conn, article_id, **fields)
+    return status
 
 
 def system_prompt(cfg, feed=None) -> str:
@@ -277,7 +295,10 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             from .fetcher import UA
             resp = requests.get(art["link"], headers={"user-agent": UA}, timeout=30)
             if not resp.ok:
-                fail(conn, cfg, art["id"], f"fetch HTTP {resp.status_code}")
+                transient = resp.status_code == 429 or resp.status_code >= 500
+                fail(conn, cfg, art["id"],
+                     f"fetch HTTP {resp.status_code}"
+                     + (" (transient)" if transient else ""))
                 continue
             cap = cfg["summarizer"]["max_input_chars"]
             if "max_input_chars" in feed.keys() and feed["max_input_chars"]:

@@ -47,6 +47,7 @@ summarizer:
   # Output budget incl. thinking tokens. Too low => empty digests on reasoning
   # models; too high on cheap models just wastes the cap allowance.
   max_output_tokens: 4000
+  max_retries: 2              # auto-retries for transient failures (429/timeouts/5xx)
   # System prompt used for article transcription/digesting.
   # The {length} placeholder is replaced using `length` above.
   system_prompt: >-

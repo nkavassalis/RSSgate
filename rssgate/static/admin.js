@@ -523,8 +523,21 @@ async function renderFailures() {
   $('failure-list').innerHTML = rows.length
     ? rows.map(r => `<li><b class="hint">${esc(r.feed_title)}</b>
         <a href="${esc(r.link)}" target="_blank">${esc(r.title || r.link)}</a>
-        ${r.error_msg ? `<code>${esc(r.error_msg)}</code>` : '<span class="hint">(reason not stored - enable troubleshooting)</span>'}</li>`).join('')
+        <span class="att" title="transcription attempts">\u00d7${r.attempts}</span>
+        ${r.error_msg ? `<code>${esc(r.error_msg)}</code>` : '<span class="hint">(reason not stored - enable troubleshooting)</span>'}
+        <button class="btn ghost sm" data-retry="${r.id}" title="try again (resets attempts)">\u21bb retry</button>
+        <button class="btn ghost sm" data-drop="${r.id}" title="hide for good">drop</button></li>`).join('')
     : '<li class="hint">no failed articles \u2713</li>';
+  $('failure-list').querySelectorAll('[data-retry]').forEach(b =>
+    b.addEventListener('click', async () => {
+      await api(`/api/articles/${b.dataset.retry}/retry`, { method: 'POST' });
+      renderFailures();
+    }));
+  $('failure-list').querySelectorAll('[data-drop]').forEach(b =>
+    b.addEventListener('click', async () => {
+      await api(`/api/articles/${b.dataset.drop}/drop`, { method: 'POST' });
+      renderFailures();
+    }));
 }
 $('fail-refresh').addEventListener('click', renderFailures);
 $('cfg-logfail').addEventListener('change', () => {});   // saved with Save config

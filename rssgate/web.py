@@ -267,6 +267,27 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             return jsonify(db.category_list(conn))
         return jsonify(db.all_categories(conn))
 
+    @app.route("/api/articles/<int:aid>/retry", methods=["POST"])
+    def api_article_retry(aid):
+        row = conn.execute("SELECT id, status FROM articles WHERE id=?",
+                           (aid,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        conn.execute("UPDATE articles SET status='pending', attempts=0,"
+                     " error_msg='' WHERE id=?", (aid,))
+        conn.commit()
+        return jsonify({"ok": True})
+
+    @app.route("/api/articles/<int:aid>/drop", methods=["POST"])
+    def api_article_drop(aid):
+        row = conn.execute("SELECT id FROM articles WHERE id=?",
+                           (aid,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        conn.execute("UPDATE articles SET status='dropped' WHERE id=?", (aid,))
+        conn.commit()
+        return jsonify({"ok": True})
+
     @app.route("/api/feed-errors")
     def api_feed_errors():
         rows = db.recent_errors(conn, min(int(request.args.get("limit", 20)), 100))

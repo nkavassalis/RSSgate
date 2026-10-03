@@ -252,3 +252,5 @@ tr.feed-cfg td { background:var(--bg); padding:0 !important; }
 .failure-list code { color:#c0392b; font-size:.78rem; word-break:break-all; }
 .inline-check { display:inline; margin-left:12px; }
 .inline-check input { width:auto; }
+
+.failure-list .att { color:var(--muted); font-size:.75rem; margin-left:4px; }

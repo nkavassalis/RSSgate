@@ -44,6 +44,7 @@ DEFAULTS: dict = {
         "concurrency": 2,
         # limit for reasoning ("thinking") token burn-out; raise for slow models
         "max_output_tokens": 4000,
+        "max_retries": 2,               # auto-retries for transient failures (429, timeouts, 5xx)
         "system_prompt": (
             "You are a careful news reader. You will receive the raw text scraped from a "
             "web page. Produce a faithful digest of the article: keep every important "

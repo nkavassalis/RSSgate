@@ -86,3 +86,42 @@ def test_stale_requeue_canonical_formats(conn):
     conn.execute("UPDATE articles SET status='processing', started_at=? WHERE id=?",
                  (recent, aid))
     assert _db.requeue_stale_processing(conn) == 0
+
+
+def test_transient_auto_retry_and_drop(client, monkeypatch):
+    from rssgate.config import load_config
+    from rssgate import db as _db, refresh as _ref
+    fid = _db.add_feed(client.conn, "https://ex/retry", type_="feed")["id"]
+    aid = _db.upsert_article(client.conn, fid, "g", "https://blog.example/p",
+                             "t", "2026-10-01T00:00:00Z")
+    cfg = load_config("__no_such__.yaml")
+    cfg["troubleshooting"]["log_llm_failures"] = True
+    cfg["summarizer"]["max_retries"] = 2
+    _db.update_feed(client.conn, fid, digest_length="default")
+    # non-transient failure: straight to error
+    st = _ref.fail(client.conn, cfg, aid, "extracted text too short (9 ch)")
+    assert st == "error"
+    # transient: auto-requeue until budget, then error
+    _db.set_article(client.conn, aid, status="pending", attempts=0)
+    st = _ref.fail(client.conn, cfg, aid, "LLMError: HTTP 429 rate limited")
+    assert st == "pending"
+    _db.set_article(client.conn, aid, status="processing")
+    st = _ref.fail(client.conn, cfg, aid, "LLMError: HTTP 429 rate limited")
+    assert st == "pending"
+    _db.set_article(client.conn, aid, status="processing")
+    st = _ref.fail(client.conn, cfg, aid, "LLMError: HTTP 429 rate limited")
+    assert st == "error"
+    row = client.conn.execute("SELECT attempts FROM articles WHERE id=?",
+                              (aid,)).fetchone()
+    assert row["attempts"] == 3
+    errs = client.get("/api/feed-errors").get_json()
+    assert errs[0]["attempts"] == 3 and "429" in errs[0]["error_msg"]
+    # manual retry resets the counter
+    client.post(f"/api/articles/{aid}/retry")
+    row = client.conn.execute("SELECT status, attempts FROM articles"
+                              " WHERE id=?", (aid,)).fetchone()
+    assert (row["status"], row["attempts"]) == ("pending", 0)
+    # drop hides it from feed, errors list, everywhere
+    client.post(f"/api/articles/{aid}/drop")
+    assert client.get("/api/articles?limit=10").get_json()["items"] == []
+    assert client.get("/api/feed-errors").get_json() == []

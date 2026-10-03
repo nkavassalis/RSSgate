@@ -82,6 +82,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "custom_title" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN custom_title TEXT NOT NULL"
                      " DEFAULT ''")
+    if "attempts" not in [r["name"] for r in conn.execute(
+            "PRAGMA table_info(articles)")]:
+        conn.execute("ALTER TABLE articles ADD COLUMN attempts INTEGER"
+                     " NOT NULL DEFAULT 0")
     if "sync_deletes" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN sync_deletes INTEGER"
                      " NOT NULL DEFAULT 0")
@@ -383,12 +387,15 @@ def feed_files(conn, feed_id: int) -> set:
 
 def recent_errors(conn, limit: int = 20) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT a.id, a.title, a.link, a.error_msg,"
+        "SELECT a.id, a.title, a.link, a.error_msg, a.attempts,"
         " CASE WHEN COALESCE(f.custom_title,'') != '' THEN f.custom_title"
         "      ELSE f.title END AS feed_title, a.feed_id"
         " FROM articles a JOIN feeds f ON f.id=a.feed_id"
         " WHERE a.status='error' ORDER BY a.id DESC LIMIT ?",
         (limit,)).fetchall()
+
+
+TRANSIENT_RE = None  # set in refresh to avoid re-import; see refresh.TRANSIENT_RE
 
 
 def feed_ready_count(conn, feed_id: int) -> int:
@@ -514,7 +521,7 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
     exclusive UPPER bound (older-than). order='oldest': chronological, cursor
     is an exclusive LOWER bound (newer-than) — the catch-up flow.
     Optionally floored at since_ts (inclusive)."""
-    where, params = ["a.status != 'hidden'"], []
+    where, params = ["a.status NOT IN ('hidden','dropped')"], []
     if since_ts is not None:
         where.append(f"{_TS_EXPR} >= ?")
         params.append(since_ts)

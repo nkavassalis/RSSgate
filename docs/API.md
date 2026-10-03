@@ -21,6 +21,8 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 | `GET /api/feeds/<id>/categories` | Per-feed category census: `[{name, count, allowed}]` (post tags + feed-declared, incl. hidden). |
 | `PUT /api/feeds/<id>` | Update `{categories?: [str], enabled?: bool, type?: ..., hide_sponsored?: bool, summarize?: bool}`. `summarize: false` = raw mode (extracted text, no LLM); turning it back on re-queues raw items. Clearing `hide_sponsored` un-hides that feed's hidden articles. | Accepts `categories`, `enabled`, `summarize`, `hide_sponsored`, `digest_length` (default|terse|normal|detailed), `system_prompt` (optional per-feed prompt override), `max_input_chars`, `category_block` (list of blocked post categories; hides pre-LLM, retroactive).
 | `DELETE /api/feeds/<id>` | Delete feed + its articles. |
+| `POST /api/articles/<id>/retry` | Re-queue a failed/dropped article, reset attempt counter. |
+| `POST /api/articles/<id>/drop` | Hide a failed article permanently (status `dropped`). |
 | `GET /api/feed-errors` | Latest failed articles `[{feed_title,title,link,error_msg}]`; `error_msg` is populated when troubleshooting logging is on. |
 | `POST /api/feeds/<id>/redigest` | User-confirmed re-processing: re-queues ready/error articles with hashes cleared so new prompts/lengths apply. Returns `{ok, requeued}`. |
 | `POST /api/feeds/<id>/refresh` | Poll this feed immediately. |
