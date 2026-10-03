@@ -111,3 +111,19 @@ def test_llm_test_endpoint(client):
 
 def test_models_endpoint(client):
     assert client.get("/api/models").get_json()["models"] == ["alpha", "beta"]
+
+
+def test_poll_now_throttles(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("rssgate.refresh.refresh_feed",
+                        lambda *a, **k: calls.append(1) or "ok")
+    r = client.post("/api/poll").get_json()
+    assert r == {"ok": True, "started": True}
+    import time
+    for _ in range(50):                     # thread is daemon; wait a beat
+        time.sleep(0.05)
+        if calls:
+            break
+    assert calls                             # feeds actually poked
+    r2 = client.post("/api/poll").get_json()
+    assert r2["started"] is False and r2["why"] == "throttled"

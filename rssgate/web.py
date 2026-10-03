@@ -288,6 +288,31 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         conn.commit()
         return jsonify({"ok": True})
 
+    @app.route("/api/poll", methods=["POST"])
+    def api_poll_now():
+        """Pull-to-refresh: poll every enabled feed NOW (background thread),
+        throttled so frantic pulling can't hammer sources."""
+        import contextlib, threading, time as _t
+        last = db.get_state(conn, "last_manual_poll", "")
+        if last and (_t.time() - _t.mktime(_t.strptime(
+                last, "%Y-%m-%dT%H:%M:%SZ"))) < 60:
+            return jsonify({"ok": True, "started": False, "why": "throttled"})
+        db.set_state(conn, "last_manual_poll", db.now_iso())
+        cfg = load_config(config_path)
+
+        def _go():
+            import rssgate.refresh as R
+            with contextlib.closing(db.connect(
+                    os.path.join(data_dir, "rssgate.sqlite"))) as pconn:
+                for feed in db.list_feeds(pconn):
+                    if feed["enabled"]:
+                        try:
+                            R.refresh_feed(pconn, feed, cfg, llm())
+                        except Exception:  # noqa: BLE001
+                            pass
+        threading.Thread(target=_go, daemon=True).start()
+        return jsonify({"ok": True, "started": True})
+
     @app.route("/api/feed-errors")
     def api_feed_errors():
         rows = db.recent_errors(conn, min(int(request.args.get("limit", 20)), 100))

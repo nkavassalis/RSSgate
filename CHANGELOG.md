@@ -35,6 +35,16 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.31.0] — 2026-10-03
+
+### Added
+- **Pull-to-refresh on mobile** (viewer): rubber-banded drag with
+  resistance, armed-state arrow, release spinner. Pulling POSTs
+  /api/poll - a background pass that polls every enabled feed RIGHT NOW
+  (60s throttle, disabled feeds respected, LLM queue drains itself after)
+  - then the stream restarts at the newest. Native browser PTR disabled
+  via overscroll-behavior so only ours fires.
+
 ## [0.30.3] — 2026-10-03
 
 ### Fixed

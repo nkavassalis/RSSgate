@@ -23,6 +23,7 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 | `DELETE /api/feeds/<id>` | Delete feed + its articles. |
 | `POST /api/articles/<id>/retry` | Re-queue a failed/dropped article, reset attempt counter. |
 | `POST /api/articles/<id>/drop` | Hide a failed article permanently (status `dropped`). |
+| `POST /api/poll` | Poll all enabled feeds now (background, 60s throttle): `{ok, started, why?}`. |
 | `GET /api/feed-errors` | Latest failed articles `[{feed_title,title,link,error_msg}]`; `error_msg` is populated when troubleshooting logging is on. |
 | `POST /api/feeds/<id>/redigest` | User-confirmed re-processing: re-queues ready/error articles with hashes cleared so new prompts/lengths apply. Returns `{ok, requeued}`. |
 | `POST /api/feeds/<id>/refresh` | Poll this feed immediately. |

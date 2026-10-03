@@ -105,3 +105,4 @@ def test_rendered_classes_have_css_rules():
         assert f".{cls}" in CSS or f"#{cls}" in CSS, \
             f".{cls} used in markup but never styled"
     assert "color:var(--link)" in CSS
+    assert 'id="ptr"' in VIEWER_HTML and "#ptr" in CSS  # pull-to-refresh wired
