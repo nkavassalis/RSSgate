@@ -59,7 +59,7 @@ def _wraps_real_article(el) -> bool:
     love ad-named divs around <article>/<main>) must be unwrapped, not
     decomposed - the candidate picker discards the shell anyway."""
     for node in el.find_all(("article", "main"), limit=6):
-        if _ptext_len(node) > 800:
+        if _ptext_len(node) > 300:
             return True
     return False
 
