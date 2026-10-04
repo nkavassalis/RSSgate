@@ -247,12 +247,9 @@ See [docs/API.md](docs/API.md) for the HTTP surface,
 [AGENTS.md](AGENTS.md) for an agent-oriented map of the codebase, and
 [CHANGELOG.md](CHANGELOG.md) for release history and the versioning policy
 (major/minor/patch criteria — bump `rssgate.__version__` and tag every
-release).
-
-## Versioning
-
-Current: **v1.0.0** — see [CHANGELOG.md](CHANGELOG.md) for the policy and
-history. Tags follow `vX.Y.Z`.
+release). The single source of truth for the current version is
+`rssgate.__version__` / the `vX.Y.Z` git tags — the README deliberately
+does not hardcode it.
 
 ## Security note
 
