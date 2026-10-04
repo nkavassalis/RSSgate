@@ -73,3 +73,21 @@ def test_candidate_links_same_domain_and_min_length():
     assert any(l.endswith("/posts/relative-link-with-a-fairly-long-anchor-text") for l in links)
     assert not any("other.com" in l for l in links)   # cross-domain dropped
     assert not any(l.endswith("/tag") for l in links)  # short anchor dropped
+
+
+def test_hyphenated_soft_junk_wrappers_keep_content():
+    """Gematsu/Automaton failure class: \b matches ACROSS hyphens, so
+    entry-header / document--sidebar matched junk and the WHOLE content
+    subtree was decomposed -> 0 chars. Soft-junk wrappers that contain
+    real paragraphs must be unwrapped, not destroyed."""
+    body = " ".join(f"Paragraph number {i} with plenty of real journalism."
+                    for i in range(20))          # >400 chars of <p>
+    html = (f"<html><body><article><header class='entry-header'>"
+            f"<div class='hero'><p>{body}</p></div></header></article>"
+            f"<aside class='related-posts'><ul><li>Buy this</li></ul></aside>"
+            f"<div class='advert__autofill_content'><p>SPONSORED BUY NOW</p>"
+            f"</div></body></html>")
+    text = extract_article_text(html)
+    assert "real journalism" in text and len(text) > 800
+    assert "Buy this" not in text               # light junk still pruned
+    assert "SPONSORED" not in text              # hard junk always dies

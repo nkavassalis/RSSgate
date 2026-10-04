@@ -7,10 +7,10 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 JUNK_RE = re.compile(
-    r"\b(ad|ads|advert|advertisement|sponsor|sponsored|promo|promotion|banner|"
+    r"(?<![a-z0-9])(ad|ads|advert|advertisement|sponsor|sponsored|promo|promotion|banner|"
     r"sidebar|nav|navbar|menu|footer|header|masthead|comment|comments|disclaimer|"
     r"cookie|newsletter|subscribe|signup|sign-up|social|share|sharing|related|"
-    r"recommend|paywall|modal|popup|overlay|player|embed|cta)\b", re.I)
+    r"recommend|paywall|modal|popup|overlay|player|embed|cta)(?![a-z0-9])", re.I)
 
 STRIP_TAGS = ("script", "style", "noscript", "svg", "iframe", "form", "button",
               "nav", "footer", "header", "aside", "figcaption")
@@ -18,20 +18,85 @@ STRIP_TAGS = ("script", "style", "noscript", "svg", "iframe", "form", "button",
 BODY_TAGS = ("p", "li", "blockquote", "h1", "h2", "h3", "h4", "pre", "td")
 
 
+HARD_JUNK_RE = re.compile(
+    r"(?<![a-z0-9])(ad|ads|advert|advertisement|sponsor|sponsored|promo|promotion|banner|"
+    r"cookie|newsletter|subscribe|signup|sign-up|paywall|modal|popup|disclaimer|"
+    r"comments?)(?![a-z0-9])", re.I)
+
+# Chrome words that frequently appear in classes of elements that WRAP real
+# content (WordPress entry-header, layout__document--sidebar, ...). These may
+# only be removed when the subtree holds little real text; otherwise unwrap.
+SOFT_WORDS = re.compile(
+    r"(?<![a-z0-9])(sidebar|nav|navbar|menu|footer|header|masthead|share|sharing|related|"
+    r"recommend|social|embed|player|cta)(?![a-z0-9])", re.I)
+
+CONTENTISH_RE = re.compile(
+    r"(?<![a-z0-9])(article|post|entry|story|content|body|text)(?![a-z0-9])",
+    re.I)   # sites label content slots with junk-ish words (advert__autofill
+            # wraps the article on Gematsu); such wrappers are never hard-killed
+
+STRIP_ALWAYS = ("script", "style", "noscript", "svg", "iframe", "form",
+                "button", "figcaption")
+CHROME_TAGS = ("nav", "footer", "header", "aside")   # weight-checked, not blind
+
+
+def _ident(el) -> str:
+    return " ".join(filter(None, [el.get("id", ""), " ".join(el.get("class", []))]))
+
+
 def _is_junk(el) -> bool:
     if el.name in ("body", "html"):
         return False   # never nuke the whole page over a silly class name
-    ident = " ".join(filter(None, [el.get("id", ""), " ".join(el.get("class", []))]))
-    return bool(JUNK_RE.search(ident))
+    return bool(JUNK_RE.search(_ident(el)))
+
+
+def _ptext_len(el) -> int:
+    return sum(len(p.get_text(strip=True)) for p in el.find_all("p", limit=40))
+
+
+def _wraps_real_article(el) -> bool:
+    """Junk-classed wrappers that CONTAIN the true article node (WP pages
+    love ad-named divs around <article>/<main>) must be unwrapped, not
+    decomposed - the candidate picker discards the shell anyway."""
+    for node in el.find_all(("article", "main"), limit=6):
+        if _ptext_len(node) > 800:
+            return True
+    return False
+
+
+def _prune(soup) -> None:
+    """Two-tier junk removal. Hard junk (ads, comments, paywalls) is always
+    destroyed. Soft junk (header/sidebar/nav - words that hide inside
+    hyphenated CSS like entry-header or document--sidebar) is only removed
+    when it contains little paragraph text; content-rich wrappers are
+    UNWRAPPED so the article survives. Fixes the Gematsu/Automaton class of
+    total-extraction failures."""
+    for tag in soup(list(STRIP_ALWAYS)):
+        if tag.parent:
+            tag.decompose()
+    for el in soup.find_all(_is_junk):
+        if el.parent is None or el.name in ("body", "html"):
+            continue
+        ident = _ident(el)
+        hard = HARD_JUNK_RE.search(ident) and not CONTENTISH_RE.search(ident)
+        if (hard or _ptext_len(el) < 400) and not _wraps_real_article(el):
+            el.decompose()
+        else:
+            el.unwrap()
+    for name in CHROME_TAGS:
+        for el in soup.find_all(name):
+            if el.parent is None:
+                continue
+            if _ptext_len(el) < 600:
+                el.decompose()
+            else:
+                el.unwrap()
 
 
 def extract_article_text(html: str, max_chars: int = 24000) -> str:
     """Pull the meaningful article text out of a page, dropping ads & chrome."""
     soup = BeautifulSoup(html, "lxml")
-    for tag in soup(list(STRIP_TAGS)):
-        tag.decompose()
-    for tag in soup.find_all(_is_junk):
-        tag.decompose()
+    _prune(soup)
 
     def weight(el):
         return sum(len(p.get_text(strip=True)) for p in el.find_all("p", limit=30))
