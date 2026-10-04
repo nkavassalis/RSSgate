@@ -354,3 +354,23 @@ def test_ads_checkbox_autosaves_and_survives_reload(ui_server, browser):
                       f"f => f.find(x => x.id === {fid}).hide_sponsored)")
     assert api in (True, 1)
     pg.close()
+
+
+def test_admin_close_pops_history_not_pushes(ui_server, browser):
+    """The mobile complaint: reader -> admin -> close left /admin in the
+    back-stack, so the browser's own edge-back cycled admin. Closing must
+    POP, keeping history shallow."""
+    pg = _new_page(browser, viewport={"width": 390, "height": 844},
+                   has_touch=True)
+    pg.goto(ui_server, wait_until="networkidle")            # history: [/]
+    n0 = pg.evaluate("history.length")
+    pg.click("a[title=Admin]")
+    pg.wait_for_url("**/admin", wait_until="networkidle")   # history: [/, /admin]
+    assert pg.evaluate("history.length") == n0 + 1
+    pg.click("#admin-close")
+    pg.wait_for_url(ui_server + "/", wait_until="networkidle")
+    assert pg.evaluate("history.length") == n0 + 1, \
+        "close pushed a new entry instead of popping"
+    assert "/admin" not in pg.url
+    assert pg.errors == []
+    pg.close()

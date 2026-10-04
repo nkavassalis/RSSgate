@@ -13,6 +13,17 @@ async function api(path, opts = {}) {
 // ------------------------------------------------------------------ feeds
 let ALLCATS = [];
 let ALLFEEDS = [];
+// Back arrow POPs history when we arrived from the reader, instead of
+// pushing a third entry - otherwise browser edge-swipe-back walks the
+// /admin ghost page (v0.37.1).
+document.getElementById('admin-close').addEventListener('click', e => {
+  const cameFromApp = document.referrer &&
+                      document.referrer.startsWith(location.origin);
+  e.preventDefault();
+  if (cameFromApp && history.length > 1) history.back();
+  else location.href = '/';
+});
+
 const chk = (root, sel, fb) => root.querySelector(sel) || { checked: !!fb };
 const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
 
