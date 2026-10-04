@@ -359,22 +359,24 @@
     const touch = e.touches[0];
     const onSidebar = tgt && tgt.closest('#sidebar');
     const open = drawer.classList.contains('open');
-    if (!open && (touch.clientX > 26 || onSidebar)) return;  // edge-only when closed
+    if (!open && (touch.clientX > 22 || onSidebar)) return;  // edge-only when closed
     if (open && onSidebar) return;                            // scroll inside drawer
     dw = { active: true, x0: touch.clientX, y0: touch.clientY, axis: null,
            open, w: 250, x: open ? 250 : 0 };
-    drawer.classList.add('dragging');
   }, { passive: true });
   window.addEventListener('touchmove', e => {
     if (!dw.active) return;
     const t = e.touches[0];
     const dx = t.clientX - dw.x0, dy = t.clientY - dw.y0;
     if (!dw.axis) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      dw.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-      if (dw.axis !== 'x') {                       // vertical: not ours
-        dw.active = false; drawer.classList.remove('dragging'); return;
+      // Decisive-intent only: vertical scrolls carry horizontal jitter,
+      // so 'x' needs a 14px lead AND clear dominance before anything moves.
+      if (Math.abs(dy) >= 10 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+        dw.active = false; return;                 // just scrolling: hands off
       }
+      if (!(Math.abs(dx) >= 14 && Math.abs(dx) > Math.abs(dy) * 1.2)) return;
+      dw.axis = 'x';
+      drawer.classList.add('dragging');
       if (!dw.open) dwVeil.classList.add('show');  // veil rides the reveal
     }
     dw.x = Math.max(0, Math.min(dw.w, (dw.open ? dw.w : 0) + dx));

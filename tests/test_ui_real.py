@@ -294,3 +294,31 @@ def test_edge_swipe_opens_and_closes_drawer(ui_server, browser):
     assert pg.eval_on_selector("#sidebar", "el => !el.classList.contains('open')")
     assert pg.errors == []
     pg.close()
+
+
+def test_edge_gesture_ignores_scroll_jitter(ui_server, browser):
+    """The complaint: vertical scrolls starting near the left edge carried
+    a few px of horizontal jitter and the drawer peeked mid-scroll. A
+    near-vertical drag (even with wobble) must not move the drawer."""
+    pg = _new_page(browser, viewport={"width": 390, "height": 844},
+                   has_touch=True)
+    pg.goto(ui_server, wait_until="networkidle")
+    x_before = pg.locator("#sidebar").bounding_box()["x"]
+    pg.evaluate("""() => {
+      const T = (x, y) => new Touch({identifier: 1, target: document.body,
+                                     clientX: x, clientY: y});
+      const fire = (type, x, y) => window.dispatchEvent(new TouchEvent(type, {
+        touches: type === 'touchend' ? [] : [T(x, y)],
+        changedTouches: [T(x, y)], bubbles: true, cancelable: true }));
+      fire('touchstart', 8, 300);
+      const wobble = [[11, 330], [6, 370], [14, 410], [9, 460], [16, 520]];
+      for (const [x, y] of wobble) fire('touchmove', x, y);
+      fire('touchend', 16, 520);
+    }""")
+    pg.wait_for_timeout(250)
+    assert abs(pg.locator("#sidebar").bounding_box()["x"] - x_before) < 1
+    assert pg.eval_on_selector("#sidebar",
+                               "el => !el.classList.contains('open') && "
+                               "!el.style.transform")
+    assert pg.errors == []
+    pg.close()
