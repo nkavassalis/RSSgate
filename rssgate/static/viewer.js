@@ -248,18 +248,24 @@
 
   // ---- pull to refresh (mobile) ------------------------------------------
   const ptr = $('ptr'), ptrLabel = ptr.querySelector('.ptr-label');
-  let ptrY = 0, ptrDist = 0, ptrArmed = false, ptrBusy = false;
+  let ptrY = 0, ptrX0 = 0, ptrDist = 0, ptrArmed = false, ptrBusy = false;
   const PTR_MIN = 8, PTR_GO = 72;
   window.addEventListener('touchstart', e => {
     if (window.scrollY > 2) return;
     const tgt = e.target instanceof Element ? e.target : null;
     if (tgt && tgt.closest('#sidebar, #lightbox, .modal')) return;
-    ptrY = e.touches[0].clientY; ptrDist = 0; ptrArmed = true;
+    ptrY = e.touches[0].clientY; ptrX0 = e.touches[0].clientX;
+    ptrDist = 0; ptrArmed = true;
     ptr.classList.remove('spin');
   }, { passive: true });
   window.addEventListener('touchmove', e => {
     if (!ptrArmed || ptrBusy) return;
     const d = e.touches[0].clientY - ptrY;
+    // Same intent gate as the drawer: if the gesture leads HORIZONTALLY
+    // (diagonal thumb-arc drawer swipes), it's a swipe, not a pull -
+    // stand down (v0.37.2).
+    const dx = Math.abs(e.touches[0].clientX - ptrX0);
+    if (dx > 24 && dx > d) { ptrArmed = false; ptrDist = 0; return; }
     if (d < PTR_MIN || window.scrollY > 2) { ptrDist = 0; return; }
     ptrDist = Math.min(120, d * 0.5);           // rubber-band resistance
     ptr.style.transform = `translate(-50%, ${-80 + ptrDist}px)`;

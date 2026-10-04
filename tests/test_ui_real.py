@@ -374,3 +374,31 @@ def test_admin_close_pops_history_not_pushes(ui_server, browser):
     assert "/admin" not in pg.url
     assert pg.errors == []
     pg.close()
+
+
+def test_diagonal_swipe_does_not_trigger_pull_refresh(ui_server, browser):
+    """v0.37.1 quirk: an arcing edge-swipe (rightward with downward
+    drift) opened the drawer AND fired our pull-to-refresh reload.
+    A horizontally-led gesture must never arm PTR."""
+    pg = _new_page(browser, viewport={"width": 390, "height": 844},
+                   has_touch=True)
+    polls = []
+    pg.on("request", lambda r: polls.append(r.url)
+          if r.url.endswith("/api/poll") else None)
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.evaluate("""() => {
+      const T = (x, y) => new Touch({identifier: 1, target: document.body,
+                                     clientX: x, clientY: y});
+      const fire = (type, x, y) => window.dispatchEvent(new TouchEvent(type, {
+        touches: type === 'touchend' ? [] : [T(x, y)],
+        changedTouches: [T(x, y)], bubbles: true, cancelable: true }));
+      fire('touchstart', 6, 120);
+      for (let i = 1; i <= 8; i++) fire('touchmove', 6 + i * 22, 120 + i * 18);
+      fire('touchend', 182, 264);
+    }""")
+    pg.wait_for_timeout(600)
+    assert polls == [], "diagonal swipe triggered a poll/reload"
+    assert pg.eval_on_selector("#ptr",
+                               "el => !el.classList.contains('spin')")
+    assert pg.errors == []
+    pg.close()
