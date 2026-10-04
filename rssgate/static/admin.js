@@ -13,6 +13,7 @@ async function api(path, opts = {}) {
 // ------------------------------------------------------------------ feeds
 let ALLCATS = [];
 let ALLFEEDS = [];
+const chk = (root, sel, fb) => root.querySelector(sel) || { checked: !!fb };
 const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
 
 async function renderFeeds() {
@@ -37,7 +38,9 @@ async function renderFeeds() {
 
       </td>
       <td style="text-align:center; white-space:nowrap">
-        <label style="display:inline; margin:0"><input type="checkbox" data-role="llm" style="width:auto"
+        <label style="display:inline; margin:0"><input type="checkbox" data-role="enabled" style="width:auto"
+          ${f.enabled === 0 ? '' : 'checked'} title="Feed enabled (unchecked = skipped by polling & digests)"> On</label>
+        <label style="display:inline; margin:0 0 0 8px"><input type="checkbox" data-role="llm" style="width:auto"
           ${f.summarize === 0 ? '' : 'checked'} title="Use LLM digest (unchecked = show raw extracted text, zero tokens)"> LLM</label>
         <label style="display:inline; margin:0 0 0 8px"><input type="checkbox" data-role="spons" style="width:auto"
           ${f.hide_sponsored ? 'checked' : ''} title="Hide sponsored posts before they reach the LLM"> Ads</label>
@@ -83,6 +86,32 @@ async function renderFeeds() {
         loadFeeds();
       }
     }
+    tr.querySelectorAll('input[type=checkbox][data-role]').forEach(box => {
+      box.addEventListener('change', async () => {
+        const field = { llm: 'summarize', spons: 'hide_sponsored',
+                        enabled: 'enabled' }[box.dataset.role];
+        if (!field) return;
+        const was = tr.dataset.wasLlm === '1';
+        const cell = box.closest('td');
+        cell.classList.add('saving');
+        try {
+          await api(`/api/feeds/${id}`, { method: 'PUT',
+            body: JSON.stringify({ [field]: box.checked }) });
+          tr.dataset.wasLlm = tr.querySelector('[data-role=llm]')
+                                        .checked ? '1' : '0';
+          tr.classList.toggle('off',
+            !tr.querySelector('[data-role=enabled]').checked);
+          cell.classList.remove('saving'); cell.classList.add('saved');
+          setTimeout(() => cell.classList.remove('saved'), 1200);
+          if (field === 'summarize' && was !== box.checked)
+            await maybeRedigest(id);
+        } catch (e) {
+          cell.classList.remove('saving'); cell.classList.add('save-fail');
+          setTimeout(() => cell.classList.remove('save-fail'), 2500);
+          alert('Save failed: ' + e.message); loadFeeds();
+        }
+      });
+    });
     dd.addEventListener('change', async () => {
       let v = dd.value;
       if (!v) return;
@@ -110,12 +139,12 @@ async function renderFeeds() {
       }
       if (btn.dataset.act === 'save') {
         const was = tr.dataset.wasLlm === '1';
-        const now = tr.querySelector('[data-role=llm]').checked;
+        const now = chk(tr, '[data-role=llm]', true).checked;
         await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
           categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
           summarize: now,
-          hide_sponsored: tr.querySelector('[data-role=spons]').checked,
-          enabled: tr.querySelector('[data-role=enabled]').checked }) });
+          hide_sponsored: chk(tr, '[data-role=spons]', true).checked,
+          enabled: chk(tr, '[data-role=enabled]', true).checked }) });
         renderFeeds(); renderCategories();
         if (was !== now) await maybeRedigest(id);
         return;

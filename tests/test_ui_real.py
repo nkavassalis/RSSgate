@@ -322,3 +322,35 @@ def test_edge_gesture_ignores_scroll_jitter(ui_server, browser):
                                "!el.style.transform")
     assert pg.errors == []
     pg.close()
+
+
+def test_ads_checkbox_autosaves_and_survives_reload(ui_server, browser):
+    """The Techdirt report: ticking Ads must persist WITHOUT a Save click
+    and must not throw (the missing-enabled-box TypeError ate every save
+    for a month)."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.on("dialog", lambda d: d.accept())
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.fill("#new-url", "https://ads.test/feed"); pg.select_option("#new-type","feed")
+    pg.click("#add-feed-btn"); pg.wait_for_timeout(1200)
+    fid = pg.eval_on_selector("tr[data-id]", "el => el.dataset.id")
+    puts = []
+    pg.on("request", lambda r: puts.append(r.post_data)
+          if r.method == "PUT" and r.url.endswith(f"/api/feeds/{fid}") else None)
+    row = pg.locator(f"tr[data-id='{fid}']")
+    assert row.locator("[data-role=enabled]").count() == 1   # box is back
+    row.locator("[data-role=spons]").check()
+    pg.wait_for_selector("td.saved", timeout=5000)
+    assert puts and '"hide_sponsored":true' in puts[0]
+    assert pg.errors == [], "page threw during checkbox save"
+    pg.reload(wait_until="networkidle")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    assert row.locator("[data-role=spons]").is_checked()
+    # Save button must work too (the old null-deref path)
+    row.locator("button[data-act=save]").click()
+    pg.wait_for_timeout(500)
+    assert pg.errors == []
+    api = pg.evaluate("() => fetch('/api/feeds').then(r=>r.json()).then("
+                      f"f => f.find(x => x.id === {fid}).hide_sponsored)")
+    assert api in (True, 1)
+    pg.close()

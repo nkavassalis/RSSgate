@@ -119,3 +119,14 @@ def test_overlays_never_ride_the_flex_flow():
         assert "position:fixed" in rule.group(0) \
             or "position:absolute" in rule.group(0), \
             f"{sel} must be fixed/absolute - in-flow overlays break flex"
+
+
+def test_queried_data_roles_exist_in_markup():
+    """v0.36.x incident class: save handler read [data-role=enabled] which
+    no template ever rendered -> null deref -> EVERY save silently threw.
+    Every data-role queried must also be emitted by the markup."""
+    js = ADMIN_JS
+    queried = set(re.findall(r"\[data-role=([a-z]+)\]", js))
+    templated = set(re.findall(r'data-role="([a-z]+)"', js))
+    missing = queried - templated
+    assert not missing, f"data-roles queried but never rendered: {missing}"
