@@ -19,7 +19,7 @@ LENGTH_TARGETS = LENGTH_TARGETS  # re-export for tests
 
 SPONSORED_TITLE_RE = re.compile(
     r"\b(sponsored|promo\b|promotional|paid partnership|in partnership with"
-    r"|partner content|gift guide|deal of the day|deal alert"
+    r"|partner content|gift guide|deal of the day|deal alert|daily ?deals?"
     r"|now (up to )?\d+% ?off|up to \d+% off|prime day|black friday"
     r"|cyber monday|save \d+%|on sale|discount code|best deal)\b", re.I)
 SPONSORED_LINK_RE = re.compile(r"/(sponsored|deals?|partner-?content)/", re.I)

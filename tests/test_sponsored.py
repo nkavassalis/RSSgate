@@ -94,3 +94,15 @@ def test_api_toggle_and_hidden_count(client):
     client.put(f"/api/feeds/{fid}", json={"hide_sponsored": False})
     assert conn.execute("SELECT status FROM articles WHERE feed_id=?", (fid,)).fetchone()["status"] == "pending"
     assert client.get("/api/articles").get_json()["items"][0]["status"] == "pending"
+
+
+def test_techdirt_dailydeal_pattern():
+    """v0.37.3: Techdirt sells 'Daily Deal: X' posts; our pattern book
+    had every other deal phrasing but not theirs, and their URLs carry
+    no /deals/ segment. The leak that proved the regex list is a
+    whitelist, not wisdom."""
+    assert is_sponsored("Daily Deal: Babbel Language Learning (All Languages)",
+                          "https://www.techdirt.com/2026/10/05/daily-deal-babbel")
+    assert is_sponsored("Today's daily deals roundup", "https://x.test/1")
+    assert not is_sponsored("Senate Deals Blow to Encryption Bill",
+                              "https://techdirt.test/senate-encryption")
