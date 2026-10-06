@@ -40,3 +40,24 @@ def test_env_expansion(monkeypatch):
     assert expand_env("env:MY_KEY") == "abc123"
     assert expand_env("plain") == "plain"
     assert expand_env("env:NOT_SET_X") == ""
+
+
+def test_snapshot_width_roundtrip_and_clamp(client):
+    r = client.get("/api/config").get_json()
+    assert r["ui"]["snapshot_width"] == 720                 # default
+    body = client.get("/api/config").get_json()
+    body["ui"]["snapshot_width"] = 960
+    client.put("/api/config", json=body)
+    assert client.get("/api/config").get_json()["ui"]["snapshot_width"] == 960
+    body["ui"]["snapshot_width"] = 99999                    # out of range: ignored
+    client.put("/api/config", json=body)
+    assert client.get("/api/config").get_json()["ui"]["snapshot_width"] == 960
+    assert client.get("/api/resume").get_json()["snapshot_width"] == 960
+    body["ui"]["stream_width"] = 1200
+    client.put("/api/config", json=body)
+    r = client.get("/api/config").get_json()
+    assert r["ui"]["stream_width"] == 1200 and r["ui"]["snapshot_width"] == 960
+    assert client.get("/api/resume").get_json()["stream_width"] == 1200
+    body["ui"]["stream_width"] = 100                       # below range: ignored
+    client.put("/api/config", json=body)
+    assert client.get("/api/config").get_json()["ui"]["stream_width"] == 1200

@@ -129,7 +129,11 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                         "resume_id": db.get_state(conn, "resume_id", "0"),
                         "newest_ts": newest["ts"] if newest else None,
                         "order": load_config(config_path)["ui"].get(
-                            "order", "newest")})
+                            "order", "newest"),
+                        "snapshot_width": load_config(config_path)["ui"].get(
+                            "snapshot_width", 720),
+                        "stream_width": load_config(config_path)["ui"].get(
+                            "stream_width", 720)})
 
     # ------------------------------------------------------------- feeds
 
@@ -376,8 +380,18 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         patch = request.get_json(force=True)
         patch.pop("server", None)   # host/port changes via file only
         ui = patch.pop("ui", None)
-        if isinstance(ui, dict) and ui.get("order") in ("newest", "oldest"):
-            patch["ui"] = {"order": ui["order"]}  # rest of ui: file only
+        ui_patch = {}
+        if isinstance(ui, dict):
+            if ui.get("order") in ("newest", "oldest"):
+                ui_patch["order"] = ui["order"]
+            sw = ui.get("snapshot_width")
+            if isinstance(sw, (int, float)) and 360 <= sw <= 1440:
+                ui_patch["snapshot_width"] = int(sw)
+            tw = ui.get("stream_width")
+            if isinstance(tw, (int, float)) and 480 <= tw <= 1600:
+                ui_patch["stream_width"] = int(tw)
+        if ui_patch:
+            patch["ui"] = ui_patch        # rest of ui: file only
         patch.get("llm", {}).pop("api_key_set", None)
         if patch.get("llm", {}).get("api_key") == "***":
             del patch["llm"]["api_key"]

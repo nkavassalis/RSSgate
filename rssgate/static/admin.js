@@ -300,6 +300,8 @@ async function loadConfig() {
   $('cfg-retention').value = String(maint.retention_months ?? 0);
   $('cfg-imgcap').value = maint.images_max_mb ?? 0;
   $('cfg-imgperpost').value = maint.images_per_post ?? 4;
+  $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 720;
+  $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 720;
   $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
   renderFailures();
   $('cfg-length').value = cfg.summarizer.length;
@@ -322,7 +324,11 @@ $('save-btn').addEventListener('click', async () => {
            model_discover: $('cfg-model-discover').value.trim() },
     polling: { feed_interval_minutes: +$('cfg-feed-min').value,
                page_interval_minutes: +$('cfg-page-min').value },
-    ui: { order: $('cfg-order').value },
+    ui: { order: $('cfg-order').value,
+        snapshot_width: Math.max(360, Math.min(1440,
+                            +$('cfg-sharewidth').value || 720)),
+        stream_width: Math.max(480, Math.min(1600,
+                            +$('cfg-streamwidth').value || 720)) },
     troubleshooting: { log_llm_failures: $('cfg-logfail').checked },
     maintenance: { retention_months: +$('cfg-retention').value,
                    images_max_mb: +$('cfg-imgcap').value,

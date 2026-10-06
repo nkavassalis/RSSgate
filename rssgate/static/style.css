@@ -33,7 +33,8 @@ body { margin:0; background:var(--bg); color:var(--text);
 .icon-btn:hover { border-color:var(--accent); }
 
 /* ---------- viewer stream ---------- */
-.layout { display:flex; max-width:1040px; margin:0 auto; align-items:flex-start; }
+.layout { display:flex; max-width:calc(var(--stream-w, 720px) + 320px);
+  margin:0 auto; align-items:flex-start; }
 #sidebar { width:210px; flex:none; position:sticky; top:57px; padding:16px 10px;
   font-size:.9rem; max-height:calc(100vh - 65px); overflow-y:auto;
   overscroll-behavior:contain; }
@@ -65,7 +66,8 @@ body { margin:0; background:var(--bg); color:var(--text);
 #sidebar-veil.show { display:block; }
 #menu-btn { display:none; }
 
-#stream { flex:1; min-width:0; max-width:720px; margin:0 auto; padding:16px 12px 40px; }
+#stream { flex:1; min-width:0; max-width:var(--stream-w, 720px);
+  margin:0 auto; padding:16px 12px 40px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
   box-shadow:var(--shadow); padding:16px 18px; margin-bottom:14px; }
 .card-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px;

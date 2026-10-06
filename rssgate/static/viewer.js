@@ -205,6 +205,7 @@
     const d = new Date(); d.setDate(d.getDate() - 1); return dateStr(d);
   }
 
+  let SHARE_W = 720;
   function restart(keepDrawer) {
     stream.innerHTML = ''; cursor = null; exhausted = false;
     seenIds.clear();
@@ -288,7 +289,7 @@
     const cs = getComputedStyle(document.documentElement);
     const col = (n, fb) => (cs.getPropertyValue(n) || '').trim() || fb;
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-    const W = 720, PAD = 28, DPR = 2;
+    const W = SHARE_W, PAD = 28, DPR = 2;
     const fam = getComputedStyle(document.body).fontFamily;
     const m = document.createElement('canvas').getContext('2d');
     const hero = a.image ? await loadBitmap('/image/' + a.image).catch(() => null) : null;
@@ -613,6 +614,11 @@
   ]).then(([s]) => {
     bootResume = s.resume_ts || '';
     order = s.order === 'oldest' ? 'oldest' : 'newest';
+    if (s.snapshot_width >= 360 && s.snapshot_width <= 1440)
+      SHARE_W = Math.round(s.snapshot_width);
+    if (s.stream_width >= 480 && s.stream_width <= 1600)
+      document.documentElement.style
+        .setProperty('--stream-w', Math.round(s.stream_width) + 'px');
     // Stream ALWAYS boots at newest (what "caught up" means).
     // The saved resume position becomes an explicit "continue" option —
     // except in oldest mode, where continuing at resume IS the boot.
