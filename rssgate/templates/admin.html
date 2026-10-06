@@ -21,8 +21,19 @@ RSSgate Admin</title>
 </header>
 
 <main class="admin-main">
+  <div class="admin-body">
+  <nav class="sec-nav" aria-label="Settings sections">
+    <a href="#sec-feeds">Feeds</a>
+    <a href="#sec-categories">Categories</a>
+    <a href="#sec-llm">Language model</a>
+    <a href="#sec-polling">Polling &amp; digests</a>
+    <a href="#sec-failures">Failures &amp; cleanup</a>
+    <a href="#sec-display">Display &amp; sharing</a>
+    <a href="#sec-queue">Work queue</a>
+    <a href="#sec-usage">Usage &amp; performance</a>
+  </nav>
 
-  <section class="panel">
+  <section class="panel" id="sec-feeds">
     <h2>Feeds</h2>
     <table class="feed-table" id="feed-table">
       <thead><tr><th>Feed</th><th>Type</th><th>Categories</th><th title="Use LLM digest / hide sponsored">Digest &amp; ads</th><th>Articles</th>
@@ -43,7 +54,7 @@ RSSgate Admin</title>
     <div id="add-suggest" class="suggest" hidden></div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-categories">
     <h2>Categories</h2>
     <p class="hint">Categories are assigned per feed (edit the cell above).
       &#9998; renames a category everywhere (type a different existing name to
@@ -51,7 +62,7 @@ RSSgate Admin</title>
     <ul id="category-list" class="category-list"></ul>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-llm">
     <h2>Language model</h2>
     <div class="grid2">
       <label>Provider
@@ -76,7 +87,7 @@ RSSgate Admin</title>
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-polling">
     <h2>Polling &amp; summarizer</h2>
     <div class="grid2">
       <label>Feed poll interval (minutes)
@@ -111,7 +122,7 @@ RSSgate Admin</title>
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-failures">
     <h2>Transcription failures</h2>
     <div class="row">
       <button class="btn ghost" id="fail-refresh">&#8635; Refresh list</button>
@@ -133,12 +144,6 @@ RSSgate Admin</title>
         </select></label>
       <label>Image cache cap (MB, 0 = unlimited)
         <input id="cfg-imgcap" type="number" min="0" step="50"></label>
-      <label>Max images per article (hero + gallery, 1-8)
-        <input id="cfg-imgperpost" type="number" min="1" max="8" step="1"></label>
-      <label>Snapshot width (px, 360-1440)
-        <input id="cfg-sharewidth" type="number" min="360" max="1440" step="20"></label>
-      <label>Reading column width (px, 480-1600)
-        <input id="cfg-streamwidth" type="number" min="480" max="1600" step="20"></label>
     </div>
     <div class="row">
       <button class="btn ghost" id="maint-run-btn">Run maintenance now</button>
@@ -149,7 +154,22 @@ RSSgate Admin</title>
       Runs automatically every 6 hours and once at startup.</p>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-display">
+    <h2>Display &amp; sharing</h2>
+    <div class="grid2">
+      <label>Snapshot width (px, 360-1440)
+        <input id="cfg-sharewidth" type="number" min="360" max="1440" step="20"></label>
+      <label>Reading column width (px, 480-1600)
+        <input id="cfg-streamwidth" type="number" min="480" max="1600" step="20"></label>
+      <label>Max images per article (hero + gallery, 1-8)
+        <input id="cfg-imgperpost" type="number" min="1" max="8" step="1"></label>
+    </div>
+    <p class="hint">Saved instantly on change. Snapshot width is the share-card
+    render size; reading column width is the desktop reader measure (reloads
+    take effect on the reader).</p>
+  </section>
+
+  <section class="panel" id="sec-queue">
     <h2>Work queue</h2>
     <p class="hint" id="wq-summary">–</p>
     <div id="wq-current" class="wq-current"></div>
@@ -160,7 +180,7 @@ RSSgate Admin</title>
     </table>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-usage">
     <h2>Token usage &amp; LLM performance</h2>
     <div class="usage-grid">
       <div class="stat"><span id="usage-today">–</span><label>tokens today</label></div>
@@ -180,6 +200,7 @@ RSSgate Admin</title>
     <p class="hint" id="st-last">last LLM call: –</p>
   </section>
 
+  </div>
 </main>
 <script src="/static/admin.js"></script>
 <div id="rd-modal" class="modal-veil" hidden>

@@ -317,6 +317,66 @@ async function loadConfig() {
   } catch { /* endpoint down */ }
 }
 
+// Display & sharing widths: autosave (single-key ui patch)
+function uiWidthSave(input, key, lo, hi) {
+  input.addEventListener('change', async () => {
+    const label = input.closest('label');
+    const v = Math.max(lo, Math.min(hi, +input.value || (lo + hi) / 2));
+    input.value = v;
+    label.classList.add('cfg-saving');
+    try {
+      await api('/api/config', { method: 'PUT',
+        body: JSON.stringify({ ui: { [key]: v } }) });
+      label.classList.remove('cfg-saving');
+      label.classList.add('cfg-ok');
+      setTimeout(() => label.classList.remove('cfg-ok'), 1200);
+    } catch (e) {
+      label.classList.remove('cfg-saving');
+      label.classList.add('cfg-bad');
+      setTimeout(() => label.classList.remove('cfg-bad'), 2500);
+      alert('Save failed: ' + e.message);
+      loadConfig();
+    }
+  });
+}
+uiWidthSave($('cfg-sharewidth'), 'snapshot_width', 360, 1440);
+uiWidthSave($('cfg-streamwidth'), 'stream_width', 480, 1600);
+(function () {                       // images-per-post autosave (maintenance key)
+  const input = $('cfg-imgperpost');
+  input.addEventListener('change', async () => {
+    const label = input.closest('label');
+    const v = Math.max(1, Math.min(8, +input.value || 4));
+    input.value = v;
+    label.classList.add('cfg-saving');
+    try {
+      await api('/api/config', { method: 'PUT',
+        body: JSON.stringify({ maintenance: { images_per_post: v } }) });
+      label.classList.remove('cfg-saving'); label.classList.add('cfg-ok');
+      setTimeout(() => label.classList.remove('cfg-ok'), 1200);
+    } catch (e) {
+      label.classList.remove('cfg-saving'); label.classList.add('cfg-bad');
+      setTimeout(() => label.classList.remove('cfg-bad'), 2500);
+      alert('Save failed: ' + e.message); loadConfig();
+    }
+  });
+})();
+
+// settings section nav: highlight the section you're looking at
+(function () {
+  const nav = document.querySelector('.sec-nav');
+  if (!nav) return;
+  const links = [...nav.querySelectorAll('a')];
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const obs = new IntersectionObserver(es => {
+    for (const e of es) if (e.isIntersecting) {
+      links.forEach(a => a.classList.remove('active'));
+      const a = map.get(e.target.id);
+      if (a) a.classList.add('active');
+    }
+  }, { rootMargin: '-10% 0px -70% 0px' });
+  document.querySelectorAll('section.panel[id]').forEach(s => obs.observe(s));
+})();
+
 $('save-btn').addEventListener('click', async () => {
   const patch = {
     llm: { provider: $('cfg-provider').value, base_url: $('cfg-base-url').value.trim(),

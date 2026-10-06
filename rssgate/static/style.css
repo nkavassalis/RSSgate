@@ -288,3 +288,25 @@ td.cats.save-fail { box-shadow:inset 0 0 0 2px #c62828; }
 .snap-btn { background:none; border:none; color:var(--muted); cursor:pointer;
   font-size:.95rem; padding:0 2px 0 8px; line-height:1; }
 .snap-btn:hover { color:var(--text); }
+
+/* config label autosave feedback */
+label.cfg-saving { opacity:.45; }
+label.cfg-ok { box-shadow:0 0 0 2px #2e7d32; border-radius:4px; }
+label.cfg-bad { box-shadow:0 0 0 2px #c62828; border-radius:4px; }
+
+/* two-pane admin settings nav */
+.admin-body { display:block; }
+.sec-nav { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px;
+  position:sticky; top:54px; z-index:5; background:var(--bg); padding:6px 0; }
+.sec-nav a { font-size:.78rem; padding:5px 10px; border-radius:999px;
+  border:1px solid var(--line); color:var(--muted); text-decoration:none;
+  background:var(--card); }
+.sec-nav a.active { color:var(--text); border-color:var(--accent); }
+section.panel[id] { scroll-margin-top:96px; }
+@media (min-width: 960px) {
+  .admin-main { max-width:1080px; }
+  .admin-body { display:grid; grid-template-columns:170px 1fr; gap:22px; }
+  .sec-nav { display:flex; flex-direction:column; flex-wrap:nowrap; gap:4px;
+    position:sticky; top:70px; align-self:start; background:transparent; }
+  .sec-nav a { text-align:left; }
+}

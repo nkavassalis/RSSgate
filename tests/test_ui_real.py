@@ -474,3 +474,29 @@ def test_main_feed_requests_priority_mode(ui_server, browser):
     assert all("prio=1" not in u for u in urls[-1:]), urls[-1:]
     assert pg.errors == []
     pg.close()
+
+
+def test_display_panel_widths_autosave(ui_server, browser):
+    """The width levers live in their own panel and persist on change -
+    no distant save button involved."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    where = pg.evaluate("""() => document.getElementById('cfg-sharewidth')
+        .closest('section').querySelector('h2').textContent""")
+    assert "Display" in where
+    img_in = pg.evaluate("""() => document.getElementById('cfg-imgperpost')
+        .closest('section').querySelector('h2').textContent""")
+    assert "Display" in img_in
+    puts = []
+    pg.on("request", lambda r: puts.append(r.post_data)
+          if r.method == "PUT" and r.url.endswith("/api/config") else None)
+    pg.fill("#cfg-streamwidth", "1000")
+    pg.press("#cfg-streamwidth", "Tab")           # commit -> change fires
+    pg.wait_for_selector("label.cfg-ok", timeout=5000)
+    assert puts and "stream_width" in puts[-1] and "1000" in puts[-1]
+    saved = pg.evaluate("() => fetch('/api/config').then(r => r.json())"
+                        ".then(c => c.ui.stream_width)")
+    assert saved == 1000
+    assert pg.locator(".sec-nav a").count() == 8  # two-pane section nav
+    assert pg.errors == []
+    pg.close()
