@@ -143,8 +143,15 @@
   // ---- loading ------------------------------------------------------------
   const seenIds = new Set();
   const progBar = document.getElementById('stream-progress');
-  function setBusy(on) {
-    if (progBar) progBar.classList.toggle('on', !!on);
+  let busySince = 0, busyOff = 0;
+  function setBusy(on) {                    // min-dwell so fast LAN fetches
+    if (!progBar) return;                   // are actually perceivable
+    clearTimeout(busyOff);
+    if (on) { busySince = performance.now(); progBar.classList.add('on'); }
+    else {
+      const left = Math.max(0, 400 - (performance.now() - busySince));
+      busyOff = setTimeout(() => progBar.classList.remove('on'), left);
+    }
   }
   async function loadNext() {
     if (loading || exhausted) return;

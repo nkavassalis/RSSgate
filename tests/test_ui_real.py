@@ -518,23 +518,31 @@ def test_display_panel_widths_autosave(ui_server, browser):
 
 
 def test_stream_progress_rail(ui_server, browser):
-    """A determinate-feeling rail animates while /api/articles is in
-    flight and hides the instant the page lands (v0.44 refresh animation)."""
+    """The rail must be PERCEIVABLE, not merely present: with no route
+    throttling at all (LAN-fast fetches), it must light for >=300ms of
+    wall-clock time on the boot load - measured by a MutationObserver
+    installed before the app scripts run."""
     pg = _new_page(browser)
-    def slow(route):
-        time.sleep(0.7)              # make the in-flight window observable
-        route.continue_()
-    pg.route("**/api/articles*", slow)
-    pg.goto(ui_server + "/", wait_until="commit")
-    pg.wait_for_function("""() => { const e =
-        document.getElementById('stream-progress');
-        return e.classList.contains('on') &&
-               parseFloat(getComputedStyle(e).opacity) > 0.9; }""",
-        timeout=5000)
-    pg.wait_for_function("""() => { const e =
-        document.getElementById('stream-progress');
-        return !e.classList.contains('on') &&
-               parseFloat(getComputedStyle(e).opacity) === 0; }""",
-        timeout=8000)
+    pg.add_init_script("""
+      addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('stream-progress');
+        window.__rail = [];
+        new MutationObserver(() => window.__rail.push([el.className,
+          performance.now()]))
+          .observe(el, { attributes: true, attributeFilter: ['class'] });
+      });
+    """)
+    pg.goto(ui_server + "/", wait_until="networkidle")
+    pg.wait_for_timeout(600)               # let the first spin settle
+    spans = pg.evaluate("""() => {
+      const spans = []; let on = null;
+      for (const [c, t] of (window.__rail || [])) {
+        if (c.includes('on') && on === null) on = t;
+        if (!c.includes('on') && on !== null) { spans.push(t - on); on = null; }
+      }
+      return spans; }""")
+    assert spans, "rail never animated during boot load"
+    assert max(spans) >= 300, f"rail too brief to see: {spans}"
     assert pg.errors == []
     pg.close()
+
