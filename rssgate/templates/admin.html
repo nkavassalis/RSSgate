@@ -73,10 +73,14 @@ RSSgate Admin</title>
         <input id="cfg-streamwidth" type="number" min="480" max="1600" step="20"></label>
       <label>Max images per article (hero + gallery, 1-8)
         <input id="cfg-imgperpost" type="number" min="1" max="8" step="1"></label>
+      <label class="inline-check"><input type="checkbox" id="cfg-hidepend">
+        hide awaiting-transcription posts until digested (queue lives in
+        Work queue)</label>
     </div>
     <p class="hint">Saved instantly on change. Snapshot width is the share-card
     render size; reading column width is the desktop reader measure (reloads
-    take effect on the reader).</p>
+    take effect on the reader). Unread pills still count awaiting posts,
+    so a feed can look busy while its stream stays quiet.</p>
   </section>
 
   <section class="panel" id="sec-categories">

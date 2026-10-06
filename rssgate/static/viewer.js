@@ -142,9 +142,14 @@
 
   // ---- loading ------------------------------------------------------------
   const seenIds = new Set();
+  const progBar = document.getElementById('stream-progress');
+  function setBusy(on) {
+    if (progBar) progBar.classList.toggle('on', !!on);
+  }
   async function loadNext() {
     if (loading || exhausted) return;
     loading = true;
+    setBusy(true);
     const params = new URLSearchParams({ limit: PAGE, order });
     const PRIO = order === 'newest' && !store.feed && store.mode === 'new';
     if (PRIO) params.set('prio', '1');
@@ -158,9 +163,13 @@
     for (const c of store.pcats) params.append('category', c);
     for (const c of store.fcats) params.append('feed_category', c);
     if (store.mode === 'since') params.set('since_ts', store.since + 'T00:00:00Z');
-    const res = await fetch('/api/articles?' + params);
-    const data = await res.json();
-    loading = false;
+    let data;
+    try {
+      const res = await fetch('/api/articles?' + params);
+      data = await res.json();
+    } finally {
+      loading = false; setBusy(false);   // failed fetches must not spin
+    }
     if (!started) {
       started = true;
       if (!data.items.length) $('empty-hint').hidden = false;

@@ -515,3 +515,26 @@ def test_display_panel_widths_autosave(ui_server, browser):
     assert max(xs) - min(xs) <= 1, f"sections not aligned in one column: {xs}"
     assert pg.errors == []
     pg.close()
+
+
+def test_stream_progress_rail(ui_server, browser):
+    """A determinate-feeling rail animates while /api/articles is in
+    flight and hides the instant the page lands (v0.44 refresh animation)."""
+    pg = _new_page(browser)
+    def slow(route):
+        time.sleep(0.7)              # make the in-flight window observable
+        route.continue_()
+    pg.route("**/api/articles*", slow)
+    pg.goto(ui_server + "/", wait_until="commit")
+    pg.wait_for_function("""() => { const e =
+        document.getElementById('stream-progress');
+        return e.classList.contains('on') &&
+               parseFloat(getComputedStyle(e).opacity) > 0.9; }""",
+        timeout=5000)
+    pg.wait_for_function("""() => { const e =
+        document.getElementById('stream-progress');
+        return !e.classList.contains('on') &&
+               parseFloat(getComputedStyle(e).opacity) === 0; }""",
+        timeout=8000)
+    assert pg.errors == []
+    pg.close()

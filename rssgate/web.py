@@ -69,6 +69,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             order = "newest"
         before_ts, before_id = _cursor_from_request()
         bu = request.args.get("before_u")
+        hide_st = (("pending", "processing")
+                   if cfg["ui"].get("hide_untranscribed", True) else ())
         rows = db.articles_page(
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
@@ -76,7 +78,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             feed_category=request.args.getlist("feed_category") or None,
             since_ts=request.args.get("since_ts"), order=order,
             unread_first=request.args.get("prio") == "1",
-            before_u=int(bu) if bu in ("0", "1") else None)
+            before_u=int(bu) if bu in ("0", "1") else None,
+            hide_statuses=hide_st)
         has_more = len(rows) > limit
         items = []
         for r in rows[:limit]:
@@ -393,6 +396,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             tw = ui.get("stream_width")
             if isinstance(tw, (int, float)) and 480 <= tw <= 1600:
                 ui_patch["stream_width"] = int(tw)
+            if isinstance(ui.get("hide_untranscribed"), bool):
+                ui_patch["hide_untranscribed"] = ui["hide_untranscribed"]
         if ui_patch:
             patch["ui"] = ui_patch        # rest of ui: file only
         patch.get("llm", {}).pop("api_key_set", None)

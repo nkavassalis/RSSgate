@@ -524,12 +524,16 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                   order: str = "newest",
                   feed_category: str | None = None,
                   unread_first: bool = False,
-                  before_u: int | None = None) -> list[sqlite3.Row]:
+                  before_u: int | None = None,
+                  hide_statuses: tuple = ()) -> list[sqlite3.Row]:
     """Page of articles. order='newest': reverse-chronological, cursor is an
     exclusive UPPER bound (older-than). order='oldest': chronological, cursor
     is an exclusive LOWER bound (newer-than) — the catch-up flow.
     Optionally floored at since_ts (inclusive)."""
     where, params = ["a.status NOT IN ('hidden','dropped')"], []
+    if hide_statuses:
+        where.append(f"a.status NOT IN ({','.join('?' * len(hide_statuses))})")
+        params.extend(hide_statuses)
     if since_ts is not None:
         where.append(f"{_TS_EXPR} >= ?")
         params.append(since_ts)

@@ -93,6 +93,10 @@ def test_api_toggle_and_hidden_count(client):
     # turning it off re-queues hidden items
     client.put(f"/api/feeds/{fid}", json={"hide_sponsored": False})
     assert conn.execute("SELECT status FROM articles WHERE feed_id=?", (fid,)).fetchone()["status"] == "pending"
+    # v0.44 default hides untranscribed from the stream; show them to assert
+    body = client.get("/api/config").get_json()
+    body["ui"]["hide_untranscribed"] = False
+    client.put("/api/config", json=body)
     assert client.get("/api/articles").get_json()["items"][0]["status"] == "pending"
 
 

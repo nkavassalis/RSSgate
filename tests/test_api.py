@@ -138,3 +138,22 @@ def test_qr_route_encodes_locally(client):
     assert client.get("/api/qr.png").status_code == 400
     assert client.get("/api/qr.png?u=javascript:alert(1)").status_code == 400
     assert client.get("/api/qr.png?u=" + "x" * 600).status_code == 400
+
+
+def test_hide_untranscribed_default_and_toggle(client):
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://ht.test/f", type_="feed")["id"]
+    a = db.upsert_article(conn, fid, "rdy", "https://ht.test/1", "Ready one",
+                          None)
+    conn.execute("UPDATE articles SET status='ready', summary='d' WHERE id=?", (a,))
+    conn.commit()
+    db.upsert_article(conn, fid, "wait", "https://ht.test/2", "Waiting", None)
+    conn.commit()
+    titles = lambda: sorted(x["title"] for x in
+                            client.get("/api/articles").get_json()["items"])
+    assert titles() == ["Ready one"]                    # hidden by default
+    body = client.get("/api/config").get_json()
+    body["ui"]["hide_untranscribed"] = False
+    client.put("/api/config", json=body)
+    assert titles() == ["Ready one", "Waiting"]

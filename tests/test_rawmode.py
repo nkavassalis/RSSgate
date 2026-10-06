@@ -57,4 +57,7 @@ def test_api_raw_flag_and_requeue(client, monkeypatch):
     assert r == {"ok": True, "requeued": 1}
     assert conn.execute("SELECT status, body_hash, summary FROM articles WHERE id=?",
                         (aid,)).fetchone()[:2] == ("pending", None)
+    _b = client.get("/api/config").get_json()
+    _b["ui"]["hide_untranscribed"] = False          # v0.44 default hides these
+    client.put("/api/config", json=_b)
     assert client.get("/api/articles").get_json()["items"][0]["feed_summarize"] is True
