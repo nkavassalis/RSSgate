@@ -1,5 +1,7 @@
 # RSSgate
 
+**Project page:** <https://rssgate.org/>
+
 A self-hosted RSS feed manager with an AI-transcribed reader. Runs as a local
 Python web app (default `http://0.0.0.0:8088`), fully configured from a single
 YAML file. Desktop & mobile responsive, follows your OS dark-mode setting
