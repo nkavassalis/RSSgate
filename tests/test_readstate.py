@@ -170,3 +170,34 @@ def test_dropped_articles_never_hold_the_pill(conn):
     assert db.feed_unread(conn, fid, None) == 1
     db.set_article(conn, a2, status="hidden")      # sponsored hide likewise
     assert db.feed_unread(conn, fid, None) == 1
+
+
+def _prio_seed(conn):
+    from rssgate import db
+    f1 = db.add_feed(conn, "https://p1.test/f", type_="feed")["id"]
+    f2 = db.add_feed(conn, "https://p2.test/f", type_="feed")["id"]
+    db.update_feed(conn, f1, last_read_ts="2026-10-05T12:00:00Z")
+    a_read = db.upsert_article(conn, f1, "r", "https://p1.test/1", "Read NEW",
+                               "2026-10-05T10:00:00Z")      # newer, but read
+    db.set_article(conn, a_read, status="ready", summary="x")
+    a_un = db.upsert_article(conn, f2, "u", "https://p2.test/1", "Unread OLD",
+                             "2026-10-04T10:00:00Z")       # older, unread
+    db.set_article(conn, a_un, status="ready", summary="y")
+    return a_un, a_read
+
+
+def test_prio_orders_unread_first_and_pages_correctly(conn):
+    from rssgate import db
+    a_un, a_read = _prio_seed(conn)
+    rows = db.articles_page(conn, unread_first=True, limit=10)
+    assert [r["title"] for r in rows] == ["Unread OLD", "Read NEW"]
+    # plain mode keeps pure chrono (read NEW first)
+    rows = db.articles_page(conn, limit=10)
+    assert [r["title"] for r in rows] == ["Read NEW", "Unread OLD"]
+    # keyset page 2 with (unread, ts, id) cursor lands past the unread row
+    page1 = db.articles_page(conn, unread_first=True, limit=1)
+    cur = page1[0]
+    page2 = db.articles_page(conn, before_ts=cur["ts"], before_id=cur["id"],
+                             before_u=cur["unread"], unread_first=True,
+                             limit=10)
+    assert [r["title"] for r in page2] == ["Read NEW"]

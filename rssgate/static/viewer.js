@@ -141,11 +141,17 @@
   }
 
   // ---- loading ------------------------------------------------------------
+  const seenIds = new Set();
   async function loadNext() {
     if (loading || exhausted) return;
     loading = true;
     const params = new URLSearchParams({ limit: PAGE, order });
-    if (cursor) { params.set('before_ts', cursor.ts); params.set('before_id', cursor.id); }
+    const PRIO = order === 'newest' && !store.feed && store.mode === 'new';
+    if (PRIO) params.set('prio', '1');
+    if (cursor) {
+      params.set('before_ts', cursor.ts); params.set('before_id', cursor.id);
+      if (PRIO && cursor.u !== undefined) params.set('before_u', cursor.u);
+    }
     else if (store.mode === 'new' && !store.feed && order === 'newest')
       params.set('fresh', '1');   // oldest mode: no fresh => continue at resume
     if (store.feed) params.set('feed_id', store.feed);
@@ -159,13 +165,21 @@
       started = true;
       if (!data.items.length) $('empty-hint').hidden = false;
     }
+    // priority mode shuffles rows as read-state changes mid-scroll;
+    // keyset drift is real, so the client de-dupes by id.
+    const rawLast = PRIO ? (data.items || []).at(-1) : null;
+    if (PRIO) data.items = data.items.filter(a => !seenIds.has(a.id)
+                                             && seenIds.add(a.id));
     if (data.items.length) {
       $('empty-hint').hidden = true;
       endBanner.hidden = true;
       data.items.forEach(a => { snapData[a.id] = a; });
       stream.insertAdjacentHTML('beforeend', data.items.map(cardHtml).join(''));
       observeCards();
-      cursor = { ts: data.items.at(-1).ts, id: data.items.at(-1).id };
+      const last = data.items.at(-1) || (PRIO ? rawLast : null);
+      if (last) cursor = PRIO ? { ts: last.ts, id: last.id,
+                                  u: last.unread | 0 }
+                              : { ts: last.ts, id: last.id };
     }
     if (!data.has_more) {
       exhausted = true;
@@ -193,6 +207,7 @@
 
   function restart(keepDrawer) {
     stream.innerHTML = ''; cursor = null; exhausted = false;
+    seenIds.clear();
     started = false; endBanner.hidden = true;
     if (!keepDrawer) {
       $('sidebar').classList.remove('open'); $('sidebar-veil').classList.remove('show');
@@ -283,7 +298,10 @@
     const dAll = wrapLines(m, a.summary || '', W - PAD * 2);
     const dLines = dAll.slice(0, 40);
     if (dAll.length > 40) dLines[39] = dLines[39].replace(/[,.;:\s]+$/, '') + '\u2026';
-    const meta = [(a.feed_title || '').trim(), fmt(a.ts)].filter(Boolean).join('  \u00b7  ');
+    const when = new Date(a.ts).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit' });      // sharer's timezone
+    const meta = [(a.feed_title || '').trim(), when].filter(Boolean).join('  \u00b7  ');
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;

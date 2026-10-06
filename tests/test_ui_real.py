@@ -458,3 +458,19 @@ def test_snapshot_falls_back_to_download(ui_server, browser):
     assert os.path.getsize(path) > 4000             # a real image, not a stub
     assert pg.errors == []
     pg.close()
+
+
+def test_main_feed_requests_priority_mode(ui_server, browser):
+    """All-feeds New view must ask the server for unread-first ordering."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    urls = []
+    pg.on("request", lambda r: urls.append(r.url)
+          if "/api/articles" in r.url else None)
+    pg.goto(ui_server, wait_until="networkidle")
+    assert any("prio=1" in u for u in urls), urls
+    # scoped views (single feed) must NOT use priority mode
+    pg.click(f"#feed-filter li[data-feed='1']") if pg.locator("#feed-filter li[data-feed='1']").count() else None
+    pg.wait_for_timeout(800)
+    assert all("prio=1" not in u for u in urls[-1:]), urls[-1:]
+    assert pg.errors == []
+    pg.close()
