@@ -51,7 +51,6 @@ async function renderFeeds() {
       <td class="hint">${esc((f.last_fetched_at || '').replace('T', ' ').replace('Z', '')) || 'never'}</td>
       <td style="white-space:nowrap">
         <button class="btn ghost" data-act="cfg" title="LLM, ads, images, refresh, delete">&#9881;</button>
-        <div class="type-tag" style="font-weight:400">${esc(f.type)}</div>
       </td>
     </tr>
 `).join('');
@@ -545,7 +544,8 @@ async function openFeedCfg(id) {
   body.dataset.wasDlen = dlen; body.dataset.wasLlm =
     (feed.summarize === 0 ? '0' : '1');
   body.innerHTML = `
-    <p class="hint">${feed.article_count || 0} posts \u00b7
+    <p class="hint"><span class="type-tag">${esc(feed.type || 'feed')}</span>
+       ${feed.article_count || 0} posts \u00b7
        ${feed.ready_count || 0} digested \u00b7
        ${feed.unread || 0} unread${feed.hidden_count ?
         ` \u00b7 <b>${feed.hidden_count} hidden by filters</b>` : ''}
