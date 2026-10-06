@@ -279,3 +279,25 @@ def test_sync_deletes_never_prunes_on_empty_or_unchanged(client, monkeypatch):
     refresh.refresh_feed(client.conn, db.get_feed(client.conn, fid),
                          {"summarizer": {"max_input_chars": 24000}}, llm=None)
     assert client.conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 2
+
+
+def test_images_mode_read_time_filter(client):
+    conn = client.conn
+    from rssgate import db
+    fid = db.add_feed(conn, "https://im.test/f", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "g1", "https://im.test/1", "T", None)
+    conn.execute("UPDATE articles SET status='ready', summary='s',"
+                 " image='h.png', images='a.png,b.png' WHERE id=?", (aid,))
+    conn.commit()
+    item = lambda: next(i for i in client.get("/api/articles").get_json()
+                        ["items"] if i["id"] == aid)
+    assert item()["gallery"] == ["a.png", "b.png"] and item()["image"]
+    assert client.put(f"/api/feeds/{fid}",
+                      json={"images_mode": "hero"}).status_code == 200
+    assert item()["gallery"] == [] and item()["image"]
+    client.put(f"/api/feeds/{fid}", json={"images_mode": "off"})
+    assert item()["gallery"] == [] and item()["image"] is None
+    client.put(f"/api/feeds/{fid}", json={"images_mode": "bogus"})   # ignored
+    assert item()["image"] is None                                   # stays off
+    client.put(f"/api/feeds/{fid}", json={"images_mode": "auto"})
+    assert item()["gallery"] == ["a.png", "b.png"]

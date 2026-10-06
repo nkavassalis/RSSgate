@@ -640,3 +640,26 @@ def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
     assert h["para"] > h["flat"] + 20, h
     assert pg.errors == []
     pg.close()
+
+
+@pytest.mark.ui
+def test_feed_images_mode_select_autosaves(ui_server, browser):
+    """Every feed row carries an auto/hero/off images select that PUTs
+    on change with cell feedback (no distant save button)."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    sels = pg.locator("select[data-role=imgmode]")
+    assert sels.count() >= 1
+    puts = []
+    pg.on("request", lambda r: puts.append(r.post_data)
+          if r.method == "PUT" and "/api/feeds/" in r.url else None)
+    sels.first.select_option("off")
+    pg.wait_for_timeout(600)
+    assert puts and "images_mode" in puts[-1] and "off" in puts[-1]
+    val = pg.evaluate("""() => fetch('/api/feeds').then(r => r.json())
+        .then(fs => fs[0].images_mode)""")
+    assert val == "off"
+    sels.first.select_option("auto")            # restore for neighbours
+    pg.wait_for_timeout(400)
+    assert pg.errors == []
+    pg.close()

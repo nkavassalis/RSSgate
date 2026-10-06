@@ -51,6 +51,10 @@ async function renderFeeds() {
           ${f.summarize === 0 ? '' : 'checked'} title="Use LLM digest (unchecked = show raw extracted text, zero tokens)"> LLM</label>
         <label style="display:inline; margin:0 0 0 8px"><input type="checkbox" data-role="spons" style="width:auto"
           ${f.hide_sponsored ? 'checked' : ''} title="Hide sponsored posts before they reach the LLM"> Ads</label>
+        <select data-role="imgmode" class="imgmode" title="Images: auto = hero + gallery, hero = hero only, off = none">
+          ${['auto','hero','off'].map(m =>
+            `<option${(f.images_mode || 'auto') === m ? ' selected' : ''}>${m}</option>`).join('')}
+        </select>
         ${f.hidden_count ? `<div class="auto-cat">${f.hidden_count} hidden</div>` : ''}
       </td>
       <td>${f.article_count}</td>
@@ -118,6 +122,21 @@ async function renderFeeds() {
           alert('Save failed: ' + e.message); loadFeeds();
         }
       });
+    });
+    const imgsel = tr.querySelector('[data-role=imgmode]');
+    imgsel.addEventListener('change', async () => {
+      const cell = imgsel.closest('td');
+      cell.classList.add('saving');
+      try {
+        await api(`/api/feeds/${id}`, { method: 'PUT',
+          body: JSON.stringify({ images_mode: imgsel.value }) });
+        cell.classList.remove('saving'); cell.classList.add('saved');
+        setTimeout(() => cell.classList.remove('saved'), 1200);
+      } catch (e) {
+        cell.classList.remove('saving'); cell.classList.add('save-fail');
+        setTimeout(() => cell.classList.remove('save-fail'), 2500);
+        alert('Save failed: ' + e.message); loadFeeds();
+      }
     });
     dd.addEventListener('change', async () => {
       let v = dd.value;

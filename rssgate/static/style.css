@@ -335,3 +335,6 @@ section.panel[id] { scroll-margin-top:96px; }
 
 #refresh-btn.spinning { animation:ptrspin 1s linear infinite;
   pointer-events:none; opacity:.7; }
+
+select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
+  font-size:.72rem; padding:1px 2px; vertical-align:middle; }

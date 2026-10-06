@@ -84,7 +84,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         items = []
         for r in rows[:limit]:
             from .db import parse_categories
-            items.append({
+            item = {
                 "id": r["id"], "title": r["title"], "link": r["link"],
                 "summary": r["summary"], "status": r["status"], "ts": r["ts"],
                 "feed_id": r["feed_id"], "feed_title": r["feed_title"],
@@ -97,7 +97,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "gallery": [g for g in (r["gallery"] or "").split(",")
                          if g and g != "-"],
                 "unread": bool(r["unread"]),
-            })
+            }
+            mode = r["images_mode"]
+            if mode == "off":
+                item["image"] = None
+                item["gallery"] = []
+            elif mode == "hero":
+                item["gallery"] = []
+            items.append(item)
         return jsonify({"items": items, "has_more": has_more,
                         "next": items[-1] if items else None})
 
@@ -214,6 +221,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             fields["summarize"] = 1 if data["summarize"] else 0
         if "sync_deletes" in data:
             fields["sync_deletes"] = 1 if data["sync_deletes"] else 0
+        if data.get("images_mode") in ("auto", "hero", "off"):
+            fields["images_mode"] = data["images_mode"]
         if "max_input_chars" in data:
             try:
                 fields["max_input_chars"] = max(0, min(200000, int(data["max_input_chars"])))

@@ -68,6 +68,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(feeds)")}
     if "hide_sponsored" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
+    if "images_mode" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN images_mode TEXT NOT NULL"
+                     " DEFAULT 'auto'")
     if "summarize" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN summarize INTEGER NOT NULL DEFAULT 1")
     if "digest_length" not in cols:
@@ -585,6 +588,7 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                    a.categories AS post_categories, a.image AS image,
                    a.images AS gallery,
                    f.summarize AS feed_summarize,
+                   f.images_mode AS images_mode,
                    {UNREAD_EXPR} AS unread
             FROM articles a JOIN feeds f ON f.id = a.feed_id
             WHERE {' AND '.join(where)}
