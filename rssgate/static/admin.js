@@ -38,7 +38,6 @@ async function renderFeeds() {
           <button class="btn ghost sm" data-act="rename" title="rename feed">&#9998;</button>
         </span>
           <div class="hint">${esc(f.last_status || '')}</div></td>
-      <td><span class="type-tag">${esc(f.type)}</span></td>
       <td class="cats">
         <div class="catchips" data-role="cats">${(f.categories || []).map(catChip).join('')}</div>
         <select data-role="catadd"><option value="">+ category…</option></select>
@@ -47,22 +46,16 @@ async function renderFeeds() {
       <td style="text-align:center; white-space:nowrap">
         <label style="display:inline; margin:0"><input type="checkbox" data-role="enabled" style="width:auto"
           ${f.enabled === 0 ? '' : 'checked'} title="Feed enabled (unchecked = skipped by polling & digests)"> On</label>
-        <span class="hint imgmode-tag">img:${esc(f.images_mode || 'auto')}</span>
         ${f.hidden_count ? `<div class="auto-cat">${f.hidden_count} hidden</div>` : ''}
       </td>
-      <td>${f.article_count}</td>
       <td class="hint">${esc((f.last_fetched_at || '').replace('T', ' ').replace('Z', '')) || 'never'}</td>
       <td style="white-space:nowrap">
         <button class="btn ghost" data-act="cfg" title="LLM, ads, images, refresh, delete">&#9881;</button>
+        <div class="type-tag" style="font-weight:400">${esc(f.type)}</div>
       </td>
     </tr>
-    <tr class="feed-cfg" data-cfg="${f.id}" hidden><td colspan="7">
-      <div class="cfg-panel"><span class="hint">loading…</span></div>
-    </td></tr>`).join('');
-  tbody.querySelectorAll('tr.feed-cfg').forEach(row => {
-    const feed = feeds.find(f => String(f.id) === row.dataset.cfg);
-    row.querySelector('.cfg-panel').dataset.dlen = feed.digest_length || 'default';
-  });
+`).join('');
+  // (inline cfg rows replaced by the cog modal)
 
   tbody.querySelectorAll('tr[data-id]').forEach(tr => {
     const id = tr.dataset.id;
@@ -84,7 +77,7 @@ async function renderFeeds() {
         cell.classList.remove('saving'); cell.classList.add('save-fail');
         setTimeout(() => cell.classList.remove('save-fail'), 2500);
         alert('Category save failed: ' + e.message);
-        loadFeeds();
+        renderFeeds();
       }
     }
     tr.querySelectorAll('input[type=checkbox][data-role]').forEach(box => {
@@ -97,10 +90,7 @@ async function renderFeeds() {
         try {
           await api(`/api/feeds/${id}`, { method: 'PUT',
             body: JSON.stringify({ [field]: box.checked }) });
-          tr.dataset.wasLlm = tr.querySelector('[data-role=llm]')
-                                        .checked ? '1' : '0';
-          tr.classList.toggle('off',
-            !tr.querySelector('[data-role=enabled]').checked);
+          tr.classList.toggle('off', !box.checked);
           cell.classList.remove('saving'); cell.classList.add('saved');
           setTimeout(() => cell.classList.remove('saved'), 1200);
           if (field === 'summarize' && was !== box.checked)
@@ -108,7 +98,7 @@ async function renderFeeds() {
         } catch (e) {
           cell.classList.remove('saving'); cell.classList.add('save-fail');
           setTimeout(() => cell.classList.remove('save-fail'), 2500);
-          alert('Save failed: ' + e.message); loadFeeds();
+          alert('Save failed: ' + e.message); renderFeeds();
         }
       });
     });
@@ -128,15 +118,7 @@ async function renderFeeds() {
     });
 
     tr.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
-      if (btn.dataset.act === 'cfg') {
-        const row = tbody.querySelector(`tr[data-cfg="${id}"]`);
-        row.hidden = !row.hidden;
-        if (!row.hidden && !row.dataset.loaded) {
-          row.dataset.loaded = '1';
-          loadCfg(row, id);
-        }
-        return;
-      }
+      if (btn.dataset.act === 'cfg') { openFeedCfg(id); return; }
       if (btn.dataset.act === 'rename') { startFeedRename(tr, id); return; }
       if (btn.dataset.act === 'del' && confirm('Delete this feed and its articles?'))
         await api(`/api/feeds/${id}`, { method: 'DELETE' });
@@ -552,15 +534,22 @@ $('maint-run-btn').addEventListener('click', async () => {
 // ---- per-feed advanced config panel --------------------------------------
 const DLEN = { default: 'Feed default', terse: 'Terse (one sentence, <=20 words)',
                normal: 'Normal (~150 words)', detailed: 'Detailed (300-500 words)' };
-async function loadCfg(row, id) {
+async function openFeedCfg(id) {
+  const veil = $('cfg-modal'), body = $('cfg-modal-body');
+  const feed = ALLFEEDS.find(f => String(f.id) === id) || {};
+  $('cfg-modal-title').textContent =
+    feed.custom_title || feed.title || feed.url || 'Feed settings';
   const cats = await api(`/api/feeds/${id}/categories`);
-  const panel = row.querySelector('.cfg-panel');
-  const dlen = panel.dataset.dlen || 'default';
-  const feed = (ALLFEEDS.find(f => String(f.id) === id) || {});
-  const curPrompt = feed.system_prompt || '';
-  panel.dataset.wasPrompt = curPrompt; panel.dataset.wasDlen = dlen;
-  const micap = feed.max_input_chars || 0;
-  panel.innerHTML = `
+  const dlen = feed.digest_length || 'default';
+  body.dataset.wasPrompt = feed.system_prompt || '';
+  body.dataset.wasDlen = dlen; body.dataset.wasLlm =
+    (feed.summarize === 0 ? '0' : '1');
+  body.innerHTML = `
+    <p class="hint">${feed.article_count || 0} posts \u00b7
+       ${feed.ready_count || 0} digested \u00b7
+       ${feed.unread || 0} unread${feed.hidden_count ?
+        ` \u00b7 <b>${feed.hidden_count} hidden by filters</b>` : ''}
+       \u00b7 images:${esc(feed.images_mode || 'auto')}</p>
     <div class="cfg-grid">
       <label class="snap-pick"><input type="checkbox" data-role="llm"
         ${feed.summarize === 0 ? '' : 'checked'} style="width:auto">
@@ -583,12 +572,12 @@ async function loadCfg(row, id) {
         Prune entries that vanish from the source <small>(snapshot feeds:
         trending lists, breaking-news pages; never prunes on an empty/failed fetch)</small></label>
       <label>Max input chars <small>(0 = global cap; lower = faster, e.g. 6000)</small>
-        <input type="number" min="0" step="1000" data-role="micap" value="${micap}" style="width:110px;margin-left:8px">
+        <input type="number" min="0" step="1000" data-role="micap" value="${feed.max_input_chars || 0}" style="width:110px;margin-left:8px">
       </label>
       <label class="sp-label">Custom system prompt <small>(optional — replaces the
         global digest prompt for this feed only; <code>{length}</code> available)</small>
         <textarea data-role="sprompt" rows="4" spellcheck="false"
-          placeholder="(empty = use the global prompt)">${esc(curPrompt)}</textarea>
+          placeholder="(empty = use the global prompt)">${esc(feed.system_prompt || '')}</textarea>
       </label>
       <div class="cat-allow">
         <h4>Post categories <small>checked = allowed; unchecked are hidden BEFORE the LLM (zero tokens). New categories arrive checked.</small></h4>
@@ -598,53 +587,56 @@ async function loadCfg(row, id) {
           : '<span class="hint">no categories seen on this feed yet</span>'}
       </div>
     </div>
-    <button class="btn" data-act="apply-cfg">Apply</button>
-    <button class="btn ghost" data-act="cfg-refresh" title="fetch this feed now">&#x21bb; Refresh now</button>
-    <button class="btn ghost danger" data-act="cfg-del">&#10005; Delete feed</button>
-    <span class="cfg-status hint"></span>`;
-  row.querySelector('[data-act=apply-cfg]').addEventListener('click', async () => {
-    const blocked = [...row.querySelectorAll('.cat-pick input:not(:checked)')]
+    <div class="row">
+      <button class="btn" data-act="apply-cfg">Apply</button>
+      <button class="btn ghost" data-act="cfg-refresh" title="fetch this feed now">&#x21bb; Refresh now</button>
+      <button class="btn ghost danger" data-act="cfg-del">&#10005; Delete feed</button>
+      <span class="cfg-status hint"></span>
+    </div>`;
+  veil.hidden = false;
+  const q = s => body.querySelector(s);
+  q('[data-act=apply-cfg]').addEventListener('click', async () => {
+    const blocked = [...body.querySelectorAll('.cat-pick input:not(:checked)')]
       .map(i => i.dataset.cat);
-    const patch = { digest_length: row.querySelector('[data-role=dlen]').value,
-                    system_prompt: row.querySelector('[data-role=sprompt]').value,
-                    max_input_chars: Math.max(0, +row.querySelector('[data-role=micap]').value || 0),
-                    sync_deletes: row.querySelector('[data-role=syncdel]').checked,
-                    summarize: row.querySelector('[data-role=llm]').checked,
-                    hide_sponsored: row.querySelector('[data-role=spons]').checked,
-                    images_mode: row.querySelector('[data-role=imgmode]').value,
+    const patch = { digest_length: q('[data-role=dlen]').value,
+                    system_prompt: q('[data-role=sprompt]').value,
+                    max_input_chars: Math.max(0, +q('[data-role=micap]').value || 0),
+                    sync_deletes: q('[data-role=syncdel]').checked,
+                    summarize: q('[data-role=llm]').checked,
+                    hide_sponsored: q('[data-role=spons]').checked,
+                    images_mode: q('[data-role=imgmode]').value,
                     category_block: blocked };
     await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
-    row.querySelector('.cfg-status').textContent = 'saved \u2713';
-    const promptChanged = patch.system_prompt !== panel.wasPrompt
-      || patch.digest_length !== panel.wasDlen;
-    const wasLlm = row.dataset.wasLlm === '1';
-    setTimeout(async () => {
-      renderFeedsKeepingOpen();
-      if (promptChanged || wasLlm !== patch.summarize) await maybeRedigest(id);
-    }, 500);
+    q('.cfg-status').textContent = 'saved \u2713';
+    const promptChanged = patch.system_prompt !== body.dataset.wasPrompt
+      || patch.digest_length !== body.dataset.wasDlen;
+    const wasLlm = body.dataset.wasLlm === '1';
+    await renderFeeds();
+    if (promptChanged || wasLlm !== patch.summarize) await maybeRedigest(id);
   });
-  row.querySelector('[data-act=cfg-refresh]').addEventListener('click', async () => {
-    const st = row.querySelector('.cfg-status');
+  q('[data-act=cfg-refresh]').addEventListener('click', async () => {
+    const st = q('.cfg-status');
     st.textContent = 'refreshing\u2026';
     try { await api(`/api/feeds/${id}/refresh`, { method: 'POST' });
-          st.textContent = 'refresh requested \u2713'; }
+          st.textContent = 'refresh requested \u2713'; renderFeeds(); }
     catch (e) { st.textContent = 'refresh failed: ' + e.message; }
   });
-  row.querySelector('[data-act=cfg-del]').addEventListener('click', async () => {
+  q('[data-act=cfg-del]').addEventListener('click', async () => {
     if (!confirm('Delete this feed and its articles?')) return;
     await api(`/api/feeds/${id}`, { method: 'DELETE' });
-    loadFeeds();
+    veil.hidden = true; renderFeeds();
   });
 }
-function renderFeedsKeepingOpen() {
-  const open = [...document.querySelectorAll('tr.feed-cfg[data-cfg]')]
-    .filter(r => !r.hidden).map(r => r.dataset.cfg);
-  renderFeeds().then(() => open.forEach(id => {
-    const row = document.querySelector(`tr[data-cfg="${id}"]`);
-    if (row) { row.hidden = false; row.dataset.loaded = '1';
-               loadCfg(row, id); }
-  }));
-}
+document.addEventListener('DOMContentLoaded', () => {
+  const veil = $('cfg-modal');
+  veil.addEventListener('click', e => {
+    if (e.target.id === 'cfg-modal') veil.hidden = true;
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') veil.hidden = true;
+  });
+});
+function renderFeedsKeepingOpen() { return renderFeeds(); }
 
 // ---- re-process confirmation ----------------------------------------------
 function maybeRedigest(id) {

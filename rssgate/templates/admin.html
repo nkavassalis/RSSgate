@@ -94,7 +94,7 @@ RSSgate Admin</title>
   <section class="panel" id="sec-feeds">
     <h2>Feeds</h2>
     <table class="feed-table" id="feed-table">
-      <thead><tr><th>Feed</th><th>Type</th><th>Categories</th><th title="Use LLM digest / hide sponsored">Digest &amp; ads</th><th>Articles</th>
+      <thead><tr><th>Feed</th><th>Categories</th><th>Enabled</th>
       <th>Last fetch</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
@@ -236,6 +236,13 @@ RSSgate Admin</title>
   </div>  <!-- admin-body -->
 </main>
 <script src="/static/admin.js"></script>
+<div id="cfg-modal" class="modal-veil" hidden>
+  <div class="modal cfg-modal">
+    <h3 id="cfg-modal-title">Feed settings</h3>
+    <div id="cfg-modal-body" class="cfg-panel"><span class="hint">loading&hellip;</span></div>
+  </div>
+</div>
+
 <div id="rd-modal" class="modal-veil" hidden>
   <div class="modal">
     <h3>Re-process this feed?</h3>
