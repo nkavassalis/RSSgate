@@ -343,3 +343,5 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
 .btn.danger { color:#c62828; }
 
 .cfg-modal { max-width:640px; width:min(640px,94vw); max-height:86vh; overflow:auto; }
+
+.grid-break { grid-column: 1 / -1; height: 0; }

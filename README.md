@@ -218,8 +218,15 @@ Admin panel → **Maintenance**:
 
 - **Keep articles for** — *forever* (default) or 1/3/6/12/24 months. Older
   articles (any status) are deleted along with their image references.
-- **Image cache cap** — unlimited by default, or trim `<data_dir>/images`
-  oldest-first to roughly N MB (dangling references are cleaned up).
+- **Image cache cap** — unlimited by default. When set, each maintenance
+  pass trims `<data_dir>/images` down to N MB: **orphans are pruned
+  first** (nothing references them), and only if still over budget does
+  it delete **oldest files first, referenced ones included**. An article
+  whose cached image was trimmed simply renders without it (the article
+  text and its source link are untouched); nothing re-downloads old
+  trimmed images — new articles still populate the cache. The Status
+  panel shows the live cache size, and the maintenance report records
+  how many files/MB each trim freed.
 - **Max images per article** — 1-8 (default 4: hero + 3 gallery).
 - Orphaned cache files (no article references them) are always pruned.
 - The startup **image backfill** also enriches older articles that were

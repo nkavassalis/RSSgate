@@ -665,3 +665,19 @@ def test_feed_images_mode_behind_cog(ui_server, browser):
     assert val == "off"
     assert pg.errors == []
     pg.close()
+
+
+def test_status_panel_two_row_layout(ui_server, browser):
+    """Status stats split: health row, then errors/storage row."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.wait_for_selector(".status-cell", timeout=5000)
+    assert pg.locator("#status-grid .grid-break").count() == 1
+    order = pg.eval_on_selector_all(
+        "#status-grid > *",
+        "els => els.map(e => e.className.split(' ')[0]"
+        " + ':' + (e.querySelector('span')?.textContent || ''))")
+    assert order.index("status-cell:Digest errors") == 5, order
+    assert "grid-break:" in order
+    assert pg.errors == []
+    pg.close()

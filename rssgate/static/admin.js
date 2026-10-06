@@ -341,17 +341,21 @@ async function loadStatus() {
   try {
     const s = await api('/api/status');
     const q = s.processing ? `${s.processing} working` : (s.pending ? `${s.pending} queued` : 'idle');
-    const cells = [
+    const rowA = [
       ['RSSgate', `v${s.version}`],
       ['Uptime', s.uptime_min < 60 ? `${s.uptime_min}m` : `${Math.floor(s.uptime_min/60)}h ${s.uptime_min%60}m`],
       ['Feeds', `${s.feeds_enabled}/${s.feeds} enabled`],
       ['Queue', q],
+    ];
+    const rowB = [
       ['Digest errors', String(s.errors || 0)],
       ['Database', `${s.db_mb} MB`],
       ['Image cache', `${s.cache_mb} MB`],
     ];
-    box.innerHTML = cells.map(([k, v]) =>
-      `<div class="status-cell"><b>${esc(v)}</b><span>${k}</span></div>`).join('');
+    const cell = ([k, v]) =>
+      `<div class="status-cell"><b>${esc(v)}</b><span>${k}</span></div>`;
+    box.innerHTML = rowA.map(cell).join('')
+      + '<div class="grid-break"></div>' + rowB.map(cell).join('');
     $('#status-note') && ($('#status-note').textContent =
       'updated ' + new Date().toLocaleTimeString());
   } catch { /* server busy; keep last */ }
