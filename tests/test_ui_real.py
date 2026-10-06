@@ -331,31 +331,28 @@ def test_edge_gesture_ignores_scroll_jitter(ui_server, browser):
     pg.close()
 
 
-def test_ads_checkbox_autosaves_and_survives_reload(ui_server, browser):
-    """The Techdirt report: ticking Ads must persist WITHOUT a Save click
-    and must not throw (the missing-enabled-box TypeError ate every save
-    for a month)."""
+def test_ads_checkbox_moves_behind_cog(ui_server, browser):
+    """v0.47: Ads/LLM live behind the cog, persisted via Apply; the row
+    keeps only On + a compact img tag. No phantom boxes (v0.37 lineage:
+    controls exist exactly where the code reaches for them)."""
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.on("dialog", lambda d: d.accept())
     pg.goto(ui_server + "/admin", wait_until="networkidle")
-    pg.fill("#new-url", "https://ads.test/feed"); pg.select_option("#new-type","feed")
+    pg.fill("#new-url", "https://ads2.test/feed"); pg.select_option("#new-type","feed")
     pg.click("#add-feed-btn"); pg.wait_for_timeout(1200)
     fid = pg.eval_on_selector("tr[data-id]", "el => el.dataset.id")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    assert row.locator("[data-role=enabled]").count() == 1
+    assert row.locator("[data-role=spons]").count() == 0      # behind the cog
     puts = []
     pg.on("request", lambda r: puts.append(r.post_data)
           if r.method == "PUT" and r.url.endswith(f"/api/feeds/{fid}") else None)
-    row = pg.locator(f"tr[data-id='{fid}']")
-    assert row.locator("[data-role=enabled]").count() == 1   # box is back
-    row.locator("[data-role=spons]").check()
-    pg.wait_for_selector("td.saved", timeout=5000)
+    row.locator("button[data-act=cfg]").click()
+    pg.wait_for_selector(".cfg-panel [data-role=spons]", timeout=5000)
+    pg.check(".cfg-panel [data-role=spons]")
+    pg.click("button[data-act=apply-cfg]")
+    pg.wait_for_timeout(700)
     assert puts and '"hide_sponsored":true' in puts[0]
-    assert pg.errors == [], "page threw during checkbox save"
-    pg.reload(wait_until="networkidle")
-    row = pg.locator(f"tr[data-id='{fid}']")
-    assert row.locator("[data-role=spons]").is_checked()
-    # Save button must work too (the old null-deref path)
-    row.locator("button[data-act=save]").click()
-    pg.wait_for_timeout(500)
     assert pg.errors == []
     api = pg.evaluate("() => fetch('/api/feeds').then(r=>r.json()).then("
                       f"f => f.find(x => x.id === {fid}).hide_sponsored)")
@@ -643,23 +640,28 @@ def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
 
 
 @pytest.mark.ui
-def test_feed_images_mode_select_autosaves(ui_server, browser):
-    """Every feed row carries an auto/hero/off images select that PUTs
-    on change with cell feedback (no distant save button)."""
+def test_feed_images_mode_behind_cog(ui_server, browser):
+    """Images select lives in the cog panel under a label; Apply persists
+    images_mode (row shows a compact img: mode tag instead of a select)."""
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.goto(ui_server + "/admin", wait_until="networkidle")
-    sels = pg.locator("select[data-role=imgmode]")
-    assert sels.count() >= 1
+    row = pg.locator("tr[data-id]").first
+    assert row.locator("select[data-role=imgmode]").count() == 0  # not in row
+    fid = row.get_attribute("data-id")
     puts = []
     pg.on("request", lambda r: puts.append(r.post_data)
-          if r.method == "PUT" and "/api/feeds/" in r.url else None)
-    sels.first.select_option("off")
-    pg.wait_for_timeout(600)
-    assert puts and "images_mode" in puts[-1] and "off" in puts[-1]
-    val = pg.evaluate("""() => fetch('/api/feeds').then(r => r.json())
-        .then(fs => fs[0].images_mode)""")
+          if r.method == "PUT" and r.url.endswith(f"/api/feeds/{fid}") else None)
+    row.locator("button[data-act=cfg]").click()
+    pg.wait_for_selector(".cfg-panel [data-role=imgmode]", timeout=5000)
+    label = pg.eval_on_selector(".cfg-panel [data-role=imgmode]",
+        "el => el.closest('label').textContent")
+    assert "Images" in label
+    pg.select_option(".cfg-panel [data-role=imgmode]", "off")
+    pg.click("button[data-act=apply-cfg]")
+    pg.wait_for_timeout(700)
+    assert '"images_mode":"off"' in puts[0].replace(" ", "")
+    val = pg.evaluate("""(id) => fetch('/api/feeds').then(r => r.json())
+        .then(fs => fs.find(f => String(f.id) === id).images_mode)""", fid)
     assert val == "off"
-    sels.first.select_option("auto")            # restore for neighbours
-    pg.wait_for_timeout(400)
     assert pg.errors == []
     pg.close()

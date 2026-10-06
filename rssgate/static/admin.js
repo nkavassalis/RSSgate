@@ -47,23 +47,13 @@ async function renderFeeds() {
       <td style="text-align:center; white-space:nowrap">
         <label style="display:inline; margin:0"><input type="checkbox" data-role="enabled" style="width:auto"
           ${f.enabled === 0 ? '' : 'checked'} title="Feed enabled (unchecked = skipped by polling & digests)"> On</label>
-        <label style="display:inline; margin:0 0 0 8px"><input type="checkbox" data-role="llm" style="width:auto"
-          ${f.summarize === 0 ? '' : 'checked'} title="Use LLM digest (unchecked = show raw extracted text, zero tokens)"> LLM</label>
-        <label style="display:inline; margin:0 0 0 8px"><input type="checkbox" data-role="spons" style="width:auto"
-          ${f.hide_sponsored ? 'checked' : ''} title="Hide sponsored posts before they reach the LLM"> Ads</label>
-        <select data-role="imgmode" class="imgmode" title="Images: auto = hero + gallery, hero = hero only, off = none">
-          ${['auto','hero','off'].map(m =>
-            `<option${(f.images_mode || 'auto') === m ? ' selected' : ''}>${m}</option>`).join('')}
-        </select>
+        <span class="hint imgmode-tag">img:${esc(f.images_mode || 'auto')}</span>
         ${f.hidden_count ? `<div class="auto-cat">${f.hidden_count} hidden</div>` : ''}
       </td>
       <td>${f.article_count}</td>
       <td class="hint">${esc((f.last_fetched_at || '').replace('T', ' ').replace('Z', '')) || 'never'}</td>
       <td style="white-space:nowrap">
-        <button class="btn ghost" data-act="cfg" title="advanced config">&#9881;</button>
-        <button class="btn ghost" data-act="save">Save</button>
-        <button class="btn ghost" data-act="refresh" title="refresh">&#x21bb;</button>
-        <button class="btn ghost" data-act="del">&#10005;</button>
+        <button class="btn ghost" data-act="cfg" title="LLM, ads, images, refresh, delete">&#9881;</button>
       </td>
     </tr>
     <tr class="feed-cfg" data-cfg="${f.id}" hidden><td colspan="7">
@@ -99,10 +89,9 @@ async function renderFeeds() {
     }
     tr.querySelectorAll('input[type=checkbox][data-role]').forEach(box => {
       box.addEventListener('change', async () => {
-        const field = { llm: 'summarize', spons: 'hide_sponsored',
-                        enabled: 'enabled' }[box.dataset.role];
-        if (!field) return;
-        const was = tr.dataset.wasLlm === '1';
+        if (box.dataset.role !== 'enabled') return;
+        const field = 'enabled';
+        const was = false;
         const cell = box.closest('td');
         cell.classList.add('saving');
         try {
@@ -122,21 +111,6 @@ async function renderFeeds() {
           alert('Save failed: ' + e.message); loadFeeds();
         }
       });
-    });
-    const imgsel = tr.querySelector('[data-role=imgmode]');
-    imgsel.addEventListener('change', async () => {
-      const cell = imgsel.closest('td');
-      cell.classList.add('saving');
-      try {
-        await api(`/api/feeds/${id}`, { method: 'PUT',
-          body: JSON.stringify({ images_mode: imgsel.value }) });
-        cell.classList.remove('saving'); cell.classList.add('saved');
-        setTimeout(() => cell.classList.remove('saved'), 1200);
-      } catch (e) {
-        cell.classList.remove('saving'); cell.classList.add('save-fail');
-        setTimeout(() => cell.classList.remove('save-fail'), 2500);
-        alert('Save failed: ' + e.message); loadFeeds();
-      }
     });
     dd.addEventListener('change', async () => {
       let v = dd.value;
@@ -161,18 +135,6 @@ async function renderFeeds() {
           row.dataset.loaded = '1';
           loadCfg(row, id);
         }
-        return;
-      }
-      if (btn.dataset.act === 'save') {
-        const was = tr.dataset.wasLlm === '1';
-        const now = chk(tr, '[data-role=llm]', true).checked;
-        await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify({
-          categories: [...chips.querySelectorAll('.chip')].map(c => c.dataset.name),
-          summarize: now,
-          hide_sponsored: chk(tr, '[data-role=spons]', true).checked,
-          enabled: chk(tr, '[data-role=enabled]', true).checked }) });
-        renderFeeds(); renderCategories();
-        if (was !== now) await maybeRedigest(id);
         return;
       }
       if (btn.dataset.act === 'rename') { startFeedRename(tr, id); return; }
@@ -600,6 +562,18 @@ async function loadCfg(row, id) {
   const micap = feed.max_input_chars || 0;
   panel.innerHTML = `
     <div class="cfg-grid">
+      <label class="snap-pick"><input type="checkbox" data-role="llm"
+        ${feed.summarize === 0 ? '' : 'checked'} style="width:auto">
+        Use LLM digest <small>(unchecked = show raw extracted text, zero tokens)</small></label>
+      <label class="snap-pick"><input type="checkbox" data-role="spons"
+        ${feed.hide_sponsored ? 'checked' : ''} style="width:auto">
+        Hide sponsored posts <small>(checked = filtered before the LLM, zero
+        tokens; already-ingested items move to hidden)</small></label>
+      <label>Images
+        <select data-role="imgmode" class="imgmode">
+          ${['auto','hero','off'].map(m =>
+            `<option${(feed.images_mode || 'auto') === m ? ' selected' : ''}>${m}</option>`).join('')}
+        </select> <small>(auto = hero + gallery, hero = hero only, off = none)</small></label>
       <label>Digest length
         <select data-role="dlen">${Object.entries(DLEN).map(([v, t]) =>
           `<option value="${v}"${v === dlen ? ' selected' : ''}>${t}</option>`).join('')}</select>
@@ -625,6 +599,8 @@ async function loadCfg(row, id) {
       </div>
     </div>
     <button class="btn" data-act="apply-cfg">Apply</button>
+    <button class="btn ghost" data-act="cfg-refresh" title="fetch this feed now">&#x21bb; Refresh now</button>
+    <button class="btn ghost danger" data-act="cfg-del">&#10005; Delete feed</button>
     <span class="cfg-status hint"></span>`;
   row.querySelector('[data-act=apply-cfg]').addEventListener('click', async () => {
     const blocked = [...row.querySelectorAll('.cat-pick input:not(:checked)')]
@@ -633,15 +609,31 @@ async function loadCfg(row, id) {
                     system_prompt: row.querySelector('[data-role=sprompt]').value,
                     max_input_chars: Math.max(0, +row.querySelector('[data-role=micap]').value || 0),
                     sync_deletes: row.querySelector('[data-role=syncdel]').checked,
+                    summarize: row.querySelector('[data-role=llm]').checked,
+                    hide_sponsored: row.querySelector('[data-role=spons]').checked,
+                    images_mode: row.querySelector('[data-role=imgmode]').value,
                     category_block: blocked };
     await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
     row.querySelector('.cfg-status').textContent = 'saved \u2713';
     const promptChanged = patch.system_prompt !== panel.wasPrompt
       || patch.digest_length !== panel.wasDlen;
+    const wasLlm = row.dataset.wasLlm === '1';
     setTimeout(async () => {
       renderFeedsKeepingOpen();
-      if (promptChanged) await maybeRedigest(id);
+      if (promptChanged || wasLlm !== patch.summarize) await maybeRedigest(id);
     }, 500);
+  });
+  row.querySelector('[data-act=cfg-refresh]').addEventListener('click', async () => {
+    const st = row.querySelector('.cfg-status');
+    st.textContent = 'refreshing\u2026';
+    try { await api(`/api/feeds/${id}/refresh`, { method: 'POST' });
+          st.textContent = 'refresh requested \u2713'; }
+    catch (e) { st.textContent = 'refresh failed: ' + e.message; }
+  });
+  row.querySelector('[data-act=cfg-del]').addEventListener('click', async () => {
+    if (!confirm('Delete this feed and its articles?')) return;
+    await api(`/api/feeds/${id}`, { method: 'DELETE' });
+    loadFeeds();
   });
 }
 function renderFeedsKeepingOpen() {
