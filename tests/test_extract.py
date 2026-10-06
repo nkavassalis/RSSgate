@@ -1,4 +1,5 @@
-from rssgate.extract import extract_article_text, extract_candidate_links, page_title
+from rssgate.extract import (
+    extract_article_text, extract_candidate_links, page_title, extract_images)
 
 PAGE = """
 <html><head><title>Test Article — Example Site</title></head><body>
@@ -91,3 +92,22 @@ def test_hyphenated_soft_junk_wrappers_keep_content():
     assert "real journalism" in text and len(text) > 800
     assert "Buy this" not in text               # light junk still pruned
     assert "SPONSORED" not in text              # hard junk always dies
+
+
+def test_ars_loader_and_mostread_rejected():
+    # v0.45.2: X-embed lazy loader gif + "Most Read" listing widget live
+    # inside Ars article scope; both must never reach the gallery.
+    html = """
+    <html><body><article>
+      <h1>Real story</h1>
+      <p>Body copy with enough length to be content.</p>
+      <figure><img src="/uploads/2026/10/real-photo.jpg" alt="The story image"></figure>
+      <div class="xf_thread_iframe_wrapper"><div class="xf_thread_iframe_loading">
+        <img class="h-10 w-10" src="/themes/ars-v9/public/images/firework-loader.gif"
+             alt="Loading"></div></div>
+      <div class="lg:col-span-2"><ol><li class="group relative"><a><img
+        class="aspect-video w-full" src="/uploads/2026/10/Getty-500x500.jpg"
+        alt="Listing image for first story in Most Read: Texas thing"></a></li></ol></div>
+    </article></body></html>"""
+    urls = extract_images(html, "https://arstechnica.com/x/")
+    assert urls == ["https://arstechnica.com/uploads/2026/10/real-photo.jpg"]

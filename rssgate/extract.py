@@ -18,6 +18,14 @@ STRIP_TAGS = ("script", "style", "noscript", "svg", "iframe", "form", "button",
 BODY_TAGS = ("p", "li", "blockquote", "h1", "h2", "h3", "h4", "pre", "td")
 
 
+# Image-only rejection: lazy-load placeholders and editorial *about*
+# pictures (Most Read / recirc / trending widgets) that live INSIDE the
+# article scope on modern WP sites but illustrate lists, not the story.
+IMG_JUNK_RE = re.compile(
+    r"(?<![a-z0-9])(loader|loading|placeholder|spinner|skeleton|blank|spacer|"
+    r"1x1|transparent|pixel|most[-_\s]?read|most\sread|trending|recirc[a-z]*|"
+    r"listing|promo[a-z]*)(?![a-z0-9])", re.I)
+
 HARD_JUNK_RE = re.compile(
     r"(?<![a-z0-9])(ad|ads|advert|advertisement|sponsor|sponsored|promo|promotion|banner|"
     r"cookie|newsletter|subscribe|signup|sign-up|paywall|modal|popup|disclaimer|"
@@ -234,6 +242,8 @@ def extract_images(html: str, base_url: str) -> list[str]:
         if AVATAR_RE.search(blob):
             return True
         if JUNK_RE.search(blob):          # junk anywhere in the 4-ancestor chain
+            return True
+        if IMG_JUNK_RE.search(blob):      # loaders, Most-Read, recirc widgets
             return True
         w = "".join(c for c in str(img.get("width") or "") if c.isdigit())
         h = "".join(c for c in str(img.get("height") or "") if c.isdigit())
