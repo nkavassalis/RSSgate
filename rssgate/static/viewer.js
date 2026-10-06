@@ -290,7 +290,7 @@
     const heroH = hero ? Math.min(300, Math.round((W - PAD * 2) * hero.height / hero.width)) : 0;
     const titleH = tLines.length * 33 + 6;
     const digestH = dLines.length * 24 + 10;
-    const footH = qr ? 96 : (url ? 24 : 0);
+    const footH = qr ? 78 : (url ? 24 : 0);
     const H = PAD + (heroH ? heroH + 20 : 0) + titleH + digestH + 26
               + 18 + footH + PAD - 8;
     const cv = document.createElement('canvas');
@@ -312,14 +312,16 @@
     dLines.forEach(l => { y += 24; x.fillText(l, PAD, y); });
     y += 10 + 18;
     if (qr) {
-      x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
-      x.fillText('Scan for the full article', PAD, y + 12);
+      const qs = 72, qy = y + footH - qs;
+      x.fillStyle = '#ffffff'; x.fillRect(W - PAD - qs, qy, qs, qs);
+      x.drawImage(qr, W - PAD - qs, qy, qs, qs);
+      x.textBaseline = 'bottom';               // labels sit on the QR's base
       x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-      x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 12);
-      x.textAlign = 'left';
-      const qs = 72;
-      x.fillStyle = '#ffffff'; x.fillRect(W - PAD - qs, y + 20, qs, qs);
-      x.drawImage(qr, W - PAD - qs, y + 20, qs, qs);
+      x.fillText('via RSSgate', PAD, qy + qs - 2);
+      x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
+      x.textAlign = 'right';
+      x.fillText('Scan for the full article', W - PAD - qs - 14, qy + qs - 2);
+      x.textAlign = 'left'; x.textBaseline = 'alphabetic';
     } else if (url) {
       x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
       x.fillText(url, PAD, y + 10);
