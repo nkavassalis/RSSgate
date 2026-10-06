@@ -205,7 +205,7 @@
     const d = new Date(); d.setDate(d.getDate() - 1); return dateStr(d);
   }
 
-  let SHARE_W = 720;
+  let SHARE_W = 800;
   function restart(keepDrawer) {
     stream.innerHTML = ''; cursor = null; exhausted = false;
     seenIds.clear();

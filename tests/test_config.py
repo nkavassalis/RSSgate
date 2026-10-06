@@ -44,7 +44,7 @@ def test_env_expansion(monkeypatch):
 
 def test_snapshot_width_roundtrip_and_clamp(client):
     r = client.get("/api/config").get_json()
-    assert r["ui"]["snapshot_width"] == 720                 # default
+    assert r["ui"]["snapshot_width"] == 800                 # default
     body = client.get("/api/config").get_json()
     body["ui"]["snapshot_width"] = 960
     client.put("/api/config", json=body)

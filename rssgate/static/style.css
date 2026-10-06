@@ -33,7 +33,7 @@ body { margin:0; background:var(--bg); color:var(--text);
 .icon-btn:hover { border-color:var(--accent); }
 
 /* ---------- viewer stream ---------- */
-.layout { display:flex; max-width:calc(var(--stream-w, 720px) + 320px);
+.layout { display:flex; max-width:calc(var(--stream-w, 1280px) + 320px);
   margin:0 auto; align-items:flex-start; }
 #sidebar { width:210px; flex:none; position:sticky; top:57px; padding:16px 10px;
   font-size:.9rem; max-height:calc(100vh - 65px); overflow-y:auto;
@@ -66,7 +66,7 @@ body { margin:0; background:var(--bg); color:var(--text);
 #sidebar-veil.show { display:block; }
 #menu-btn { display:none; }
 
-#stream { flex:1; min-width:0; max-width:var(--stream-w, 720px);
+#stream { flex:1; min-width:0; max-width:var(--stream-w, 1280px);
   margin:0 auto; padding:16px 12px 40px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
   box-shadow:var(--shadow); padding:16px 18px; margin-bottom:14px; }
@@ -313,3 +313,12 @@ section.panel[id] { scroll-margin-top:96px; }
     position:sticky; top:70px; align-self:start; background:transparent; }
   .sec-nav a { text-align:left; }
 }
+
+/* status panel */
+.status-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));
+  gap:10px; margin:6px 0 4px; }
+.status-cell { background:var(--bg); border:1px solid var(--line); border-radius:8px;
+  padding:8px 10px; display:flex; flex-direction:column; gap:2px; }
+.status-cell b { font-size:1.02rem; }
+.status-cell span { color:var(--muted); font-size:.7rem; text-transform:uppercase;
+  letter-spacing:.04em; }

@@ -11,7 +11,10 @@ from flask import (
 from . import db
 from .config import load_config, save_config, masked_config, DEFAULTS, _merge
 from .llm import LLMClient, LLMError, TEST_PROMPT
+import time as _time_mod
 from .refresh import refresh_all, refresh_feed
+
+START_TIME = _time_mod.time()
 
 
 def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
@@ -131,9 +134,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                         "order": load_config(config_path)["ui"].get(
                             "order", "newest"),
                         "snapshot_width": load_config(config_path)["ui"].get(
-                            "snapshot_width", 720),
+                            "snapshot_width", 800),
                         "stream_width": load_config(config_path)["ui"].get(
-                            "stream_width", 720)})
+                            "stream_width", 1280)})
 
     # ------------------------------------------------------------- feeds
 
@@ -493,12 +496,36 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/status")
     def api_status():
+        import os, json as _json, time as _t
         from . import __version__
         cfg = load_config(config_path)
         n_feeds = conn.execute("SELECT COUNT(*) c FROM feeds").fetchone()["c"]
-        n_pending = conn.execute(
-            "SELECT COUNT(*) c FROM articles WHERE status='pending'").fetchone()["c"]
+        n_on = conn.execute(
+            "SELECT COUNT(*) c FROM feeds WHERE enabled=1").fetchone()["c"]
+        q = {r["status"]: r["c"] for r in conn.execute(
+            "SELECT status, COUNT(*) c FROM articles"
+            " WHERE status IN ('pending','processing','ready','error')"
+            " GROUP BY status")}
+        db_mb = 0.0
+        try:
+            db_mb = round(sum(
+                os.path.getsize(os.path.join(data_dir, f)) / 1e6
+                for f in os.listdir(data_dir)
+                if f.startswith("rssgate.sqlite")), 1)
+        except OSError:
+            pass
+        cache_mb = 0.0
+        try:
+            cache_mb = (_json.loads(db.get_state(conn, "maint_report", "{}"))
+                        .get("report", {}).get("cache_mb", 0.0))
+        except (ValueError, TypeError):
+            pass
         return jsonify({"version": __version__, "feeds": n_feeds,
-                        "pending": n_pending, "polling": cfg["polling"]})
+                        "feeds_enabled": n_on, "pending": q.get("pending", 0),
+                        "processing": q.get("processing", 0),
+                        "errors": q.get("error", 0),
+                        "uptime_min": round((_t.time() - START_TIME) / 60),
+                        "db_mb": db_mb, "cache_mb": cache_mb,
+                        "polling": cfg["polling"]})
 
     return app

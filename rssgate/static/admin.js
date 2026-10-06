@@ -13,15 +13,11 @@ async function api(path, opts = {}) {
 // ------------------------------------------------------------------ feeds
 let ALLCATS = [];
 let ALLFEEDS = [];
-// Back arrow POPs history when we arrived from the reader, instead of
-// pushing a third entry - otherwise browser edge-swipe-back walks the
-// /admin ghost page (v0.37.1).
+// X always means HOME (never history-back); replace() so /admin never
+// lingers in the back stack (edge-swipe ghost, v0.37.1 lineage).
 document.getElementById('admin-close').addEventListener('click', e => {
-  const cameFromApp = document.referrer &&
-                      document.referrer.startsWith(location.origin);
   e.preventDefault();
-  if (cameFromApp && history.length > 1) history.back();
-  else location.href = '/';
+  location.replace('/');
 });
 
 const chk = (root, sel, fb) => root.querySelector(sel) || { checked: !!fb };
@@ -300,8 +296,8 @@ async function loadConfig() {
   $('cfg-retention').value = String(maint.retention_months ?? 0);
   $('cfg-imgcap').value = maint.images_max_mb ?? 0;
   $('cfg-imgperpost').value = maint.images_per_post ?? 4;
-  $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 720;
-  $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 720;
+  $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
+  $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 800;
   $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
   renderFailures();
   $('cfg-length').value = cfg.summarizer.length;
@@ -361,20 +357,69 @@ uiWidthSave($('cfg-streamwidth'), 'stream_width', 480, 1600);
   });
 })();
 
-// settings section nav: highlight the section you're looking at
+// ---- Status panel ---------------------------------------------------------
+async function loadStatus() {
+  const box = document.getElementById('status-grid');
+  if (!box) return;
+  try {
+    const s = await api('/api/status');
+    const q = s.processing ? `${s.processing} working` : (s.pending ? `${s.pending} queued` : 'idle');
+    const cells = [
+      ['RSSgate', `v${s.version}`],
+      ['Uptime', s.uptime_min < 60 ? `${s.uptime_min}m` : `${Math.floor(s.uptime_min/60)}h ${s.uptime_min%60}m`],
+      ['Feeds', `${s.feeds_enabled}/${s.feeds} enabled`],
+      ['Queue', q],
+      ['Digest errors', String(s.errors || 0)],
+      ['Database', `${s.db_mb} MB`],
+      ['Image cache', `${s.cache_mb} MB`],
+    ];
+    box.innerHTML = cells.map(([k, v]) =>
+      `<div class="status-cell"><b>${esc(v)}</b><span>${k}</span></div>`).join('');
+    $('#status-note') && ($('#status-note').textContent =
+      'updated ' + new Date().toLocaleTimeString());
+  } catch { /* server busy; keep last */ }
+}
+$('#status-refresh')?.addEventListener('click', loadStatus);
+loadStatus();
+setTimeout(loadStatus, 2000);
+
+// settings section nav: click = authoritative jump + instant active;
+// observer only re-highlights on genuine user scrolling, and the bottom
+// of the page always activates the last section (short pages can never
+// scroll the last panels to the top band - clicked must look clicked).
 (function () {
   const nav = document.querySelector('.sec-nav');
   if (!nav) return;
   const links = [...nav.querySelectorAll('a')];
   const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  let lockUntil = 0;
+  function setActive(id) {
+    links.forEach(a => a.classList.toggle('active',
+      a.getAttribute('href') === '#' + id));
+  }
+  links.forEach(a => a.addEventListener('click', e => {
+    const id = a.getAttribute('href').slice(1);
+    const sec = document.getElementById(id);
+    if (!sec) return;
+    e.preventDefault();
+    lockUntil = Date.now() + 900;
+    setActive(id);
+    history.replaceState(null, '', '#' + id);
+    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
   const obs = new IntersectionObserver(es => {
+    if (Date.now() < lockUntil) return;
     for (const e of es) if (e.isIntersecting) {
-      links.forEach(a => a.classList.remove('active'));
       const a = map.get(e.target.id);
-      if (a) a.classList.add('active');
+      if (a) setActive(e.target.id);
     }
   }, { rootMargin: '-10% 0px -70% 0px' });
   document.querySelectorAll('section.panel[id]').forEach(s => obs.observe(s));
+  window.addEventListener('scroll', () => {
+    if (Date.now() < lockUntil) return;
+    if (innerHeight + scrollY >= document.body.scrollHeight - 12)
+      setActive(links.at(-1).getAttribute('href').slice(1));
+  }, { passive: true });
 })();
 
 $('save-btn').addEventListener('click', async () => {
@@ -386,9 +431,9 @@ $('save-btn').addEventListener('click', async () => {
                page_interval_minutes: +$('cfg-page-min').value },
     ui: { order: $('cfg-order').value,
         snapshot_width: Math.max(360, Math.min(1440,
-                            +$('cfg-sharewidth').value || 720)),
+                            +$('cfg-sharewidth').value || 800)),
         stream_width: Math.max(480, Math.min(1600,
-                            +$('cfg-streamwidth').value || 720)) },
+                            +$('cfg-streamwidth').value || 1280)) },
     troubleshooting: { log_llm_failures: $('cfg-logfail').checked },
     maintenance: { retention_months: +$('cfg-retention').value,
                    images_max_mb: +$('cfg-imgcap').value,

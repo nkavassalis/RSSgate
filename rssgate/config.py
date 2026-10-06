@@ -67,7 +67,7 @@ DEFAULTS: dict = {
     "ui": {
         "theme": "auto",              # auto | light | dark
         "items_per_page": 20,
-        "order": "newest", "snapshot_width": 720, "stream_width": 720,            # newest | oldest (chronological catch-up)
+        "order": "newest", "snapshot_width": 800, "stream_width": 1280,            # newest | oldest (chronological catch-up)
     },
 }
 

@@ -17,44 +17,82 @@ RSSgate Admin</title>
 <header class="topbar">
   <a class="brand" href="/">RSS<span>gate</span></a>
   <span class="spacer"></span>
-  <a href="/" id="admin-close" class="icon-btn" title="Back to reader">&#8592;</a>
+  <a href="/" id="admin-close" class="icon-btn" title="Close admin">&#10005;</a>
 </header>
 
 <main class="admin-main">
   <div class="admin-body">
   <nav class="sec-nav" aria-label="Settings sections">
-    <a href="#sec-feeds">Feeds</a>
+    <a href="#sec-status">Status</a>
+    <a href="#sec-usage">Usage &amp; performance</a>
+    <a href="#sec-display">Display &amp; sharing</a>
     <a href="#sec-categories">Categories</a>
     <a href="#sec-llm">Language model</a>
-    <a href="#sec-polling">Polling &amp; digests</a>
     <a href="#sec-failures">Failures &amp; cleanup</a>
-    <a href="#sec-display">Display &amp; sharing</a>
     <a href="#sec-queue">Work queue</a>
-    <a href="#sec-usage">Usage &amp; performance</a>
+    <a href="#sec-feeds">Feeds</a>
+    <a href="#sec-polling">Polling &amp; digests</a>
   </nav>
   <div class="sec-col">
-
-  <section class="panel" id="sec-feeds">
-    <h2>Feeds</h2>
-    <table class="feed-table" id="feed-table">
-      <thead><tr><th>Feed</th><th>Type</th><th>Categories</th><th title="Use LLM digest / hide sponsored">Digest &amp; ads</th><th>Articles</th>
-      <th>Last fetch</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <div class="add-feed">
-      <input id="new-url" placeholder="https://example.com  (page or feed URL; we'll look for the feed)">
-      <select id="new-type">
-        <option value="auto">auto-detect</option>
-        <option value="feed">feed</option>
-        <option value="page">bare page</option>
-      </select>
-      <input id="new-cats" placeholder="categories" list="all-cats">
-      <datalist id="all-cats"></datalist>
-      <button class="btn" id="add-feed-btn">Add feed</button>
+  <section class="panel" id="sec-status">
+    <h2>Status</h2>
+    <div id="status-grid" class="status-grid"><span class="hint">loading&hellip;</span></div>
+    <div class="row">
+      <button class="btn ghost" id="status-refresh">&#8635; Refresh</button>
+      <span id="status-note" class="hint"></span>
     </div>
-    <div id="add-suggest" class="suggest" hidden></div>
   </section>
 
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+
+  <section class="panel" id="sec-usage">
+    <h2>Token usage &amp; LLM performance</h2>
+    <div class="usage-grid">
+      <div class="stat"><span id="usage-today">–</span><label>tokens today</label></div>
+      <div class="stat"><span id="usage-month">–</span><label>tokens this month</label></div>
+      <div class="stat"><span id="usage-all">–</span><label>tokens all time</label></div>
+    </div>
+    <div class="usage-grid" style="margin-top:10px">
+      <div class="stat"><span id="st-queue">–</span><label>digest queue (peak <b id="st-peak">–</b>)</label></div>
+      <div class="stat"><span id="st-avg">–</span><label>avg sec/article (min–max <b id="st-range">–</b>)</label></div>
+      <div class="stat"><span id="st-drain">–</span><label>est. time to drain queue</label></div>
+    </div>
+    <div class="usage-grid" style="margin-top:10px">
+      <div class="stat"><span id="st-cache">–</span><label>cache hits (0 tokens)</label></div>
+      <div class="stat"><span id="st-calls">–</span><label>LLM calls today</label></div>
+      <div class="stat"><span id="st-errors">–</span><label>failed digests</label></div>
+    </div>
+    <p class="hint" id="st-last">last LLM call: –</p>
+  </section>
+  <section class="panel" id="sec-display">
+    <h2>Display &amp; sharing</h2>
+    <div class="grid2">
+      <label>Snapshot width (px, 360-1440)
+        <input id="cfg-sharewidth" type="number" min="360" max="1440" step="20"></label>
+      <label>Reading column width (px, 480-1600)
+        <input id="cfg-streamwidth" type="number" min="480" max="1600" step="20"></label>
+      <label>Max images per article (hero + gallery, 1-8)
+        <input id="cfg-imgperpost" type="number" min="1" max="8" step="1"></label>
+    </div>
+    <p class="hint">Saved instantly on change. Snapshot width is the share-card
+    render size; reading column width is the desktop reader measure (reloads
+    take effect on the reader).</p>
+  </section>
   <section class="panel" id="sec-categories">
     <h2>Categories</h2>
     <p class="hint">Categories are assigned per feed (edit the cell above).
@@ -62,7 +100,6 @@ RSSgate Admin</title>
       merge into it); &times; removes the label from every feed.</p>
     <ul id="category-list" class="category-list"></ul>
   </section>
-
   <section class="panel" id="sec-llm">
     <h2>Language model</h2>
     <div class="grid2">
@@ -87,7 +124,67 @@ RSSgate Admin</title>
       <span id="llm-test-result" class="hint"></span>
     </div>
   </section>
+  <section class="panel" id="sec-failures">
+    <h2>Transcription failures</h2>
+    <div class="row">
+      <button class="btn ghost" id="fail-refresh">&#8635; Refresh list</button>
+      <label class="inline-check"><input type="checkbox" id="cfg-logfail">
+        store failure reasons per article (troubleshooting mode)</label>
+    </div>
+    <ul id="failure-list" class="failure-list"><li class="hint">click Refresh</li></ul>
 
+    <h2>Maintenance</h2>
+    <div class="grid2">
+      <label>Keep articles for
+        <select id="cfg-retention">
+          <option value="0">forever (default)</option>
+          <option value="1">1 month</option>
+          <option value="3">3 months</option>
+          <option value="6">6 months</option>
+          <option value="12">12 months</option>
+          <option value="24">24 months</option>
+        </select></label>
+      <label>Image cache cap (MB, 0 = unlimited)
+        <input id="cfg-imgcap" type="number" min="0" step="50"></label>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="maint-run-btn">Run maintenance now</button>
+      <span id="maint-result" class="hint"></span>
+    </div>
+    <p class="hint">Retention deletes articles older than the window (all statuses)
+      and their now-orphaned images. The cache cap trims oldest files first.
+      Runs automatically every 6 hours and once at startup.</p>
+  </section>
+  <section class="panel" id="sec-queue">
+    <h2>Work queue</h2>
+    <p class="hint" id="wq-summary">–</p>
+    <div id="wq-current" class="wq-current"></div>
+    <table class="feed-table" id="wq-table">
+      <thead><tr><th></th><th>Article</th><th>Feed</th><th>Finished</th>
+        <th>Duration</th><th>Tokens</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+  <section class="panel" id="sec-feeds">
+    <h2>Feeds</h2>
+    <table class="feed-table" id="feed-table">
+      <thead><tr><th>Feed</th><th>Type</th><th>Categories</th><th title="Use LLM digest / hide sponsored">Digest &amp; ads</th><th>Articles</th>
+      <th>Last fetch</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="add-feed">
+      <input id="new-url" placeholder="https://example.com  (page or feed URL; we'll look for the feed)">
+      <select id="new-type">
+        <option value="auto">auto-detect</option>
+        <option value="feed">feed</option>
+        <option value="page">bare page</option>
+      </select>
+      <input id="new-cats" placeholder="categories" list="all-cats">
+      <datalist id="all-cats"></datalist>
+      <button class="btn" id="add-feed-btn">Add feed</button>
+    </div>
+    <div id="add-suggest" class="suggest" hidden></div>
+  </section>
   <section class="panel" id="sec-polling">
     <h2>Polling &amp; summarizer</h2>
     <div class="grid2">
@@ -122,85 +219,6 @@ RSSgate Admin</title>
       <span id="save-result" class="hint"></span>
     </div>
   </section>
-
-  <section class="panel" id="sec-failures">
-    <h2>Transcription failures</h2>
-    <div class="row">
-      <button class="btn ghost" id="fail-refresh">&#8635; Refresh list</button>
-      <label class="inline-check"><input type="checkbox" id="cfg-logfail">
-        store failure reasons per article (troubleshooting mode)</label>
-    </div>
-    <ul id="failure-list" class="failure-list"><li class="hint">click Refresh</li></ul>
-
-    <h2>Maintenance</h2>
-    <div class="grid2">
-      <label>Keep articles for
-        <select id="cfg-retention">
-          <option value="0">forever (default)</option>
-          <option value="1">1 month</option>
-          <option value="3">3 months</option>
-          <option value="6">6 months</option>
-          <option value="12">12 months</option>
-          <option value="24">24 months</option>
-        </select></label>
-      <label>Image cache cap (MB, 0 = unlimited)
-        <input id="cfg-imgcap" type="number" min="0" step="50"></label>
-    </div>
-    <div class="row">
-      <button class="btn ghost" id="maint-run-btn">Run maintenance now</button>
-      <span id="maint-result" class="hint"></span>
-    </div>
-    <p class="hint">Retention deletes articles older than the window (all statuses)
-      and their now-orphaned images. The cache cap trims oldest files first.
-      Runs automatically every 6 hours and once at startup.</p>
-  </section>
-
-  <section class="panel" id="sec-display">
-    <h2>Display &amp; sharing</h2>
-    <div class="grid2">
-      <label>Snapshot width (px, 360-1440)
-        <input id="cfg-sharewidth" type="number" min="360" max="1440" step="20"></label>
-      <label>Reading column width (px, 480-1600)
-        <input id="cfg-streamwidth" type="number" min="480" max="1600" step="20"></label>
-      <label>Max images per article (hero + gallery, 1-8)
-        <input id="cfg-imgperpost" type="number" min="1" max="8" step="1"></label>
-    </div>
-    <p class="hint">Saved instantly on change. Snapshot width is the share-card
-    render size; reading column width is the desktop reader measure (reloads
-    take effect on the reader).</p>
-  </section>
-
-  <section class="panel" id="sec-queue">
-    <h2>Work queue</h2>
-    <p class="hint" id="wq-summary">–</p>
-    <div id="wq-current" class="wq-current"></div>
-    <table class="feed-table" id="wq-table">
-      <thead><tr><th></th><th>Article</th><th>Feed</th><th>Finished</th>
-        <th>Duration</th><th>Tokens</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <section class="panel" id="sec-usage">
-    <h2>Token usage &amp; LLM performance</h2>
-    <div class="usage-grid">
-      <div class="stat"><span id="usage-today">–</span><label>tokens today</label></div>
-      <div class="stat"><span id="usage-month">–</span><label>tokens this month</label></div>
-      <div class="stat"><span id="usage-all">–</span><label>tokens all time</label></div>
-    </div>
-    <div class="usage-grid" style="margin-top:10px">
-      <div class="stat"><span id="st-queue">–</span><label>digest queue (peak <b id="st-peak">–</b>)</label></div>
-      <div class="stat"><span id="st-avg">–</span><label>avg sec/article (min–max <b id="st-range">–</b>)</label></div>
-      <div class="stat"><span id="st-drain">–</span><label>est. time to drain queue</label></div>
-    </div>
-    <div class="usage-grid" style="margin-top:10px">
-      <div class="stat"><span id="st-cache">–</span><label>cache hits (0 tokens)</label></div>
-      <div class="stat"><span id="st-calls">–</span><label>LLM calls today</label></div>
-      <div class="stat"><span id="st-errors">–</span><label>failed digests</label></div>
-    </div>
-    <p class="hint" id="st-last">last LLM call: –</p>
-  </section>
-
   </div>  <!-- sec-col -->
   </div>  <!-- admin-body -->
 </main>

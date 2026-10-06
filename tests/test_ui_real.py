@@ -438,7 +438,7 @@ def test_copy_snapshot_puts_png_on_clipboard(ui_server, browser):
           } catch (e) { return {err: String(e)}; } }""")
         raise AssertionError(f"clipboard empty; diag={diag} errs={pg.errors}")
     assert got and got["size"] > 4000, "no substantive PNG on clipboard"
-    assert got["w"] == 1440 and got["h"] >= 300     # DPR2 @ 720 logical
+    assert got["w"] == 1600 and got["h"] >= 300     # DPR2 @ 800 default
     assert pg.errors == []
     pg.close()
 
@@ -496,14 +496,20 @@ def test_display_panel_widths_autosave(ui_server, browser):
     assert puts and "stream_width" in puts[-1] and "1000" in puts[-1]
     saved = pg.evaluate("() => fetch('/api/config').then(r => r.json())"
                         ".then(c => c.ui.stream_width)")
-    assert saved == 1000
-    assert pg.locator(".sec-nav a").count() == 8  # two-pane section nav
+    assert saved == 1000  # explicit set; defaults now 800/1280
+    assert pg.locator(".sec-nav a").count() == 9  # nav incl. Status
+    # every nav link must FEED BACK active on click (perceived success),
+    # including bottom sections that can't scroll to the spy band
+    for href in ("#sec-queue", "#sec-usage", "#sec-feeds"):
+        pg.click(f'.sec-nav a[href="{href}"]')
+        pg.wait_for_timeout(350)
+        assert pg.locator(f'.sec-nav a[href="{href}"].active').count() == 1, href
     # THE layout assertion (v0.42.1 regression): every settings section
     # must sit in the RIGHT column - never wrapped into the nav gutter.
     nav_box = pg.locator(".sec-nav").bounding_box()
     xs = pg.evaluate("""() => [...document.querySelectorAll('section.panel[id]')]
         .map(s => Math.round(s.getBoundingClientRect().x))""")
-    assert len(xs) == 8, xs
+    assert len(xs) == 9, xs   # all sections incl. Status
     assert all(x >= nav_box["x"] + nav_box["width"] for x in xs), \
         f"sections leaked into the nav column: x={xs}"
     assert max(xs) - min(xs) <= 1, f"sections not aligned in one column: {xs}"
