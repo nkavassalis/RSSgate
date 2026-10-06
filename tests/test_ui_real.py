@@ -681,3 +681,24 @@ def test_status_panel_two_row_layout(ui_server, browser):
     assert "grid-break:" in order
     assert pg.errors == []
     pg.close()
+
+
+def test_nav_spy_lights_passed_section_without_jumping(ui_server, browser):
+    """Scrolling lights the nav anchor you pass; scroll position must
+    never move on its own (visual-only spy)."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.wait_for_selector(".sec-nav a.active", timeout=4000)
+    def active():
+        return pg.eval_on_selector(".sec-nav a.active", "a => a.hash")
+    y0 = pg.evaluate("scrollTo(0, document.getElementById('sec-display').offsetTop + 40)")
+    pg.wait_for_timeout(300)
+    assert active() == "#sec-display", active()
+    y1 = pg.evaluate("scrollY")
+    pg.wait_for_timeout(400)
+    assert abs(pg.evaluate("scrollY") - y1) < 2, "spy moved the page!"
+    pg.evaluate("scrollTo(0, document.body.scrollHeight)")
+    pg.wait_for_timeout(400)
+    assert active() == "#sec-polling", active()      # last section at bottom
+    assert pg.errors == []
+    pg.close()

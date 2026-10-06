@@ -388,19 +388,28 @@ setTimeout(loadStatus, 2000);
     history.replaceState(null, '', '#' + id);
     sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
-  const obs = new IntersectionObserver(es => {
+  // geometry spy: the section whose top you have passed lights up; the
+  // bottom of the page always lights the last one. Visual only - never
+  // moves the page.
+  const secs = [...document.querySelectorAll('section.panel[id]')];
+  let ticking = false;
+  function spy() {
+    ticking = false;
     if (Date.now() < lockUntil) return;
-    for (const e of es) if (e.isIntersecting) {
-      const a = map.get(e.target.id);
-      if (a) setActive(e.target.id);
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) {
+      setActive(secs[secs.length - 1].id);
+      return;
     }
-  }, { rootMargin: '-10% 0px -70% 0px' });
-  document.querySelectorAll('section.panel[id]').forEach(s => obs.observe(s));
+    let cur = secs[0];
+    for (const s of secs)
+      if (s.getBoundingClientRect().top <= 130) cur = s; else break;
+    setActive(cur.id);
+  }
   window.addEventListener('scroll', () => {
-    if (Date.now() < lockUntil) return;
-    if (innerHeight + scrollY >= document.body.scrollHeight - 12)
-      setActive(links.at(-1).getAttribute('href').slice(1));
+    if (!ticking) { ticking = true; requestAnimationFrame(spy); }
   }, { passive: true });
+  window.addEventListener('resize', spy, { passive: true });
+  spy();
 })();
 
 $('save-btn').addEventListener('click', async () => {
