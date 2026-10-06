@@ -65,12 +65,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if order not in ("newest", "oldest"):
             order = "newest"
         before_ts, before_id = _cursor_from_request()
+        bu = request.args.get("before_u")
         rows = db.articles_page(
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
             category=request.args.getlist("category") or None,
             feed_category=request.args.getlist("feed_category") or None,
-            since_ts=request.args.get("since_ts"), order=order)
+            since_ts=request.args.get("since_ts"), order=order,
+            unread_first=request.args.get("prio") == "1",
+            before_u=int(bu) if bu in ("0", "1") else None)
         has_more = len(rows) > limit
         items = []
         for r in rows[:limit]:
