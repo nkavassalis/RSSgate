@@ -554,9 +554,19 @@
   window.addEventListener('touchend', dwEnd, { passive: true });
   window.addEventListener('touchcancel', dwEnd, { passive: true });
   $('refresh-btn').addEventListener('click', async e => {
-    e.target.textContent = '\u2026';
-    await fetch('/api/poll', { method: 'POST' });
-    setTimeout(() => location.reload(), 4000);
+    const btn = e.currentTarget;
+    if (btn.classList.contains('spinning')) return;
+    btn.classList.add('spinning');
+    setBusy(true);                       // rail covers the whole poll, too
+    try {
+      const r = await fetch('/api/poll', { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      if (!j.throttled)                  // real poll: let the fetchers land
+        await new Promise(rz => setTimeout(rz, 2500));
+    } catch { /* offline: restart anyway, rail must not stick */ }
+    btn.classList.remove('spinning');
+    restart();                           // in-app: no white flash
+    setBusy(false);
   });
 
   function setFeedFilter(id) {

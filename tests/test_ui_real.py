@@ -546,3 +546,42 @@ def test_stream_progress_rail(ui_server, browser):
     assert pg.errors == []
     pg.close()
 
+
+
+def test_refresh_button_drives_the_rail(ui_server, browser):
+    """Clicking the header refresh button animates the rail for the whole
+    poll window (the miss: v0.44 rail only watched article fetches)."""
+    pg = _new_page(browser)
+    def slow_poll(route):
+        time.sleep(0.8)
+        route.continue_()
+    pg.route("**/api/poll", slow_poll)
+    pg.add_init_script("""
+      addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('stream-progress');
+        window.__rail = [];
+        new MutationObserver(() => window.__rail.push([el.className,
+          performance.now()]))
+          .observe(el, { attributes: true, attributeFilter: ['class'] });
+      });
+    """)
+    pg.goto(ui_server + "/", wait_until="networkidle")
+    pg.wait_for_timeout(800)                       # boot rail settles
+    base = len(pg.evaluate("window.__rail"))
+    pg.click("#refresh-btn")
+    pg.wait_for_selector("#refresh-btn.spinning", timeout=2000)
+    pg.wait_for_function("""() => { const e =
+        document.getElementById('stream-progress');
+        return e.classList.contains('on'); }""", timeout=2000)
+    pg.wait_for_timeout(3600)                      # past poll+settle+restart
+    assert pg.locator("#refresh-btn.spinning").count() == 0
+    spans = pg.evaluate("""(base) => {
+      const spans = []; let on = null;
+      for (const [c, t] of (window.__rail || []).slice(base)) {
+        if (c.includes('on') && on === null) on = t;
+        if (!c.includes('on') && on !== null) { spans.push(t - on); on = null; }
+      }
+      return spans; }""", base)
+    assert max(spans) >= 1500, f"rail did not cover the poll: {spans}"
+    assert pg.errors == []
+    pg.close()
