@@ -85,3 +85,13 @@ def test_api_maintenance(client, monkeypatch):
     client.put("/api/config", json=cfg)
     assert client.get("/api/maintenance").get_json()["config"][
         "retention_months"] == 6
+
+
+def test_status_cache_mb_is_live(conn, tmp_path):
+    from rssgate import imgstore, db
+    import json, re
+    d = tmp_path / "images"; d.mkdir()
+    (d / "a" * 1).write_bytes(b"x" * 3_000_000) if False else \
+        (d / "a").write_bytes(b"x" * 3_000_000)
+    imgstore.init(str(d))
+    assert imgstore.cache_mb() == 3.0

@@ -114,3 +114,22 @@ def safe_path(name: str) -> Path | None:
         return None
     p = _dir / name
     return p if p.is_file() else None
+
+
+def cache_mb() -> float:
+    """Live image-cache size in MB (scandir sum; admin panel truth)."""
+    import os
+    if _dir is None:
+        return 0.0
+    total = 0
+    try:
+        with os.scandir(_dir) as it:
+            for e in it:
+                try:
+                    if e.is_file():
+                        total += e.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        return 0.0
+    return round(total / 1e6, 1)

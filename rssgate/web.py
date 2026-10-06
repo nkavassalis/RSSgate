@@ -510,7 +510,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/status")
     def api_status():
-        import os, json as _json, time as _t
+        import os, time as _t
         from . import __version__
         cfg = load_config(config_path)
         n_feeds = conn.execute("SELECT COUNT(*) c FROM feeds").fetchone()["c"]
@@ -528,12 +528,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 if f.startswith("rssgate.sqlite")), 1)
         except OSError:
             pass
-        cache_mb = 0.0
-        try:
-            cache_mb = (_json.loads(db.get_state(conn, "maint_report", "{}"))
-                        .get("report", {}).get("cache_mb", 0.0))
-        except (ValueError, TypeError):
-            pass
+        from . import imgstore
+        cache_mb = imgstore.cache_mb()
         return jsonify({"version": __version__, "feeds": n_feeds,
                         "feeds_enabled": n_on, "pending": q.get("pending", 0),
                         "processing": q.get("processing", 0),
