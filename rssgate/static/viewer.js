@@ -323,48 +323,42 @@
     const cs = getComputedStyle(document.documentElement);
     const col = (n, fb) => (cs.getPropertyValue(n) || '').trim() || fb;
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-    const W = SHARE_W, PAD = 28, DPR = 2;
+    const W = SHARE_W, PAD = 28, DPR = 2, GAP = 16;
     const fam = getComputedStyle(document.body).fontFamily;
     const m = document.createElement('canvas').getContext('2d');
     const hero = a.image ? await loadBitmap('/image/' + a.image)
                              .catch(() => null) : null;
-    // post-card layout: hero floats right, copy flows beside it
+    const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
+                          encodeURIComponent(a.link)).catch(() => null) : null;
+    const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
+    // masthead row: copy left | QR | hero right (gallery ratio 110:84)
     const TW = hero ? Math.round(W * 0.40) : 0;
-    // thumb keeps the photo's OWN aspect (bounded): never stretched,
-    // never cropped except portrait monsters
-    const TH = hero ? Math.min(Math.round(TW * hero.height / hero.width),
-                               Math.round(TW * 1.25)) : 0;
-    const gap = 16;
-    const full = W - PAD * 2;
-    const narrow = TW ? full - TW - gap : full;
-    const thumbBottom = PAD + TH;
-    function flowText(text, y0, lh) {   // zone-aware word wrap
-      const paras = (text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+    const TH = hero ? Math.round(TW * 84 / 110) : 0;
+    const QS = qr ? 76 : 0;
+    const thumbX = W - PAD - TW;
+    const qrX = thumbX - GAP - QS;
+    const textW = (qr ? qrX - GAP : thumbX) - PAD;
+    function titleLines(text, y0) {         // wraps inside the text column
       const out = []; let line = ''; let idx = 0;
-      const wAt = () => (y0 + idx * lh) < thumbBottom ? narrow : full;
-      const push = s => { out.push(s); idx++; };
-      paras.forEach((p, pi) => {
-        if (pi) push('');
-        for (const w of p.split(/\s+/).filter(Boolean)) {
-          const t = line ? line + ' ' + w : w;
-          if (m.measureText(t).width > wAt() && line) { push(line); line = w; }
-          else line = t;
-        }
-        if (line) push(line);
-      });
+      for (const w of (text || '(untitled)').split(/\s+/).filter(Boolean)) {
+        const t = line ? line + ' ' + w : w;
+        if (m.measureText(t).width > textW && line) {
+          out.push(line); idx++; line = w;
+          if (out.length === 4) break;
+        } else line = t;
+      }
+      if (line && out.length < 4) out.push(line);
+      if (out.length === 4) out[3] = out[3].replace(/[,.;:\s]+$/, '') + '\u2026';
       return out;
     }
     m.font = `700 26px ${fam}`;
-    let tLines = flowText(a.title || '(untitled)', PAD, 33).slice(0, 4);
-    if (tLines.length === 4)
-      tLines[3] = tLines[3].replace(/[,.;:\s]+$/, '') + '\u2026';
+    const tLines = titleLines(a.title);
     const titleH = tLines.length * 33 + 6;
     const yMeta = PAD + titleH + 6;
-    // body text waits for the image *and* the nested QR: full width below
-    const QS = 76;
-    let yDigest = Math.max(yMeta + 26, hero ? PAD + TH + 18 : 0);
-    if (a.link && yDigest < yMeta + 30 + QS + 12)
-      yDigest = yMeta + 30 + QS + 12;
+    const qrY = yMeta + 24;                  // directly under the date line
+    const mastheadB = Math.max(PAD + TH, qr ? qrY + QS : 0);
+    const yDigest = Math.max(yMeta + 40, mastheadB + 18);
+    const full = W - PAD * 2;
     m.font = `16px ${fam}`;
     const dAll = wrapLines(m, a.summary || '', full);
     let dLines = dAll.slice(0, 40);
@@ -379,24 +373,22 @@
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
     const meta = [(a.feed_title || '').trim(), when].filter(Boolean).join('  \u00b7  ');
-    const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
-    const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
-                          encodeURIComponent(a.link)).catch(() => null) : null;
-    const footH = 24;
-    const qrAt = qr ? { x: PAD, y: yMeta + 30 } : null;
     const contentBottom = yDigest + digestH;
-    const H = Math.round(contentBottom) + 28 + footH + PAD;
+    const H = Math.round(contentBottom) + 28 + 24 + PAD;   // via-RSSgate row
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
     x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff'); x.fillRect(0, 0, W, H);
     if (hero) {
-      x.save(); roundRect(x, W - PAD - TW, PAD, TW, TH, 10); x.clip();
+      x.save(); roundRect(x, thumbX, PAD, TW, TH, 10); x.clip();
       const sc = Math.max(TW / hero.width, TH / hero.height);
       const dw = hero.width * sc, dh = hero.height * sc;
-      x.drawImage(hero, W - PAD - TW + (TW - dw) / 2,
-                  PAD + (TH - dh) / 2, dw, dh);
+      x.drawImage(hero, thumbX + (TW - dw) / 2, PAD + (TH - dh) / 2, dw, dh);
       x.restore();
+    }
+    if (qr) {
+      x.fillStyle = '#ffffff'; x.fillRect(qrX, qrY, QS, QS);
+      x.drawImage(qr, qrX, qrY, QS, QS);
     }
     let y = PAD;
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
@@ -408,24 +400,10 @@
     y = yDigest;
     dLines.forEach(l => { y += 24; if (l) x.fillText(l, PAD, y);
                              else y += 12; });
-    if (qrAt) {
-      x.fillStyle = '#ffffff';
-      x.fillRect(qrAt.x, qrAt.y, QS, QS);
-      x.drawImage(qr, qrAt.x, qrAt.y, QS, QS);
-    }
-    y = contentBottom + 18;
-    x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
-    if (qr) {
-      x.fillText('Scan for the full article', PAD, y + 10);
-      x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-      x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 10);
-      x.textAlign = 'left';
-    } else if (url) {
-      x.fillText(url, PAD, y + 10);
-      x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-      x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 10);
-      x.textAlign = 'left';
-    }
+    x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
+    x.textAlign = 'right';
+    x.fillText('via RSSgate', W - PAD, contentBottom + 30);
+    x.textAlign = 'left';
     return await new Promise(res => cv.toBlob(res, 'image/png'));
   }
   async function doSnapshot(btn) {

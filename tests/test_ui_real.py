@@ -716,9 +716,9 @@ def _probe_crop_colors(pg, ui_server, fid):
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
       const SX = Math.round(bmp.width * 0.80);        // thumb column
       const top = [...g.getImageData(SX, 70, 1, 1).data];
-      const mid = [...g.getImageData(SX, 440, 1, 1).data];
+      const mid = [...g.getImageData(SX, 300, 1, 1).data];   // thumb centre
       let dark = 0;
-      const z = g.getImageData(60, 190, 150, 200).data;   // QR nest zone
+      const z = g.getImageData(690, 190, 180, 180).data;   // QR between text and hero
       for (let i = 0; i < z.length; i += 4)
         if (z[i] < 90 && z[i+1] < 90 && z[i+2] < 90) dark++;
       return { top: top.slice(0, 3), mid: mid.slice(0, 3), dark,
