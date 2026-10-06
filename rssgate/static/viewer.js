@@ -360,8 +360,11 @@
       tLines[3] = tLines[3].replace(/[,.;:\s]+$/, '') + '\u2026';
     const titleH = tLines.length * 33 + 6;
     const yMeta = PAD + titleH + 6;
-    // body text waits for the image: full-width below its bottom edge
-    const yDigest = Math.max(yMeta + 26, hero ? PAD + TH + 18 : 0);
+    // body text waits for the image *and* the nested QR: full width below
+    const QS = 76;
+    let yDigest = Math.max(yMeta + 26, hero ? PAD + TH + 18 : 0);
+    if (a.link && yDigest < yMeta + 30 + QS + 12)
+      yDigest = yMeta + 30 + QS + 12;
     m.font = `16px ${fam}`;
     const dAll = wrapLines(m, a.summary || '', full);
     let dLines = dAll.slice(0, 40);
@@ -379,7 +382,8 @@
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
-    const footH = qr ? 78 : (url ? 24 : 0);
+    const footH = 24;
+    const qrAt = qr ? { x: PAD, y: yMeta + 30 } : null;
     const contentBottom = yDigest + digestH;
     const H = Math.round(contentBottom) + 28 + footH + PAD;
     const cv = document.createElement('canvas');
@@ -404,20 +408,19 @@
     y = yDigest;
     dLines.forEach(l => { y += 24; if (l) x.fillText(l, PAD, y);
                              else y += 12; });
+    if (qrAt) {
+      x.fillStyle = '#ffffff';
+      x.fillRect(qrAt.x, qrAt.y, QS, QS);
+      x.drawImage(qr, qrAt.x, qrAt.y, QS, QS);
+    }
     y = contentBottom + 18;
+    x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
     if (qr) {
-      const qs = 72, qy = y + footH - qs;
-      x.fillStyle = '#ffffff'; x.fillRect(W - PAD - qs, qy, qs, qs);
-      x.drawImage(qr, W - PAD - qs, qy, qs, qs);
-      x.textBaseline = 'bottom';               // labels sit on the QR's base
+      x.fillText('Scan for the full article', PAD, y + 10);
       x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-      x.fillText('via RSSgate', PAD, qy + qs - 2);
-      x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
-      x.textAlign = 'right';
-      x.fillText('Scan for the full article', W - PAD - qs - 14, qy + qs - 2);
-      x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+      x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 10);
+      x.textAlign = 'left';
     } else if (url) {
-      x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
       x.fillText(url, PAD, y + 10);
       x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
       x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 10);

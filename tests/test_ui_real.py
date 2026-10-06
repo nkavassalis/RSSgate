@@ -655,16 +655,18 @@ def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
     pg.close()
 
 
-def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
-    """Share PNG right-float hero must cover-crop a 1:3 portrait: thumb
-    top samples field orange, thumb center samples the injected middle
-    band blue - a squeezed draw would smear both."""
+def _seed_crop_probe():
+    """(Re)plant the crop-probe feed; returns fid. Idempotent."""
     import hashlib
     from io import BytesIO
     from rssgate import db
     from PIL import Image
+    import rssgate.imgstore as ig
     conn = db.connect(UI_DB)
-    fid = db.add_feed(conn, "https://crop.test/feed", type_="feed")["id"]
+    row = conn.execute(
+        "SELECT id FROM feeds WHERE url='https://crop.test/feed'").fetchone()
+    fid = row["id"] if row else db.add_feed(
+        conn, "https://crop.test/feed", type_="feed")["id"]
     aid = db.upsert_article(conn, fid, "crop1", "https://crop.test/1",
                             "Crop probe", "2027-01-02T00:00:00Z")
     img = Image.new("RGB", (200, 600), (255, 136, 0))
@@ -672,23 +674,41 @@ def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
         for x in range(200):
             img.putpixel((x, y), (0, 0, 255))
     buf = BytesIO(); img.save(buf, "PNG")
-    import rssgate.imgstore as ig
     ig.init(str(UI_IMG_DIR))
     fname = (hashlib.sha256(b"https://crop.test/hero.png").hexdigest()[:24]
              + ".png")
     UI_IMG_DIR.joinpath(fname).write_bytes(buf.getvalue())
     db.set_article(conn, aid, image=fname,
                    image_url="https://crop.test/hero.png")
-    conn.execute("UPDATE articles SET status='ready', summary='crop digest'"
-                 " WHERE id=?", (aid,))
+    conn.execute(
+        "UPDATE articles SET status='ready', summary=? WHERE id=?",
+        ("Crop digest with enough body text to wrap a few lines so the "
+         "share card layout is fully exercised by the pixel probes.", aid))
     conn.commit(); conn.close()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
+    return fid
+
+
+def _render_probe_png(pg, ui_server, fid):
     art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
         '&fresh=1&limit=50').then(r => r.json())
         .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    assert art, "crop article missing from its own feed page"
-    px = pg.evaluate("""async (a) => {
+    assert art, "crop probe missing from its own feed page"
+    return pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      return { w: bmp.width, h: bmp.height, g };
+    }""", art)   # canvas handle not transferable; callers re-evaluate
+
+
+def _probe_crop_colors(pg, ui_server, fid):
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    assert art, "crop probe missing from its own feed page"
+    return pg.evaluate("""async (a) => {
       const png = await window.__renderCardPng(a);
       const bmp = await createImageBitmap(png);
       const cv = document.createElement('canvas');
@@ -697,9 +717,35 @@ def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
       const SX = Math.round(bmp.width * 0.80);        // thumb column
       const top = [...g.getImageData(SX, 70, 1, 1).data];
       const mid = [...g.getImageData(SX, 440, 1, 1).data];
-      return { w: bmp.width, top: top.slice(0, 3), mid: mid.slice(0, 3) };
+      let dark = 0;
+      const z = g.getImageData(60, 190, 150, 200).data;   // QR nest zone
+      for (let i = 0; i < z.length; i += 4)
+        if (z[i] < 90 && z[i+1] < 90 && z[i+2] < 90) dark++;
+      return { top: top.slice(0, 3), mid: mid.slice(0, 3), dark,
+               w: bmp.width, h: bmp.height };
     }""", art)
+
+
+def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
+    """Right-float hero cover-crops a 1:3 portrait: thumb top samples
+    orange field, thumb center the injected blue band."""
+    fid = _seed_crop_probe()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    px = _probe_crop_colors(pg, ui_server, fid)
     assert px["top"][0] > 150 and px["top"][2] < 120, f"thumb top: {px}"
     assert px["mid"][2] > 150 and px["mid"][0] < 120, f"thumb mid: {px}"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_share_qr_nests_under_the_date(ui_server, browser):
+    """QR lives in the left column under the meta line: dark modules
+    must appear in that zone (not only bottom-right)."""
+    fid = _seed_crop_probe()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    px = _probe_crop_colors(pg, ui_server, fid)
+    assert px["dark"] > 400, f"no QR modules under the date: {px}"
     assert pg.errors == []
     pg.close()
