@@ -76,6 +76,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "category_block" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN category_block TEXT NOT NULL"
                      " DEFAULT ''")
+    if "smart_block" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN smart_block INTEGER NOT"
+                     " NULL DEFAULT 0")
     if "system_prompt" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN system_prompt TEXT NOT NULL"
                      " DEFAULT ''")

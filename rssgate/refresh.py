@@ -34,6 +34,40 @@ def is_sponsored(title: str, link: str) -> bool:
                 or SPONSORED_LINK_RE.search(link or ""))
 
 
+SMART_BLOCK_RE = re.compile(
+    r"^(partners?( |-)?content|partners?|sponsored( content)?|branded"
+    r" content|promoted( content)?|paid content|advertorial(s)?)$", re.I)
+
+
+def smart_category_block(conn, feed, declared: list[str]) -> int:
+    """Smart default: feeds that DECLARE ad categories (Gizmodo's
+    'Partners') get them pre-blocked on first ingest - zero tokens, visible
+    in the gear census, and permanently user-owned once the admin touches
+    the block list (explicit edits set smart_block=2 = user-owned).
+
+    smart_block: 0 = untouched (auto may seed), 1 = seeded by smart default,
+    2 = user took ownership (never auto-manage again, even when empty)."""
+    if feed["category_block"] or feed["smart_block"] != 0:
+        return 0
+    hits = [c.strip() for c in declared if SMART_BLOCK_RE.match(c.strip())]
+    if not hits:
+        return 0
+    db.update_feed(conn, feed["id"], category_block=",".join(hits),
+                   smart_block=1)
+    from .db import _cat_sql
+    n = 0
+    for h in hits:
+        n += conn.execute(
+            "UPDATE articles SET status='hidden' WHERE feed_id=?"
+            " AND status IN ('pending','ready') AND " + _cat_sql("categories"),
+            (feed["id"], h)).rowcount
+    conn.commit()
+    if n:
+        log.info("smart category block %s on feed %s: %d hidden",
+                 hits, feed["id"], n)
+    return n
+
+
 def _purpose_model(cfg, key: str) -> str:
     return (cfg.get("llm", {}).get(key) or "").strip()
 
@@ -58,6 +92,7 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
                            last_status="not modified")
             return "not modified"
         meta = res["meta"]
+        smart_category_block(conn, feed, meta["categories"])
         db.update_feed(conn, feed_id,
                        title=meta["title"] or feed["title"],
                        description=meta["description"] or feed["description"],
