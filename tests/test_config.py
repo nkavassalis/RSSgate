@@ -4,7 +4,7 @@ from rssgate.config import load_config, save_config, masked_config, _merge, expa
 def test_defaults_when_no_file(tmp_path):
     cfg = load_config(str(tmp_path / "missing.yaml"))
     assert cfg["server"]["port"] == 8088
-    assert cfg["server"]["host"] == "0.0.0.0"
+    assert cfg["server"]["host"] == "127.0.0.1"   # loopback by default: no auth, so no wildcard bind
     assert cfg["llm"]["base_url"] == "http://10.1.13.99:8000/v1"
     assert cfg["polling"]["feed_interval_minutes"] == 30
     assert cfg["polling"]["page_interval_minutes"] == 180
