@@ -146,7 +146,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                         "snapshot_width": load_config(config_path)["ui"].get(
                             "snapshot_width", 800),
                         "stream_width": load_config(config_path)["ui"].get(
-                            "stream_width", 1280)})
+                            "stream_width", 1280),
+                        "read_delay": load_config(config_path)["ui"].get(
+                            "read_delay", 5)})
 
     # ------------------------------------------------------------- feeds
 
@@ -407,6 +409,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 ui_patch["stream_width"] = int(tw)
             if isinstance(ui.get("hide_untranscribed"), bool):
                 ui_patch["hide_untranscribed"] = ui["hide_untranscribed"]
+            rd = ui.get("read_delay")
+            if isinstance(rd, (int, float)) and 0 <= rd <= 60:
+                ui_patch["read_delay"] = int(rd)
         if ui_patch:
             patch["ui"] = ui_patch        # rest of ui: file only
         patch.get("llm", {}).pop("api_key_set", None)

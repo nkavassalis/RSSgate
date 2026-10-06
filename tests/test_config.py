@@ -61,3 +61,10 @@ def test_snapshot_width_roundtrip_and_clamp(client):
     body["ui"]["stream_width"] = 100                       # below range: ignored
     client.put("/api/config", json=body)
     assert client.get("/api/config").get_json()["ui"]["stream_width"] == 1200
+    body["ui"]["read_delay"] = 0                        # instant is legal
+    client.put("/api/config", json=body)
+    assert client.get("/api/config").get_json()["ui"]["read_delay"] == 0
+    assert client.get("/api/resume").get_json()["read_delay"] == 0
+    body["ui"]["read_delay"] = 61                       # out of range: ignored
+    client.put("/api/config", json=body)
+    assert client.get("/api/config").get_json()["ui"]["read_delay"] == 0

@@ -72,6 +72,7 @@ DEFAULTS: dict = {
         "theme": "auto",              # auto | light | dark
         "items_per_page": 20,
         "order": "newest", "snapshot_width": 800, "stream_width": 1280,
+        "read_delay": 5,
         "hide_untranscribed": True,            # newest | oldest (chronological catch-up)
     },
 }

@@ -60,6 +60,9 @@ def _wait_port(port, timeout=15):
     raise RuntimeError("ui test server did not start")
 
 
+UI_DB: str = ""
+
+
 @pytest.fixture(scope="session")
 def ui_server(tmp_path_factory):
     """Boot the real app (run.py) with its own config/data; seed content."""
@@ -94,10 +97,19 @@ def ui_server(tmp_path_factory):
                                 categories=["testing"])
         db.set_article(conn, aid, status="ready",
                        summary="A digest that definitely exists.")
+        for extra_i, extra_guid in enumerate(("u2", "u3"), start=2):
+            eid = db.upsert_article(
+                conn, fid, extra_guid, f"https://ui.test/post-{extra_i}",
+                f"Extra post {extra_i}", "2024-01-0" + str(extra_i) + "T10:00:00Z")
+            db.set_article(conn, eid, status="ready",
+                           summary="Filler digest for scroll tests.")
+
         db.set_article(conn, aid, image=None)
         # second feed left disabled on purpose (layout + poll semantics)
         db.update_feed(conn, fid, summarize=1)
         conn.close()
+        global UI_DB
+        UI_DB = str(data / "data" / "rssgate.sqlite")
         yield f"http://127.0.0.1:{PORT}"
     finally:
         proc.terminate()
@@ -700,5 +712,46 @@ def test_nav_spy_lights_passed_section_without_jumping(ui_server, browser):
     pg.evaluate("scrollTo(0, document.body.scrollHeight)")
     pg.wait_for_timeout(400)
     assert active() == "#sec-polling", active()      # last section at bottom
+    assert pg.errors == []
+    pg.close()
+
+
+def test_read_delay_single_card_marking(ui_server, browser):
+    """ui.read_delay=3: dwelling marks ONLY the top unread card, and not
+    before the delay. Seeds its own fresh feed so shared-fixture read
+    state can never starve it."""
+    from rssgate import db
+    conn = db.connect(UI_DB)
+    fid = db.add_feed(conn, "https://rd.test/feed", type_="feed")["id"]
+    for n in (1, 2):
+        aid = db.upsert_article(conn, fid, f"rd{n}", f"https://rd.test/{n}",
+                                f"Read delay probe {n}",
+                                "2027-01-01T00:00:00Z")
+        db.set_article(conn, aid, status="ready", summary="Probe digest.")
+    conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.evaluate("""async () => { const c = await (await fetch('/api/config')).json();
+      c.ui.read_delay = 3;
+      await fetch('/api/config', {method:'PUT', body: JSON.stringify(c),
+        headers:{'content-type':'application/json'}}); }""")
+    pg.goto(ui_server, wait_until="networkidle")
+    sel = f".card.unread[data-feed='{fid}']"
+    pg.wait_for_selector(sel)
+    got = pg.evaluate("""async (sel) => {
+      const t0 = performance.now();
+      const count = () => document.querySelectorAll(sel).length;
+      const early = count();
+      await new Promise(r => setTimeout(r, 1500));
+      const at15 = count();
+      const deadline = t0 + 5000;
+      while (count() === early && performance.now() < deadline)
+        await new Promise(r => setTimeout(r, 50));
+      return { early, at15, atMark: count(), tMark: performance.now() - t0 };
+    }""", sel)
+    assert got["early"] == 2, got
+    assert got["at15"] == 2, f"marked before delay: {got}"
+    assert got["atMark"] == 1, f"not exactly one: {got}"
+    assert 2200 <= got["tMark"] <= 5200, got
     assert pg.errors == []
     pg.close()

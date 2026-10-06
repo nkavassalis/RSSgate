@@ -76,6 +76,8 @@ RSSgate Admin</title>
       <label class="inline-check"><input type="checkbox" id="cfg-hidepend">
         hide awaiting-transcription posts until digested (queue lives in
         Work queue)</label>
+      <label>Mark as read after (seconds, 0-60, 0 = instantly)
+        <input id="cfg-readdelay" type="number" min="0" max="60" step="1"></label>
     </div>
     <p class="hint">Saved instantly on change. Snapshot width is the share-card
     render size; reading column width is the desktop reader measure (reloads

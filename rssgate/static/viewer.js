@@ -87,18 +87,31 @@
   // ---- viewed = read: dwelling on an unread card marks it seen, even with
   // no further scrolling (so re-clicking a view clears what you're looking at)
   const dwellTimers = new WeakMap();
+  let READ_DELAY_MS = 5000;                 // ui.read_delay via /api/resume
+  const visCards = new Set();
+  let curCard = null, curTimer = 0;
+  function armRead() {
+    let best = null, bestTop = Infinity;
+    for (const c of visCards) {
+      if (!c.classList.contains('unread')) continue;
+      const t = c.getBoundingClientRect().top;
+      if (t < bestTop) { best = c; bestTop = t; }
+    }
+    if (best === curCard) return;          // sticky: no timer churn
+    if (curTimer) { clearTimeout(curTimer); curTimer = 0; }
+    curCard = best;
+    if (!curCard) return;
+    if (READ_DELAY_MS <= 0) { markSeen(curCard); armRead(); return; }
+    curTimer = setTimeout(() => {
+      curTimer = 0; markSeen(curCard); armRead();
+    }, READ_DELAY_MS);
+  }
   const dwellObs = new IntersectionObserver(entries => {
     for (const e of entries) {
-      const card = e.target;
-      if (e.isIntersecting && e.intersectionRatio >= 0.55 &&
-          card.classList.contains('unread')) {
-        if (!dwellTimers.has(card))
-          dwellTimers.set(card, setTimeout(() => markSeen(card), 1100));
-      } else if (dwellTimers.has(card)) {
-        clearTimeout(dwellTimers.get(card));
-        dwellTimers.delete(card);
-      }
+      const vis = e.isIntersecting && e.intersectionRatio >= 0.55;
+      if (vis) visCards.add(e.target); else visCards.delete(e.target);
     }
+    armRead();
   }, { threshold: [0, 0.55] });
   function observeCards() {
     stream.querySelectorAll('.card.unread:not([data-obs])').forEach(c => {
@@ -667,6 +680,8 @@
     order = s.order === 'oldest' ? 'oldest' : 'newest';
     if (s.snapshot_width >= 360 && s.snapshot_width <= 1440)
       SHARE_W = Math.round(s.snapshot_width);
+    if (typeof s.read_delay === 'number' && s.read_delay >= 0 && s.read_delay <= 60)
+      READ_DELAY_MS = s.read_delay * 1000;
     if (s.stream_width >= 480 && s.stream_width <= 1600)
       document.documentElement.style
         .setProperty('--stream-w', Math.round(s.stream_width) + 'px');

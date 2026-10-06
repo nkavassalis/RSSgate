@@ -259,6 +259,7 @@ async function loadConfig() {
   $('cfg-imgcap').value = maint.images_max_mb ?? 0;
   $('cfg-imgperpost').value = maint.images_per_post ?? 4;
   $('cfg-hidepend').checked = (cfg.ui || {}).hide_untranscribed !== false;
+  $('cfg-readdelay').value = (cfg.ui || {}).read_delay ?? 5;
   $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
   $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 800;
   $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
@@ -300,6 +301,24 @@ function uiWidthSave(input, key, lo, hi) {
 }
 uiWidthSave($('cfg-sharewidth'), 'snapshot_width', 360, 1440);
 uiWidthSave($('cfg-streamwidth'), 'stream_width', 480, 1600);
+function cfgUiFlash(input, key, val) {
+  const label = input.closest('label');
+  label.classList.add('cfg-saving');
+  api('/api/config', { method: 'PUT',
+    body: JSON.stringify({ ui: { [key]: val } }) })
+    .then(() => { label.classList.remove('cfg-saving');
+                  label.classList.add('cfg-ok');
+                  setTimeout(() => label.classList.remove('cfg-ok'), 1200); })
+    .catch(err => { label.classList.remove('cfg-saving');
+                    label.classList.add('cfg-bad');
+                    setTimeout(() => label.classList.remove('cfg-bad'), 2500);
+                    alert('Save failed: ' + err.message); loadConfig(); });
+}
+$('cfg-readdelay').addEventListener('change', e => {
+  const v = Math.max(0, Math.min(60, Math.round(+e.target.value || 0)));
+  e.target.value = v;
+  cfgUiFlash(e.target, 'read_delay', v);
+});
 $('cfg-hidepend').addEventListener('change', async e => {
   const label = e.target.closest('label');
   label.classList.add('cfg-saving');
@@ -421,6 +440,7 @@ $('save-btn').addEventListener('click', async () => {
                page_interval_minutes: +$('cfg-page-min').value },
     ui: { order: $('cfg-order').value,
         hide_untranscribed: $('cfg-hidepend').checked,
+        read_delay: Math.max(0, Math.min(60, +$('cfg-readdelay').value || 0)),
         snapshot_width: Math.max(360, Math.min(1440,
                             +$('cfg-sharewidth').value || 800)),
         stream_width: Math.max(480, Math.min(1600,
