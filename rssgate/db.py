@@ -675,6 +675,14 @@ def find_summary_by_hash(conn, body_hash: str) -> sqlite3.Row | None:
 
 # ---------------------------------------------------------------- state / usage
 
+def article_needing_image(conn, name: str) -> str | None:
+    """Declared source URL for a trimmed hero, if we know one."""
+    row = conn.execute(
+        "SELECT image_url FROM articles WHERE image=? AND image_url IS NOT NULL"
+        " AND image_url <> '' LIMIT 1", (name,)).fetchone()
+    return row["image_url"] if row else None
+
+
 def delete_old_articles(conn, months: int) -> tuple[int, set[str]]:
     """Delete articles older than `months` (approx 30.44-day months) across
     all statuses. Returns (deleted_count, image filenames they referenced)."""

@@ -472,7 +472,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         """Serve a locally cached article image (hash-named files only)."""
         p = imgstore.safe_path(name)
         if p is None:
-            abort(404)
+            # trimmed by the cache cap? heroes whose declared URL we kept
+            # are content-addressed: refetch verifies against the name.
+            url = db.article_needing_image(conn, name)
+            if url and name.split(".")[0] == \
+                    __import__("hashlib").sha256(url.encode()).hexdigest()[:24] \
+                    and imgstore.store(url, timeout=10):
+                p = imgstore.safe_path(name)
+            if p is None:
+                abort(404)
         from flask import make_response
         resp = make_response(send_file(p))
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"

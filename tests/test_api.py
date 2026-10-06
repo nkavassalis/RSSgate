@@ -157,3 +157,27 @@ def test_hide_untranscribed_default_and_toggle(client):
     body["ui"]["hide_untranscribed"] = False
     client.put("/api/config", json=body)
     assert titles() == ["Ready one", "Waiting"]
+
+
+def test_trimmed_hero_revives_lazily(client, tmp_path, monkeypatch):
+    import hashlib
+    from rssgate import db, imgstore
+    conn = client.conn
+    fid = db.add_feed(conn, "https://rv.test/f", type_="feed")["id"]
+    url = "https://rv.test/hero.png"
+    stem = hashlib.sha256(url.encode()).hexdigest()[:24]
+    name = stem + ".png"
+    aid = db.upsert_article(conn, fid, "rv1", "https://rv.test/1", "T", None)
+    db.set_article(conn, aid, image=name, image_url=url)
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    def fake_get(u, **kw):
+        class R:
+            ok = True
+            headers = {"content-type": "image/png"}
+            def iter_content(self, n=8192):
+                yield png
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return R()
+    monkeypatch.setattr("requests.get", fake_get)
+    assert client.get(f"/image/{name}").status_code == 200   # revived

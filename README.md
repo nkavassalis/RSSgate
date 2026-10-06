@@ -222,9 +222,12 @@ Admin panel → **Maintenance**:
   pass trims `<data_dir>/images` down to N MB: **orphans are pruned
   first** (nothing references them), and only if still over budget does
   it delete **oldest files first, referenced ones included**. An article
-  whose cached image was trimmed simply renders without it (the article
-  text and its source link are untouched); nothing re-downloads old
-  trimmed images — new articles still populate the cache. The Status
+  whose cached image was trimmed renders without it at first — but heroes
+  revive lazily: when a trimmed hero is requested again and its declared
+  source URL was recorded, `/image` refetches it (the filename is the
+  URL's sha256, so revival can never serve the wrong bytes) and the file
+  re-enters the cache. Gallery-only images, whose URLs are not stored
+  per-file, stay gone until re-digestion. The Status
   panel shows the live cache size, and the maintenance report records
   how many files/MB each trim freed.
 - **Max images per article** — 1-8 (default 4: hero + 3 gallery).
