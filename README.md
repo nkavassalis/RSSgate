@@ -3,7 +3,7 @@
 **Project page:** <https://rssgate.org/>
 
 A self-hosted RSS feed manager with an AI-transcribed reader. Runs as a local
-Python web app (default `http://0.0.0.0:8088`), fully configured from a single
+Python web app (default `http://127.0.0.1:8088`), fully configured from a single
 YAML file. Desktop & mobile responsive, follows your OS dark-mode setting
 automatically.
 
@@ -24,7 +24,7 @@ Two sides:
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp config.example.yaml config.yaml     # optional; run.py generates defaults
-.venv/bin/python run.py                # serves on 0.0.0.0:8088
+.venv/bin/python run.py                # serves on http://127.0.0.1:8088
 ```
 
 ## Feed types
@@ -128,7 +128,8 @@ unlocks:
 
 Over your tailnet this is zero-configuration: `tailscale serve --bg 8088`
 and browse `https://<machine>.<tailnet>.ts.net`. Same machine, same
-process, no port forwarding, no public exposure.
+process, no port forwarding, no public exposure — and Serve talks to RSSgate
+over loopback, so the default `127.0.0.1` bind needs no change.
 
 ## Reader UI: sidebar, New/Since modes
 
@@ -283,10 +284,14 @@ does not hardcode it.
 
 ## Security note
 
-RSSgate has **no authentication** and binds `0.0.0.0` by default — it is meant
-for trusted networks. Set `server.host: 127.0.0.1` in `config.yaml` or put it
-behind a reverse proxy with auth if others can reach the port. The admin panel
-(and the LLM spend behind it) is open to anyone who can reach the port.
+RSSgate has **no authentication**, so it binds `127.0.0.1` by default and
+should stay that way. Reach it from your phone or another machine over a VPN —
+`tailscale serve --bg 8088` publishes the loopback port over your tailnet with
+TLS, which is also what unlocks the iOS share sheet and clipboard writes.
+Changing `server.host` to `0.0.0.0` puts the app on every network the machine
+is attached to, and the admin panel (and the LLM spend behind it) is then open
+to anyone who can reach the port; if you must, put an authenticating reverse
+proxy in front of it first.
 
 ## License
 

@@ -13,7 +13,11 @@ import yaml
 
 DEFAULTS: dict = {
     "server": {
-        "host": "0.0.0.0",
+        # Loopback by default. RSSgate has no authentication, so it must not be
+        # reachable from other machines unless the operator opts in explicitly.
+        # Remote access is meant to go through a VPN (see README), not through
+        # a wildcard bind.
+        "host": "127.0.0.1",
         "port": 8088,
         "data_dir": "./data",
     },

@@ -2,7 +2,11 @@
 # Every value below can also be changed from the admin panel (which rewrites this file).
 
 server:
-  host: 0.0.0.0
+  # Loopback by default, because RSSgate has no authentication: it is not
+  # reachable from other machines until you set this to 0.0.0.0 on purpose.
+  # Prefer reaching it over a VPN (Tailscale Serve proxies this local port, so
+  # it keeps working unchanged) over widening the bind or forwarding the port.
+  host: 127.0.0.1
   port: 8088
   # SQLite database / data directory
   data_dir: ./data
