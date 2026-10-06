@@ -192,7 +192,7 @@ textarea { resize:vertical; }
   border:1px solid var(--line); background:var(--chip); display:block; }
 @media (max-width:640px) { .gallery img { width:84px; height:64px; } }
 
-[hidden] { display:none !important; }   // never let class display rules beat 'hidden'
+[hidden] { display:none !important; }   /* never let class display rules beat 'hidden' */
 
 /* lightbox */
 #lightbox { position:fixed; inset:0; z-index:100; background:rgba(10,12,16,.92);
@@ -341,3 +341,5 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
 
 .imgmode-tag { font-size:.68rem; opacity:.7; margin-left:6px; }
 .btn.danger { color:#c62828; }
+
+.cfg-modal { max-width:640px; width:min(640px,94vw); max-height:86vh; overflow:auto; }
