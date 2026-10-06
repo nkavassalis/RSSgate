@@ -498,5 +498,14 @@ def test_display_panel_widths_autosave(ui_server, browser):
                         ".then(c => c.ui.stream_width)")
     assert saved == 1000
     assert pg.locator(".sec-nav a").count() == 8  # two-pane section nav
+    # THE layout assertion (v0.42.1 regression): every settings section
+    # must sit in the RIGHT column - never wrapped into the nav gutter.
+    nav_box = pg.locator(".sec-nav").bounding_box()
+    xs = pg.evaluate("""() => [...document.querySelectorAll('section.panel[id]')]
+        .map(s => Math.round(s.getBoundingClientRect().x))""")
+    assert len(xs) == 8, xs
+    assert all(x >= nav_box["x"] + nav_box["width"] for x in xs), \
+        f"sections leaked into the nav column: x={xs}"
+    assert max(xs) - min(xs) <= 1, f"sections not aligned in one column: {xs}"
     assert pg.errors == []
     pg.close()

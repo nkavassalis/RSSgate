@@ -296,6 +296,7 @@ label.cfg-bad { box-shadow:0 0 0 2px #c62828; border-radius:4px; }
 
 /* two-pane admin settings nav */
 .admin-body { display:block; }
+.sec-col { display:block; min-width:0; }
 .sec-nav { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px;
   position:sticky; top:54px; z-index:5; background:var(--bg); padding:6px 0; }
 .sec-nav a { font-size:.78rem; padding:5px 10px; border-radius:999px;
@@ -305,7 +306,9 @@ label.cfg-bad { box-shadow:0 0 0 2px #c62828; border-radius:4px; }
 section.panel[id] { scroll-margin-top:96px; }
 @media (min-width: 960px) {
   .admin-main { max-width:1080px; }
-  .admin-body { display:grid; grid-template-columns:170px 1fr; gap:22px; }
+  .admin-body { display:grid; grid-template-columns:170px 1fr; gap:22px;
+    align-items:start; }
+  .sec-col { display:flex; flex-direction:column; }
   .sec-nav { display:flex; flex-direction:column; flex-wrap:nowrap; gap:4px;
     position:sticky; top:70px; align-self:start; background:transparent; }
   .sec-nav a { text-align:left; }
