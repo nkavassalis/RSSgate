@@ -740,9 +740,13 @@ def mark_feed_read(conn, feed_id: int, ts: str) -> None:
 
 
 def feed_unread(conn, feed_id: int, last_read_ts: str | None) -> int:
-    """Articles newer than the feed's read cursor (never-read feeds: all)."""
+    """Articles newer than the feed's read cursor (never-read feeds: all).
+    Mirrors articles_page's visibility filter EXACTLY - anything invisible
+    (hidden, dropped) must never hold a pill hostage, since no card exists
+    to dwell-mark it away."""
     return conn.execute(
-        "SELECT COUNT(*) c FROM articles WHERE feed_id=? AND status!='hidden'"
+        "SELECT COUNT(*) c FROM articles WHERE feed_id=?"
+        " AND status NOT IN ('hidden','dropped')"
         " AND " + _TS_EXPR + " > COALESCE(?, '')",
         (feed_id, last_read_ts)).fetchone()["c"]
 

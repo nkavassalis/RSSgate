@@ -152,3 +152,21 @@ def test_fresh_param_bypasses_resume_bound(client):
     titles = [i["title"] for i in
               client.get("/api/articles?limit=10&fresh=1").get_json()["items"]]
     assert titles == ["A2", "A1", "A0"]
+
+
+def test_dropped_articles_never_hold_the_pill(conn):
+    """feed_unread must mirror stream visibility: a dropped failure has no
+    card to dwell on, so counting it makes the pill permanently sticky."""
+    from rssgate import db
+    fid = db.add_feed(conn, "https://drop.test/f", type_="feed")["id"]
+    a1 = db.upsert_article(conn, fid, "d1", "https://drop.test/1", "Fine",
+                           None, categories=[])
+    db.set_article(conn, a1, status="ready", summary="ok")
+    a2 = db.upsert_article(conn, fid, "d2", "https://drop.test/2", "Failed",
+                           None, categories=[])
+    db.set_article(conn, a2, status="error", error_msg="junk")
+    assert db.feed_unread(conn, fid, None) == 2
+    db.set_article(conn, a2, status="dropped")
+    assert db.feed_unread(conn, fid, None) == 1
+    db.set_article(conn, a2, status="hidden")      # sponsored hide likewise
+    assert db.feed_unread(conn, fid, None) == 1
