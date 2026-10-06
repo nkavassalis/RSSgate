@@ -592,3 +592,27 @@ def test_refresh_button_drives_the_rail(ui_server, browser):
     assert max(spans) >= 1500, f"rail did not cover the poll: {spans}"
     assert pg.errors == []
     pg.close()
+
+
+def test_snapshot_prefers_native_share_sheet(ui_server, browser):
+    """When the platform offers a file-capable share sheet (iOS home
+    screen app, https browsers), the snapshot button must use it first;
+    clipboard remains the fallback, not the primary."""
+    pg = _new_page(browser)
+    pg.add_init_script("""
+      window.__shared = null;
+      navigator.canShare = d => d && d.files && d.files.length > 0;
+      navigator.share = async d => {
+        window.__shared = { n: d.files.length, type: d.files[0].type,
+                            name: d.files[0].name };
+      };
+    """)
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".snap-btn")
+    pg.click(".card .snap-btn")
+    pg.wait_for_function("() => window.__shared", timeout=6000)
+    sh = pg.evaluate("window.__shared")
+    assert sh["type"] == "image/png" and sh["n"] == 1
+    assert sh["name"].endswith(".png")
+    assert pg.errors == []
+    pg.close()

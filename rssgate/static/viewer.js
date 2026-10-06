@@ -375,6 +375,22 @@
     try {
       const png = await renderCardPng(a);
       let copied = false;
+      const file = new File([png], `rssgate-${a.id}.png`,
+                            { type: 'image/png' });
+      // native share sheet first (iOS home-screen app & https browsers):
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: a.title });
+          btn.textContent = '\u2713';
+          setTimeout(() => { btn.textContent = glyph; }, 1400);
+          return;
+        } catch (e) {
+          if (e && e.name === 'AbortError') {      // user backed out
+            btn.textContent = glyph;
+            return;
+          }                                        // else fall through
+        }
+      }
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
         copied = true;
