@@ -158,10 +158,16 @@ def test_mobile_layout_has_no_phantom_flex_gap(ui_server, browser):
 
 
 def test_pull_to_refresh_gesture_drives_state(ui_server, browser):
-    """Synthesized touch sequence: pill becomes visible, armed state at
-    threshold, release fires POST /api/poll, spinner shows."""
+    """Synthesized touch: pill visible while dragging, arms at threshold;
+    release retreats the pill and hands the work indication to the top
+    rail (v0.44.3 - rail is the single work indicator on all refresh
+    paths)."""
     pg = _new_page(browser, viewport={"width": 390, "height": 844},
                    has_touch=True)
+    def slow_poll(route):
+        time.sleep(0.8)
+        route.continue_()
+    pg.route("**/api/poll", slow_poll)
     poll_calls = []
     pg.on("request", lambda r: poll_calls.append(r.url)
           if r.url.endswith("/api/poll") else None)
@@ -185,8 +191,9 @@ def test_pull_to_refresh_gesture_drives_state(ui_server, browser):
     assert float(state["opacity_mid"]) > 0.5, "pill invisible while dragging"
     assert float(state["opacity_armed"]) > 0.9
     assert state["armed"] is True, "never armed at threshold"
-    pg.wait_for_function("() => document.getElementById('ptr')"
-                         ".classList.contains('spin')", timeout=3000)
+    # pill retreats; the rail lights instead (work phase)
+    pg.wait_for_selector("#stream-progress.on", timeout=3000)
+    assert pg.eval_on_selector("#ptr", "el => el.style.opacity") == "0"
     assert poll_calls, "release did not POST /api/poll"
     assert pg.errors == []
     pg.close()

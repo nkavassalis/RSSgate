@@ -433,19 +433,22 @@
   }
   window.addEventListener('touchend', ptrEnd, { passive: true });
   window.addEventListener('touchcancel', ptrEnd, { passive: true });
+  async function doRefreshWork() {       // shared by button + pull-to-refresh
+    try {
+      const r = await fetch('/api/poll', { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      if (!j.throttled)                  // real poll: let the fetchers land
+        await new Promise(rz => setTimeout(rz, 2500));
+    } catch { /* offline: restart anyway */ }
+    restart();
+  }
   async function doPullRefresh() {
     ptrBusy = true;
-    ptr.classList.add('spin');
-    ptr.style.transform = 'translate(-50%,46px)';
-    ptr.style.opacity = 1;
-    ptrLabel.textContent = 'Refreshing\u2026';
-    try { await fetch('/api/poll', { method: 'POST' }); } catch {}
-    await new Promise(r => setTimeout(r, 2500));   // let the fetchers land
-    restart();
+    setBusy(true);                       // top rail is the work indicator now;
+    ptrLabel.textContent = 'Pull to refresh';   // pill retreats during work
+    await doRefreshWork();
+    setBusy(false);
     ptrBusy = false;
-    ptr.style.transform = 'translate(-50%,-80px)';
-    ptr.style.opacity = 0;
-    ptrLabel.textContent = 'Pull to refresh';
   }
 
   // ---- lightbox: click any cached image to see it full-size --------------
@@ -558,14 +561,8 @@
     if (btn.classList.contains('spinning')) return;
     btn.classList.add('spinning');
     setBusy(true);                       // rail covers the whole poll, too
-    try {
-      const r = await fetch('/api/poll', { method: 'POST' });
-      const j = await r.json().catch(() => ({}));
-      if (!j.throttled)                  // real poll: let the fetchers land
-        await new Promise(rz => setTimeout(rz, 2500));
-    } catch { /* offline: restart anyway, rail must not stick */ }
+    await doRefreshWork();
     btn.classList.remove('spinning');
-    restart();                           // in-app: no white flash
     setBusy(false);
   });
 
