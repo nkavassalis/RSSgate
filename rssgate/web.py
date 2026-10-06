@@ -5,8 +5,8 @@ import os
 import threading
 
 from flask import (
-    Flask, abort, jsonify, make_response, render_template, request,
-    send_file)
+    Flask, Response, abort, jsonify, make_response, render_template,
+    request, send_file)
 
 from . import db
 from .config import load_config, save_config, masked_config, DEFAULTS, _merge
@@ -312,6 +312,24 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                             pass
         threading.Thread(target=_go, daemon=True).start()
         return jsonify({"ok": True, "started": True})
+
+    @app.route("/api/qr.png")
+    def api_qr():
+        """Local QR encoder for share snapshots: encodes a URL, fetches
+        nothing, leaks nothing. PNG, immutable-cacheable by content."""
+        import io
+        u = (request.args.get("u") or "").strip()
+        if not u or not u.startswith(("http://", "https://")) or len(u) > 500:
+            return jsonify({"error": "url required (http(s), <=500 chars)"}), 400
+        import qrcode
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                           box_size=10, border=1)
+        qr.add_data(u)
+        qr.make(fit=True)
+        buf = io.BytesIO()
+        qr.make_image(fill_color="#111111", back_color="#ffffff").save(buf, "PNG")
+        return Response(buf.getvalue(), mimetype="image/png",
+                        headers={"Cache-Control": "public, max-age=31536000"})
 
     @app.route("/api/feed-errors")
     def api_feed_errors():

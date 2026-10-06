@@ -285,11 +285,14 @@
     if (dAll.length > 40) dLines[39] = dLines[39].replace(/[,.;:\s]+$/, '') + '\u2026';
     const meta = [(a.feed_title || '').trim(), fmt(a.ts)].filter(Boolean).join('  \u00b7  ');
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
+    const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
+                          encodeURIComponent(a.link)).catch(() => null) : null;
     const heroH = hero ? Math.min(300, Math.round((W - PAD * 2) * hero.height / hero.width)) : 0;
     const titleH = tLines.length * 33 + 6;
     const digestH = dLines.length * 24 + 10;
+    const footH = qr ? 96 : (url ? 24 : 0);
     const H = PAD + (heroH ? heroH + 20 : 0) + titleH + digestH + 26
-              + 18 + (url ? 24 : 0) + PAD - 8;
+              + 18 + footH + PAD - 8;
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
@@ -308,7 +311,16 @@
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `16px ${fam}`;
     dLines.forEach(l => { y += 24; x.fillText(l, PAD, y); });
     y += 10 + 18;
-    if (url) {
+    if (qr) {
+      x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
+      x.fillText('Scan for the full article', PAD, y + 12);
+      x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
+      x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 12);
+      x.textAlign = 'left';
+      const qs = 72;
+      x.fillStyle = '#ffffff'; x.fillRect(W - PAD - qs, y + 20, qs, qs);
+      x.drawImage(qr, W - PAD - qs, y + 20, qs, qs);
+    } else if (url) {
       x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
       x.fillText(url, PAD, y + 10);
       x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;

@@ -408,20 +408,35 @@ def test_copy_snapshot_puts_png_on_clipboard(ui_server, browser):
     """The share-to-group-chat flow: click the card's snapshot button and
     a card image lands on the clipboard (localhost = secure context)."""
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    pg.context.grant_permissions(["clipboard-read", "clipboard-write"],
+                                 origin=ui_server)
     pg.goto(ui_server, wait_until="networkidle")
     pg.click(".card .snap-btn")
+    pg.wait_for_function("() => !!document.querySelector('.snap-btn')")
     pg.wait_for_function(
         """async () => (await navigator.clipboard.read()).some(i =>
                         i.types.includes('image/png'))""", timeout=8000)
     got = pg.evaluate("""async () => {
-      for (const it of await navigator.clipboard.read())
-        for (const t of it.types) if (t === 'image/png') {
-          const b = await it.getType(t);
-          const bmp = await createImageBitmap(b);
-          return {size: b.size, w: bmp.width, h: bmp.height};
-        }
+      for (let try_ = 0; try_ < 30; try_++) {
+        try {
+          for (const it of await navigator.clipboard.read())
+            for (const t of it.types) if (t === 'image/png') {
+              const b = await it.getType(t);
+              const bmp = await createImageBitmap(b);
+              return {size: b.size, w: bmp.width, h: bmp.height};
+            }
+        } catch {}
+        await new Promise(r => setTimeout(r, 200));
+      }
       return null; }""")
+    if got is None:
+        diag = pg.evaluate("""async () => { try {
+            const items = await navigator.clipboard.read();
+            return {n: items.length, types: items.map(i=>i.types.join()),
+              perm: (await navigator.permissions.query(
+                       {name:'clipboard-write'})).state};
+          } catch (e) { return {err: String(e)}; } }""")
+        raise AssertionError(f"clipboard empty; diag={diag} errs={pg.errors}")
     assert got and got["size"] > 4000, "no substantive PNG on clipboard"
     assert got["w"] == 1440 and got["h"] >= 300     # DPR2 @ 720 logical
     assert pg.errors == []

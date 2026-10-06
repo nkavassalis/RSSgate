@@ -26,6 +26,7 @@ Pages: `GET /` viewer, `GET /admin` admin panel, `GET /static/<file>` assets.
 | `POST /api/poll` | Poll all enabled feeds now (background, 60s throttle): `{ok, started, why?}`. |
 | `feeds[].smart_block` | 0 untouched / 1 auto-seeded / 2 user-owned (auto-manage off). |
 | Card `\u25a3` | Copy snapshot: client-rendered PNG of the card -> clipboard (https/localhost) or download fallback (http). |
+| `GET /api/qr.png?u=` | Local QR encoder PNG (http(s) URLs, <=500 chars, 400 otherwise). Used by card snapshots. |
 | `GET /api/feed-errors` | Latest failed articles `[{feed_title,title,link,error_msg}]`; `error_msg` is populated when troubleshooting logging is on. |
 | `POST /api/feeds/<id>/redigest` | User-confirmed re-processing: re-queues ready/error articles with hashes cleared so new prompts/lengths apply. Returns `{ok, requeued}`. |
 | `POST /api/feeds/<id>/refresh` | Poll this feed immediately. |

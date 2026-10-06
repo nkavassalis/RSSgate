@@ -1,3 +1,4 @@
+from urllib.parse import quote
 import json
 
 
@@ -127,3 +128,13 @@ def test_poll_now_throttles(client, monkeypatch):
     assert calls                             # feeds actually poked
     r2 = client.post("/api/poll").get_json()
     assert r2["started"] is False and r2["why"] == "throttled"
+
+
+def test_qr_route_encodes_locally(client):
+    r = client.get("/api/qr.png?u=" + quote("https://example.com/a?b=1&c=2"))
+    assert r.status_code == 200 and r.mimetype == "image/png"
+    assert r.data[:8] == bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    assert r.headers["Cache-Control"].startswith("public")
+    assert client.get("/api/qr.png").status_code == 400
+    assert client.get("/api/qr.png?u=javascript:alert(1)").status_code == 400
+    assert client.get("/api/qr.png?u=" + "x" * 600).status_code == 400
