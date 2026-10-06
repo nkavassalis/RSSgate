@@ -616,3 +616,27 @@ def test_snapshot_prefers_native_share_sheet(ui_server, browser):
     assert sh["name"].endswith(".png")
     assert pg.errors == []
     pg.close()
+
+
+@pytest.mark.ui
+def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
+    """Digest paragraphs must not collapse into a wall of text: a summary
+    with blank-line-separated paragraphs renders measurably taller than
+    the same text flattened into one paragraph."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".snap-btn")
+    art = pg.evaluate("async () => (await (await fetch('/api/articles'))"
+                      ".json()).items[0]")
+    body = ("First paragraph of the digest, long enough to wrap across at "
+            "least two canvas lines on its own so geometry is meaningful.\n\n"
+            "Second paragraph starts on its own visual block in the image.")
+    h = pg.evaluate("""async ([a, p, f]) => {
+      const g = async s => { const b = await window.__renderCardPng(
+          {...a, summary: s});
+        const bmp = await createImageBitmap(b); return bmp.height; };
+      return { para: await g(p), flat: await g(f) };
+    }""", [art, body, body.replace("\n\n", " ")])
+    assert h["para"] > h["flat"] + 20, h
+    assert pg.errors == []
+    pg.close()

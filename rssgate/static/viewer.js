@@ -282,14 +282,19 @@
   // ---- card snapshot (copy-as-image for sharing) --------------------------
   const snapData = {};
   function wrapLines(x, text, maxW) {
-    const words = (text || '').split(/\s+/).filter(Boolean);
-    const out = []; let line = '';
-    for (const w of words) {
-      const t = line ? line + ' ' + w : w;
-      if (x.measureText(t).width > maxW && line) { out.push(line); line = w; }
-      else line = t;
-    }
-    if (line) out.push(line);
+    // Paragraph breaks survive: entries may be '' (blank spacer line).
+    const paras = (text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+    const out = [];
+    paras.forEach((para, pi) => {
+      if (pi) out.push('');
+      let line = '';
+      for (const w of para.split(/\s+/).filter(Boolean)) {
+        const t = line ? line + ' ' + w : w;
+        if (x.measureText(t).width > maxW && line) { out.push(line); line = w; }
+        else line = t;
+      }
+      if (line) out.push(line);
+    });
     return out;
   }
   function roundRect(x, X, Y, w, h, r) {
@@ -313,8 +318,12 @@
     const tLines = wrapLines(m, a.title || '(untitled)', W - PAD * 2).slice(0, 4);
     m.font = `16px ${fam}`;
     const dAll = wrapLines(m, a.summary || '', W - PAD * 2);
-    const dLines = dAll.slice(0, 40);
-    if (dAll.length > 40) dLines[39] = dLines[39].replace(/[,.;:\s]+$/, '') + '\u2026';
+    let dLines = dAll.slice(0, 40);
+    while (dLines.length && dLines[dLines.length - 1] === '') dLines.pop();
+    if (dAll.length > 40) {
+      const li = dLines.length - 1;
+      dLines[li] = dLines[li].replace(/[,.;:\s]+$/, '') + '\u2026';
+    }
     const when = new Date(a.ts).toLocaleString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
@@ -324,7 +333,8 @@
                           encodeURIComponent(a.link)).catch(() => null) : null;
     const heroH = hero ? Math.min(300, Math.round((W - PAD * 2) * hero.height / hero.width)) : 0;
     const titleH = tLines.length * 33 + 6;
-    const digestH = dLines.length * 24 + 10;
+    const digestH = dLines.length * 24 + 10
+                  + dLines.filter(l => !l).length * 12;
     const footH = qr ? 78 : (url ? 24 : 0);
     const H = PAD + (heroH ? heroH + 20 : 0) + titleH + digestH + 26
               + 18 + footH + PAD - 8;
@@ -344,7 +354,8 @@
     x.fillStyle = col('--muted', '#71717a'); x.font = `14px ${fam}`;
     x.fillText(meta, PAD, y + 12); y += 26;
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `16px ${fam}`;
-    dLines.forEach(l => { y += 24; x.fillText(l, PAD, y); });
+    dLines.forEach(l => { y += 24; if (l) x.fillText(l, PAD, y);
+                             else y += 12; });
     y += 10 + 18;
     if (qr) {
       const qs = 72, qy = y + footH - qs;
@@ -467,6 +478,7 @@
     ptrBusy = false;
   }
 
+  window.__renderCardPng = renderCardPng;   // test seam
   // ---- lightbox: click any cached image to see it full-size --------------
   let lb = null;
   function closeLb() { if (lb) { lb.remove(); lb = null; document.removeEventListener('keydown', lbKey); } }

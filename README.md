@@ -102,6 +102,34 @@ model overrides (`llm.model_summarize`, `llm.model_discover`) let a cheap
 instruct model do the digesting while a reasoning model handles bare-page
 discovery, when you have more than one model available.
 
+## iPhone home-screen app (first-class)
+
+RSSgate is designed to live on your phone's home screen. In Safari, open
+your instance and use **Share &#8594; Add to Home Screen** — the app icon,
+standalone chrome, pull-to-refresh and the top loading rail are all built
+for this mode. What standalone gives you out of the box on plain HTTP:
+
+- **Article taps open in Safari.** Links are cross-origin `target=_blank`,
+  which iOS hands to Safari; RSSgate stays suspended with your scroll
+  position intact for the swipe back.
+- **Pull-to-refresh** works as a gesture (drag affordance on the pill,
+  work indication on the top rail), as does the header refresh button.
+
+**Serve it over a VPN (Tailscale Serve / WireGuard + TLS) and it levels
+up.** iOS only exposes the powerful APIs in secure contexts, so an HTTPS
+URL (Tailscale Serve's certificate, or any TLS you trust on the device)
+unlocks:
+
+- **Native share sheet for snapshots** — tap the snapshot button and the
+  digest image goes straight to AirDrop, Messages, Notes, or any app,
+  rendered at full share width with the source QR.
+- **Clipboard writes** — the snapshot lands on the clipboard instead of
+  the Files-app download fallback.
+
+Over your tailnet this is zero-configuration: `tailscale serve --bg 8088`
+and browse `https://<machine>.<tailnet>.ts.net`. Same machine, same
+process, no port forwarding, no public exposure.
+
 ## Reader UI: sidebar, New/Since modes
 
 The sidebar is an independently scrollable column with three filter boxes:
