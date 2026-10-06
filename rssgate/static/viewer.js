@@ -330,7 +330,10 @@
                              .catch(() => null) : null;
     // post-card layout: hero floats right, copy flows beside it
     const TW = hero ? Math.round(W * 0.40) : 0;
-    const TH = hero ? Math.round(TW * 0.625) : 0;
+    // thumb keeps the photo's OWN aspect (bounded): never stretched,
+    // never cropped except portrait monsters
+    const TH = hero ? Math.min(Math.round(TW * hero.height / hero.width),
+                               Math.round(TW * 1.25)) : 0;
     const gap = 16;
     const full = W - PAD * 2;
     const narrow = TW ? full - TW - gap : full;
@@ -357,9 +360,10 @@
       tLines[3] = tLines[3].replace(/[,.;:\s]+$/, '') + '\u2026';
     const titleH = tLines.length * 33 + 6;
     const yMeta = PAD + titleH + 6;
-    const yDigest = yMeta + 26;
+    // body text waits for the image: full-width below its bottom edge
+    const yDigest = Math.max(yMeta + 26, hero ? PAD + TH + 18 : 0);
     m.font = `16px ${fam}`;
-    const dAll = flowText(a.summary || '', yDigest, 24);
+    const dAll = wrapLines(m, a.summary || '', full);
     let dLines = dAll.slice(0, 40);
     while (dLines.length && dLines[dLines.length - 1] === '') dLines.pop();
     if (dAll.length > 40) {
@@ -376,8 +380,7 @@
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
     const footH = qr ? 78 : (url ? 24 : 0);
-    const contentBottom = Math.max(yDigest + digestH,
-                                   PAD + TH + 10);
+    const contentBottom = yDigest + digestH;
     const H = Math.round(contentBottom) + 28 + footH + PAD;
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;

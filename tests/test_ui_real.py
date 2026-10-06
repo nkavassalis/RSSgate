@@ -553,6 +553,7 @@ def test_stream_progress_rail(ui_server, browser):
     """)
     pg.goto(ui_server + "/", wait_until="networkidle")
     pg.wait_for_timeout(600)               # let the first spin settle
+    pg.click("#refresh-btn")              # guaranteed in-flight window
     spans = pg.evaluate("""() => {
       const spans = []; let on = null;
       for (const [c, t] of (window.__rail || [])) {
@@ -683,8 +684,10 @@ def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
     conn.commit(); conn.close()
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles').then(r => r.json())
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
         .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    assert art, "crop article missing from its own feed page"
     px = pg.evaluate("""async (a) => {
       const png = await window.__renderCardPng(a);
       const bmp = await createImageBitmap(png);
@@ -693,7 +696,7 @@ def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
       const SX = Math.round(bmp.width * 0.80);        // thumb column
       const top = [...g.getImageData(SX, 70, 1, 1).data];
-      const mid = [...g.getImageData(SX, 250, 1, 1).data];
+      const mid = [...g.getImageData(SX, 440, 1, 1).data];
       return { w: bmp.width, top: top.slice(0, 3), mid: mid.slice(0, 3) };
     }""", art)
     assert px["top"][0] > 150 and px["top"][2] < 120, f"thumb top: {px}"
