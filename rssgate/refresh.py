@@ -234,9 +234,26 @@ def _cache_image(conn, art, page_html: str):
             urls = [decl]
         if not urls:
             return None
-        names = [n for n in (imgstore.store(u) for u in urls) if n]
-        if not names:
+        pairs = [(u, n) for u in urls if (n := imgstore.store(u))]
+        if not pairs:
             return None
+        # Content-level dedupe: the same photo under variant URLs (og
+        # size vs body size) must not eat a gallery slot next to itself.
+        import hashlib
+        d = imgstore.directory()
+        seen, keep = set(), []
+        for u, n in pairs:
+            try:
+                h = hashlib.sha256((d / n).read_bytes()).hexdigest()
+            except OSError:
+                h = None
+            if h and h in seen:
+                continue
+            if h:
+                seen.add(h)
+            keep.append((u, n))
+        urls = [u for u, _ in keep]
+        names = [n for _, n in keep]
         old = set()
         if art["image"]:
             old.add(art["image"])

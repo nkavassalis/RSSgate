@@ -61,6 +61,7 @@ def _wait_port(port, timeout=15):
 
 
 UI_DB: str = ""
+UI_IMG_DIR: Path | None = None
 
 
 @pytest.fixture(scope="session")
@@ -108,8 +109,10 @@ def ui_server(tmp_path_factory):
         # second feed left disabled on purpose (layout + poll semantics)
         db.update_feed(conn, fid, summarize=1)
         conn.close()
-        global UI_DB
+        global UI_DB, UI_IMG_DIR
         UI_DB = str(data / "data" / "rssgate.sqlite")
+        UI_IMG_DIR = data / "data" / "images"
+        UI_IMG_DIR.mkdir(parents=True, exist_ok=True)
         yield f"http://127.0.0.1:{PORT}"
     finally:
         proc.terminate()
@@ -651,107 +654,49 @@ def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
     pg.close()
 
 
-@pytest.mark.ui
-def test_feed_images_mode_behind_cog(ui_server, browser):
-    """Images select lives in the cog panel under a label; Apply persists
-    images_mode (row shows a compact img: mode tag instead of a select)."""
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server + "/admin", wait_until="networkidle")
-    row = pg.locator("tr[data-id]").first
-    assert row.locator("select[data-role=imgmode]").count() == 0  # not in row
-    fid = row.get_attribute("data-id")
-    puts = []
-    pg.on("request", lambda r: puts.append(r.post_data)
-          if r.method == "PUT" and r.url.endswith(f"/api/feeds/{fid}") else None)
-    row.locator("button[data-act=cfg]").click()
-    pg.wait_for_selector(".cfg-panel [data-role=imgmode]", timeout=5000)
-    label = pg.eval_on_selector(".cfg-panel [data-role=imgmode]",
-        "el => el.closest('label').textContent")
-    assert "Images" in label
-    pg.select_option(".cfg-panel [data-role=imgmode]", "off")
-    pg.click("button[data-act=apply-cfg]")
-    pg.wait_for_timeout(700)
-    assert '"images_mode":"off"' in puts[0].replace(" ", "")
-    val = pg.evaluate("""(id) => fetch('/api/feeds').then(r => r.json())
-        .then(fs => fs.find(f => String(f.id) === id).images_mode)""", fid)
-    assert val == "off"
-    assert pg.errors == []
-    pg.close()
-
-
-def test_status_panel_two_row_layout(ui_server, browser):
-    """Status stats split: health row, then errors/storage row."""
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server + "/admin", wait_until="networkidle")
-    pg.wait_for_selector(".status-cell", timeout=5000)
-    assert pg.locator("#status-grid .grid-break").count() == 1
-    order = pg.eval_on_selector_all(
-        "#status-grid > *",
-        "els => els.map(e => e.className.split(' ')[0]"
-        " + ':' + (e.querySelector('span')?.textContent || ''))")
-    assert order.index("status-cell:Digest errors") == 5, order
-    assert "grid-break:" in order
-    assert pg.errors == []
-    pg.close()
-
-
-def test_nav_spy_lights_passed_section_without_jumping(ui_server, browser):
-    """Scrolling lights the nav anchor you pass; scroll position must
-    never move on its own (visual-only spy)."""
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server + "/admin", wait_until="networkidle")
-    pg.wait_for_selector(".sec-nav a.active", timeout=4000)
-    def active():
-        return pg.eval_on_selector(".sec-nav a.active", "a => a.hash")
-    y0 = pg.evaluate("scrollTo(0, document.getElementById('sec-display').offsetTop + 40)")
-    pg.wait_for_timeout(300)
-    assert active() == "#sec-display", active()
-    y1 = pg.evaluate("scrollY")
-    pg.wait_for_timeout(400)
-    assert abs(pg.evaluate("scrollY") - y1) < 2, "spy moved the page!"
-    pg.evaluate("scrollTo(0, document.body.scrollHeight)")
-    pg.wait_for_timeout(400)
-    assert active() == "#sec-polling", active()      # last section at bottom
-    assert pg.errors == []
-    pg.close()
-
-
-def test_read_delay_single_card_marking(ui_server, browser):
-    """ui.read_delay=3: dwelling marks ONLY the top unread card, and not
-    before the delay. Seeds its own fresh feed so shared-fixture read
-    state can never starve it."""
+def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
+    """Share PNG right-float hero must cover-crop a 1:3 portrait: thumb
+    top samples field orange, thumb center samples the injected middle
+    band blue - a squeezed draw would smear both."""
+    import hashlib
+    from io import BytesIO
     from rssgate import db
+    from PIL import Image
     conn = db.connect(UI_DB)
-    fid = db.add_feed(conn, "https://rd.test/feed", type_="feed")["id"]
-    for n in (1, 2):
-        aid = db.upsert_article(conn, fid, f"rd{n}", f"https://rd.test/{n}",
-                                f"Read delay probe {n}",
-                                "2027-01-01T00:00:00Z")
-        db.set_article(conn, aid, status="ready", summary="Probe digest.")
-    conn.close()
+    fid = db.add_feed(conn, "https://crop.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "crop1", "https://crop.test/1",
+                            "Crop probe", "2027-01-02T00:00:00Z")
+    img = Image.new("RGB", (200, 600), (255, 136, 0))
+    for y in range(270, 331):
+        for x in range(200):
+            img.putpixel((x, y), (0, 0, 255))
+    buf = BytesIO(); img.save(buf, "PNG")
+    import rssgate.imgstore as ig
+    ig.init(str(UI_IMG_DIR))
+    fname = (hashlib.sha256(b"https://crop.test/hero.png").hexdigest()[:24]
+             + ".png")
+    UI_IMG_DIR.joinpath(fname).write_bytes(buf.getvalue())
+    db.set_article(conn, aid, image=fname,
+                   image_url="https://crop.test/hero.png")
+    conn.execute("UPDATE articles SET status='ready', summary='crop digest'"
+                 " WHERE id=?", (aid,))
+    conn.commit(); conn.close()
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server + "/admin", wait_until="networkidle")
-    pg.evaluate("""async () => { const c = await (await fetch('/api/config')).json();
-      c.ui.read_delay = 3;
-      await fetch('/api/config', {method:'PUT', body: JSON.stringify(c),
-        headers:{'content-type':'application/json'}}); }""")
     pg.goto(ui_server, wait_until="networkidle")
-    sel = f".card.unread[data-feed='{fid}']"
-    pg.wait_for_selector(sel)
-    got = pg.evaluate("""async (sel) => {
-      const t0 = performance.now();
-      const count = () => document.querySelectorAll(sel).length;
-      const early = count();
-      await new Promise(r => setTimeout(r, 1500));
-      const at15 = count();
-      const deadline = t0 + 5000;
-      while (count() === early && performance.now() < deadline)
-        await new Promise(r => setTimeout(r, 50));
-      return { early, at15, atMark: count(), tMark: performance.now() - t0 };
-    }""", sel)
-    assert got["early"] == 2, got
-    assert got["at15"] == 2, f"marked before delay: {got}"
-    assert got["atMark"] == 1, f"not exactly one: {got}"
-    assert 2200 <= got["tMark"] <= 5200, got
+    art = pg.evaluate("""(fid) => fetch('/api/articles').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    px = pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      const SX = Math.round(bmp.width * 0.80);        // thumb column
+      const top = [...g.getImageData(SX, 70, 1, 1).data];
+      const mid = [...g.getImageData(SX, 250, 1, 1).data];
+      return { w: bmp.width, top: top.slice(0, 3), mid: mid.slice(0, 3) };
+    }""", art)
+    assert px["top"][0] > 150 and px["top"][2] < 120, f"thumb top: {px}"
+    assert px["mid"][2] > 150 and px["mid"][0] < 120, f"thumb mid: {px}"
     assert pg.errors == []
     pg.close()

@@ -326,17 +326,48 @@
     const W = SHARE_W, PAD = 28, DPR = 2;
     const fam = getComputedStyle(document.body).fontFamily;
     const m = document.createElement('canvas').getContext('2d');
-    const hero = a.image ? await loadBitmap('/image/' + a.image).catch(() => null) : null;
+    const hero = a.image ? await loadBitmap('/image/' + a.image)
+                             .catch(() => null) : null;
+    // post-card layout: hero floats right, copy flows beside it
+    const TW = hero ? Math.round(W * 0.40) : 0;
+    const TH = hero ? Math.round(TW * 0.625) : 0;
+    const gap = 16;
+    const full = W - PAD * 2;
+    const narrow = TW ? full - TW - gap : full;
+    const thumbBottom = PAD + TH;
+    function flowText(text, y0, lh) {   // zone-aware word wrap
+      const paras = (text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+      const out = []; let line = ''; let idx = 0;
+      const wAt = () => (y0 + idx * lh) < thumbBottom ? narrow : full;
+      const push = s => { out.push(s); idx++; };
+      paras.forEach((p, pi) => {
+        if (pi) push('');
+        for (const w of p.split(/\s+/).filter(Boolean)) {
+          const t = line ? line + ' ' + w : w;
+          if (m.measureText(t).width > wAt() && line) { push(line); line = w; }
+          else line = t;
+        }
+        if (line) push(line);
+      });
+      return out;
+    }
     m.font = `700 26px ${fam}`;
-    const tLines = wrapLines(m, a.title || '(untitled)', W - PAD * 2).slice(0, 4);
+    let tLines = flowText(a.title || '(untitled)', PAD, 33).slice(0, 4);
+    if (tLines.length === 4)
+      tLines[3] = tLines[3].replace(/[,.;:\s]+$/, '') + '\u2026';
+    const titleH = tLines.length * 33 + 6;
+    const yMeta = PAD + titleH + 6;
+    const yDigest = yMeta + 26;
     m.font = `16px ${fam}`;
-    const dAll = wrapLines(m, a.summary || '', W - PAD * 2);
+    const dAll = flowText(a.summary || '', yDigest, 24);
     let dLines = dAll.slice(0, 40);
     while (dLines.length && dLines[dLines.length - 1] === '') dLines.pop();
     if (dAll.length > 40) {
       const li = dLines.length - 1;
       dLines[li] = dLines[li].replace(/[,.;:\s]+$/, '') + '\u2026';
     }
+    const digestH = dLines.length * 24 + 10
+                  + dLines.filter(l => !l).length * 12;
     const when = new Date(a.ts).toLocaleString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
@@ -344,32 +375,33 @@
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
-    const heroH = hero ? Math.min(300, Math.round((W - PAD * 2) * hero.height / hero.width)) : 0;
-    const titleH = tLines.length * 33 + 6;
-    const digestH = dLines.length * 24 + 10
-                  + dLines.filter(l => !l).length * 12;
     const footH = qr ? 78 : (url ? 24 : 0);
-    const H = PAD + (heroH ? heroH + 20 : 0) + titleH + digestH + 26
-              + 18 + footH + PAD - 8;
+    const contentBottom = Math.max(yDigest + digestH,
+                                   PAD + TH + 10);
+    const H = Math.round(contentBottom) + 28 + footH + PAD;
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
     x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff'); x.fillRect(0, 0, W, H);
-    let y = PAD;
     if (hero) {
-      const hw = W - PAD * 2;
-      x.save(); roundRect(x, PAD, y, hw, heroH, 10); x.clip();
-      x.drawImage(hero, PAD, y, hw, heroH); x.restore(); y += heroH + 20;
+      x.save(); roundRect(x, W - PAD - TW, PAD, TW, TH, 10); x.clip();
+      const sc = Math.max(TW / hero.width, TH / hero.height);
+      const dw = hero.width * sc, dh = hero.height * sc;
+      x.drawImage(hero, W - PAD - TW + (TW - dw) / 2,
+                  PAD + (TH - dh) / 2, dw, dh);
+      x.restore();
     }
-    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `700 26px ${fam}`;
+    let y = PAD;
+    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
+    x.font = `700 26px ${fam}`;
     tLines.forEach(l => { y += 26; x.fillText(l, PAD, y); });
-    y += 7 + 6;
     x.fillStyle = col('--muted', '#71717a'); x.font = `14px ${fam}`;
-    x.fillText(meta, PAD, y + 12); y += 26;
+    x.fillText(meta, PAD, yMeta + 12);
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `16px ${fam}`;
+    y = yDigest;
     dLines.forEach(l => { y += 24; if (l) x.fillText(l, PAD, y);
                              else y += 12; });
-    y += 10 + 18;
+    y = contentBottom + 18;
     if (qr) {
       const qs = 72, qy = y + footH - qs;
       x.fillStyle = '#ffffff'; x.fillRect(W - PAD - qs, qy, qs, qs);

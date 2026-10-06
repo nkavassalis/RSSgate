@@ -94,3 +94,37 @@ def test_feed_304_skips_everything(conn, cfg, monkeypatch):
     feed = db.get_feed(conn, fid)
     assert refresh.refresh_feed(conn, feed, load_config(cfg), FakeLLM()) == "not modified"
     assert conn.execute("SELECT COUNT(*) c FROM articles").fetchone()["c"] == 0
+
+
+def test_duplicate_content_image_not_in_gallery(conn, tmp_path, monkeypatch):
+    """Same bytes at two URLs (og variant + body variant): hero keeps it,
+    gallery does not repeat it."""
+    from rssgate import db, imgstore
+    imgstore.init(str(tmp_path / "img"))
+    PNG = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)
+    def fake_get(url, **kw):
+        class R:
+            ok = True
+            headers = {"content-type": "image/png"}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def iter_content(self, n=8192):
+                yield PNG
+        return R()
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = db.add_feed(conn, "https://dup.test/f", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "d1", "https://dup.test/1",
+                            "Dup hero", None)
+    art = conn.execute("SELECT * FROM articles WHERE id=?", (aid,)).fetchone()
+    html = ("<html><head>"
+            '<meta property="og:image" content="https://dup.test/p-og.png">'
+            "</head><body><article><h1>t</h1>"
+            '<p>x</p><img src="https://dup.test/p-body.png">'
+            "</article></body></html>")
+    names = refresh._cache_image(conn, art, html)
+    assert names and len(names) == 1        # body twin deduped away
+    row = conn.execute("SELECT image, images FROM articles WHERE id=?",
+                       (aid,)).fetchone()
+    assert row["image"] == names[0]
+    assert not (row["images"] or "").replace(",", "").replace("-", "") \
+        or row["images"] == ",".join(names)
