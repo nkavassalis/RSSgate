@@ -402,3 +402,44 @@ def test_diagonal_swipe_does_not_trigger_pull_refresh(ui_server, browser):
                                "el => !el.classList.contains('spin')")
     assert pg.errors == []
     pg.close()
+
+
+def test_copy_snapshot_puts_png_on_clipboard(ui_server, browser):
+    """The share-to-group-chat flow: click the card's snapshot button and
+    a card image lands on the clipboard (localhost = secure context)."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(".card .snap-btn")
+    pg.wait_for_function(
+        """async () => (await navigator.clipboard.read()).some(i =>
+                        i.types.includes('image/png'))""", timeout=8000)
+    got = pg.evaluate("""async () => {
+      for (const it of await navigator.clipboard.read())
+        for (const t of it.types) if (t === 'image/png') {
+          const b = await it.getType(t);
+          const bmp = await createImageBitmap(b);
+          return {size: b.size, w: bmp.width, h: bmp.height};
+        }
+      return null; }""")
+    assert got and got["size"] > 4000, "no substantive PNG on clipboard"
+    assert got["w"] == 1440 and got["h"] >= 300     # DPR2 @ 720 logical
+    assert pg.errors == []
+    pg.close()
+
+
+def test_snapshot_falls_back_to_download(ui_server, browser):
+    """In plain-http LAN contexts the Clipboard API is blocked; the button
+    must still deliver the PNG via download."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.evaluate("""Object.defineProperty(navigator.clipboard, 'write',
+                   { value: () => Promise.reject(new Error('insecure')) })""")
+    with pg.expect_download() as dl:
+        pg.click(".card .snap-btn")
+    path = dl.value.path()
+    assert dl.value.suggested_filename.endswith(".png")
+    import os
+    assert os.path.getsize(path) > 4000             # a real image, not a stub
+    assert pg.errors == []
+    pg.close()

@@ -77,7 +77,7 @@
     return `<article class="card${a.unread ? ' unread' : ''}" data-ts="${esc(a.ts)}"
         data-id="${a.id}" data-feed="${a.feed_id}">
       <div class="card-meta">${a.unread ? '<span class="newdot" title="unread"></span>' : ''}<span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
-        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time></div>
+        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" title="Copy snapshot image to clipboard">\u25a3</button></div>
       ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
@@ -162,6 +162,7 @@
     if (data.items.length) {
       $('empty-hint').hidden = true;
       endBanner.hidden = true;
+      data.items.forEach(a => { snapData[a.id] = a; });
       stream.insertAdjacentHTML('beforeend', data.items.map(cardHtml).join(''));
       observeCards();
       cursor = { ts: data.items.at(-1).ts, id: data.items.at(-1).id };
@@ -245,6 +246,104 @@
   window.addEventListener('scroll', queueSave, { passive: true });
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePosition(); });
   window.addEventListener('pagehide', savePosition);
+
+  // ---- card snapshot (copy-as-image for sharing) --------------------------
+  const snapData = {};
+  function wrapLines(x, text, maxW) {
+    const words = (text || '').split(/\s+/).filter(Boolean);
+    const out = []; let line = '';
+    for (const w of words) {
+      const t = line ? line + ' ' + w : w;
+      if (x.measureText(t).width > maxW && line) { out.push(line); line = w; }
+      else line = t;
+    }
+    if (line) out.push(line);
+    return out;
+  }
+  function roundRect(x, X, Y, w, h, r) {
+    x.beginPath(); x.moveTo(X + r, Y);
+    x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r);
+    x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath();
+  }
+  async function loadBitmap(u) {
+    const b = await (await fetch(u)).blob();
+    return await createImageBitmap(b);
+  }
+  async function renderCardPng(a) {
+    const cs = getComputedStyle(document.documentElement);
+    const col = (n, fb) => (cs.getPropertyValue(n) || '').trim() || fb;
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const W = 720, PAD = 28, DPR = 2;
+    const fam = getComputedStyle(document.body).fontFamily;
+    const m = document.createElement('canvas').getContext('2d');
+    const hero = a.image ? await loadBitmap('/image/' + a.image).catch(() => null) : null;
+    m.font = `700 26px ${fam}`;
+    const tLines = wrapLines(m, a.title || '(untitled)', W - PAD * 2).slice(0, 4);
+    m.font = `16px ${fam}`;
+    const dAll = wrapLines(m, a.summary || '', W - PAD * 2);
+    const dLines = dAll.slice(0, 40);
+    if (dAll.length > 40) dLines[39] = dLines[39].replace(/[,.;:\s]+$/, '') + '\u2026';
+    const meta = [(a.feed_title || '').trim(), fmt(a.ts)].filter(Boolean).join('  \u00b7  ');
+    const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
+    const heroH = hero ? Math.min(300, Math.round((W - PAD * 2) * hero.height / hero.width)) : 0;
+    const titleH = tLines.length * 33 + 6;
+    const digestH = dLines.length * 24 + 10;
+    const H = PAD + (heroH ? heroH + 20 : 0) + titleH + digestH + 26
+              + 18 + (url ? 24 : 0) + PAD - 8;
+    const cv = document.createElement('canvas');
+    cv.width = W * DPR; cv.height = H * DPR;
+    const x = cv.getContext('2d'); x.scale(DPR, DPR);
+    x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff'); x.fillRect(0, 0, W, H);
+    let y = PAD;
+    if (hero) {
+      const hw = W - PAD * 2;
+      x.save(); roundRect(x, PAD, y, hw, heroH, 10); x.clip();
+      x.drawImage(hero, PAD, y, hw, heroH); x.restore(); y += heroH + 20;
+    }
+    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `700 26px ${fam}`;
+    tLines.forEach(l => { y += 26; x.fillText(l, PAD, y); });
+    y += 7 + 6;
+    x.fillStyle = col('--muted', '#71717a'); x.font = `14px ${fam}`;
+    x.fillText(meta, PAD, y + 12); y += 26;
+    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `16px ${fam}`;
+    dLines.forEach(l => { y += 24; x.fillText(l, PAD, y); });
+    y += 10 + 18;
+    if (url) {
+      x.fillStyle = col('--muted', '#71717a'); x.font = `13px ${fam}`;
+      x.fillText(url, PAD, y + 10);
+      x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
+      x.textAlign = 'right'; x.fillText('via RSSgate', W - PAD, y + 10);
+      x.textAlign = 'left';
+    }
+    return await new Promise(res => cv.toBlob(res, 'image/png'));
+  }
+  async function doSnapshot(btn) {
+    const card = btn.closest('.card');
+    const a = card && snapData[card.dataset.id];
+    if (!a) return;
+    const glyph = btn.textContent;
+    btn.textContent = '\u2026';
+    try {
+      const png = await renderCardPng(a);
+      let copied = false;
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+        copied = true;
+      } catch {                     // http contexts: download instead (attachable)
+        const u = URL.createObjectURL(png);
+        const link = document.createElement('a');
+        link.href = u; link.download = `rssgate-${a.id}.png`;
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(u), 5000);
+      }
+      btn.textContent = copied ? '\u2713' : '\u2913';
+    } catch { btn.textContent = '\u2717'; }
+    setTimeout(() => { btn.textContent = glyph; }, 1400);
+  }
+  $('stream').addEventListener('click', e => {
+    const btn = e.target.closest('.snap-btn');
+    if (btn) doSnapshot(btn);
+  });
 
   // ---- pull to refresh (mobile) ------------------------------------------
   const ptr = $('ptr'), ptrLabel = ptr.querySelector('.ptr-label');
