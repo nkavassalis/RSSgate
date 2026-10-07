@@ -199,3 +199,18 @@ def test_clear_failed_endpoint(client):
     assert left == 1
     assert conn.execute("SELECT id FROM articles WHERE id=?",
                         (ok,)).fetchone()
+
+
+def test_poll_is_single_route_and_reports_throttle(client, monkeypatch):
+    """One /api/poll handler (a duplicate once lurked, sharing the
+    request connection with a thread), and the throttle is a boolean the
+    viewer can read (it checks j.throttled to skip the settle wait)."""
+    import threading
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)
+    rules = [r for r in client.application.url_map.iter_rules()
+             if r.rule == "/api/poll"]
+    assert len(rules) == 1
+    first = client.post("/api/poll").get_json()
+    assert first.get("throttled") in (None, False)
+    second = client.post("/api/poll").get_json()
+    assert second["throttled"] is True and second["started"] is False

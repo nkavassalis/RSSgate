@@ -12,7 +12,7 @@ from . import db
 from .config import load_config, save_config, masked_config, _merge
 from .llm import LLMClient, LLMError, TEST_PROMPT
 import time as _time_mod
-from .refresh import refresh_all, refresh_feed
+from .refresh import refresh_all, refresh_feed  # noqa: F401 (refresh_all: conftest stub seam)
 
 START_TIME = _time_mod.time()
 
@@ -325,7 +325,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         last = db.get_state(conn, "last_manual_poll", "")
         if last and (_t.time() - _t.mktime(_t.strptime(
                 last, "%Y-%m-%dT%H:%M:%SZ"))) < 60:
-            return jsonify({"ok": True, "started": False, "why": "throttled"})
+            return jsonify({"ok": True, "started": False, "throttled": True,
+                            "why": "throttled"})
         db.set_state(conn, "last_manual_poll", db.now_iso())
         cfg = load_config(config_path)
 
@@ -469,15 +470,6 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/workqueue")
     def api_workqueue():
         return jsonify(db.workqueue_snapshot(conn))
-
-    @app.route("/api/poll", methods=["POST"])
-    def api_poll():
-        results = []
-        def _bg():
-            nonlocal results
-            results = refresh_all(conn, load_config(config_path), llm())
-        threading.Thread(target=_bg, daemon=True).start()
-        return jsonify({"started": True})
 
     @app.route("/image/<name>")
     def image_route(name):

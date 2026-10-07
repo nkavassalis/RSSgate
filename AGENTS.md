@@ -1,168 +1,184 @@
-# AGENTS.md — RSSgate codebase guide for AI agents
+# AGENTS.md - working on RSSgate
 
-## What this is
-Local-first RSS reader. Flask + SQLite, single YAML config, background poller
-thread, LLM-generated article digests. Python ≥3.11. No frontend build step —
-vanilla JS + one stylesheet + one CSS file. See CHANGELOG.md for release
-history and the **versioning policy** at the bottom of this file.
+Read this before changing anything. It is the map, the rules, and the scars.
+Companion docs: `docs/TESTING.md` (test tiers and helpers), `docs/API.md`
+(HTTP contract), `CHANGELOG.md` (history; one entry per release).
 
-## Layout
+## What it is
+A local-first RSS reader: Flask + SQLite (WAL), one YAML config, a background
+scheduler that polls feeds and asks an LLM for article digests, a vanilla-JS
+reader and admin page. Python >= 3.11. No frontend build step: two scripts
+(`viewer.js`, `admin.js`), one stylesheet, two Jinja templates.
+
 ```
-run.py                  entry point (config -> app -> scheduler -> flask)
+.venv/bin/python run.py --config config.yaml   # serves the app (config sets host/port)
+.venv/bin/python -m pytest                     # hermetic tier, seconds
+.venv/bin/python -m pytest -m ui               # browser tier, ~1 min; REQUIRED for UI work
+```
+The live instance runs from `config.yaml` in the repo root (gitignored, has
+`host: 0.0.0.0`). After editing Python or templates, restart it: Flask caches
+templates and the scheduler holds imported code.
+
+## Map
+```
+run.py              config -> create_app -> Scheduler -> maint loop -> flask
 rssgate/
-  config.py             DEFAULTS dict, deep-merge load/save, env: secret
-                        expansion, masked_config(); injects no-thinking
-                        extra_body for provider=local unless configured.
-                        ui.order = newest|oldest (stream direction, admin-editable)
-  db.py                 ALL SQL lives here. Plain sqlite3, no ORM, WAL.
-                        feeds: type auto|feed|page, categories (user, comma),
-                        auto_categories (feed-declared), summarize (raw mode
-                        flag), hide_sponsored, last_read_ts (read cursor)
-                        category filtering: _cat_effective_sql() = exact
-                        membership of POST tags or USER feed labels only
-                        (feeds.auto_categories is display-fallback, filter-
-                        inert); articles_page(category=) str or list (OR);
-                        category_list() = filterable names + live counts
-                        articles: status pending -> processing -> ready
-                        |error|hidden; categories = per-post tags;
-                        started_at/llm_ms = per-article LLM timing;
-                        image_url (declared) + image (hero) + images (gallery,
-                        comma filenames)
-                        UNIQUE(feed_id, guid)
-                        claim_pending() = atomic claim (UPDATE..RETURNING)
-                        state table: resume position, queue_peak, cache_hits
-                        _migrate() = additive ALTER TABLE migrations on init
-  maint.py              run_all(): retention delete + orphan prune + size cap;
-                        6h loop from run.py; report in state 'maint_report'
-  imgstore.py           local image cache: store(url) magic-byte-sniffs and
-                        writes data/images/<sha256[:24]>.<ext>; safe_path()
-                        gates the /image route. init(dir) from create_app
-  extract.py            article-text extraction (junk class/id regex that
-                        NEVER strips <body>/<html>), candidate link harvest; extract_images() = og/twitter first; content imgs scoped to h1-ancestor article root, AVATAR_RE+JUNK_RE over 4-ancestor chain, chrome tags rejected, after-h1 floor
-  llm.py                LLMClient: chat(model= override)/list_models()/
-                        resolve_model(). openai-compatible (local/openai/
-                        openrouter) + anthropic. extra_body passthrough.
-                        Pure network layer, no DB. Raises LLMError.
-  fetcher.py            conditional GET (_get), feed parsing, per-entry +
-                        feed-level categories, page fingerprinting,
-                        discover_page_articles(), find_feeds() = URL probe
-                        with verification fetches (no LLM)
-  refresh.py            refresh_feed(); summarize_pending(): claim -> mark
-                        processing -> (sponsored prefilter | raw mode |
-                        hash cache | LLM) -> log usage+duration;
-                        is_sponsored() heuristics; per-worker connections
-  scheduler.py          Scheduler(thread): requeue stale processing,
-                        poll due feeds (feed vs page timers), then
-                        summarizer.concurrency parallel workers via
-                        ThreadPoolExecutor; each worker opens its own db
-  web.py                create_app(config_path, conn=None). Thin routes.
-  templates/            viewer.html (sidebar: cat chips + feeds + New/Since),
-                        admin.html
-  static/               style.css (CSS vars + prefers-color-scheme),
-                        viewer.js (modes/localStorage/beacon), admin.js
-                        (probe-first add flow, category dropdowns, panels)
-tests/                  pytest (84, hermetic); conftest fixtures: conn, cfg,
-                        client (web.refresh_feed/refresh_all stubbed)
-docs/API.md             HTTP API reference
-CHANGELOG.md            version criteria + history — update on every release
+  config.py         DEFAULTS + deep-merge load/save, env: secrets, masked_config.
+                    ui.*: order, snapshot_width, stream_width, read_delay,
+                    hide_untranscribed, share_style (banner|float).
+  db.py             ALL SQL. Schema + additive _migrate(). Keyset paging
+                    (articles_page), claim_pending (UPDATE..RETURNING),
+                    read cursors, category SQL, delete_* return image names,
+                    release_files() = immediate orphan reclaim.
+                    Index idx_articles_sort matches _TS_EXPR exactly - if you
+                    change the sort expression, change the index with it.
+  refresh.py        refresh_feed / summarize_pending: claim -> processing ->
+                    (sponsored prefilter | raw mode | hash cache | LLM).
+                    _cache_image: extract -> store -> imgstore.dedupe.
+  scheduler.py      thread: requeue stale, poll due feeds, N workers, each
+                    with its OWN connection.
+  maint.py          run_all every 6h + at boot: retention, orphan prune,
+                    dedupe_galleries (idempotent repair), cache cap.
+  imgstore.py       cache dir, store(url) (magic-byte sniff, sha256 name),
+                    safe_path, ahash (8x8 centre-crop average hash),
+                    dedupe(names) = THE hero/gallery duplicate rule.
+  extract.py        article text + image candidates (og first, article-root
+                    scoped content images, avatar/junk filters).
+  fetcher.py        conditional GET, feed parsing, page fingerprint, probe.
+  llm.py            provider-agnostic client; no DB; raises LLMError.
+  web.py            create_app(config_path, conn=None). Thin routes only.
+  templates/        viewer.html, admin.html (assets stamped ?v={{app_version}})
+  static/viewer.js  stream, read tracking, PTR, pips, share renderer
+  static/admin.js   panels, autosave, feed table + cog modal, nav spy
+  static/style.css  CSS variables, light/dark via prefers-color-scheme
+tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
 ```
 
-## Invariants (do not break)
-1. **Token discipline.** An article is LLM-processed only when (a) new, and
-   (b) its extracted-text sha256 has no cached digest. Unchanged bare pages,
-   raw-mode feeds and sponsored-filtered items must not trigger *any* LLM
-   call. tests/test_refresh.py + test_sponsored.py + test_rawmode.py guard
-   this with call-count assertions — extend, never weaken.
-6. **UI contract is test-enforced** (`tests/test_ui_contract.py`): every
-   `hidden` overlay ships hidden AND a global `[hidden]{display:none
-   !important}` rules; every template control id is referenced by its
-   script; every emitted `data-act` has a handler; every `$('id')` hook
-   resolves. When you add a button/dialog/id/act, these tests tell you if
-   you forgot the wiring — never weaken them to pass.
-2. **Config is the source of truth.** Admin edits go PUT /api/config →
-   `_merge` → `save_config`. Don't store config in the DB. API keys never
-   leave the server except masked (`***`).
-3. **All SQL in `db.py`**; routes stay thin.
-4. **Cursors are (ts, id) keyset** — strictly-older pagination (newest mode)
-   or strictly-newer (oldest mode), never OFFSET. Read cursors (global +
-   per-feed) advance FORWARD only. The resume cursor bounds ONLY legacy
-   unfiltered no-fresh requests; the viewer boots fresh in newest mode and
-   at-resume in oldest mode.
-5. **Image refs are the cache's GC root**: any code deleting articles must
-   return their image filenames (db.delete_old_articles does) and maintenance
-   prunes orphans afterwards. Config `maintenance.*` governs retention/cap/images_per_post; `troubleshooting.log_llm_failures` gates articles.error_msg; db.release_files() = immediate orphan reclaim on image replace / feed delete.
-6. **Threading + sqlite**: each worker opens its OWN connection; a shared
-   handle across threads corrupts commit state (this stranded articles in
-   'processing' once — see stale-requeue).
-6. Status `hidden` is terminal-but-reversible via the sponsored toggle;
-   hidden items never appear in /api/articles or usage stats.
+## Invariants (never break; most are test-enforced)
+1. **Token discipline.** LLM only for new articles whose extracted-text hash
+   has no cached digest. Unchanged pages, raw-mode feeds, sponsored and
+   category-blocked items cost zero calls. Call-count tests guard this.
+2. **Config is the source of truth.** Admin writes go `PUT /api/config` ->
+   `_merge` -> `save_config`. No config in the DB. API keys leave the server
+   only masked.
+3. **All SQL lives in `db.py`.** Routes stay thin.
+4. **Keyset cursors `(ts, id)`, never OFFSET.** Read cursors only move forward.
+5. **Image references are the GC root.** Code that deletes articles or
+   replaces images must hand the old filenames to `db.release_files` (which
+   keeps files another article still references); maintenance sweeps orphans.
+6. **One SQLite connection per thread.** Background work (`/api/poll`,
+   scheduler workers, maintenance) opens its own. Sharing the request
+   connection with a thread corrupts commit state.
+7. **`hidden` is terminal but reversible** (sponsored/category toggles);
+   hidden items never reach `/api/articles` or stats.
+8. **UI contract** (`test_ui_contract.py`): `[hidden]{display:none
+   !important}` exists and overlays ship hidden; every template id is used
+   by its script; every emitted `data-act` has a handler; every `$('id')`
+   resolves. If it fails, wire the thing - never weaken the test.
+9. **Autosave doctrine.** Every editable admin field saves itself on
+   `change` (single-field patch) and flashes its label `cfg-saving` ->
+   `cfg-ok`/`cfg-bad`. No Apply buttons. Patches carry only the field that
+   changed (a full-form Apply once re-queued every hidden post).
 
-## Key data flows
-- **Add feed**: admin probes URL (`/api/feeds/probe` → find_feeds: feed |
-  verified candidates | confirm bare page) → POST /api/feeds → background
-  refresh_feed → upsert entries with per-post categories → summarize_pending
-  drains (claim → processing → ready/error/hidden) → viewer.
-- **Bare page poll**: fetch_page (304/hash guard) → unchanged: stop →
-  changed: candidates → LLM picks articles (usage logged as 'discovery') →
-  pending items.
-- **Read state**: cards send `{ts,id,feeds[],global}` beacons →
-  POST /api/position → mark_feed_read per feed (+ global cursor only when
-  `global:true`, i.e. New + All-feeds view). Sidebar pills from
-  `db.feed_unread`; card dots from `unread` column in /api/articles.
-- **Viewer boot**: order from /api/resume. Newest mode: at newest
-  (`?fresh=1`), resume shown as "Continue reading" button. Oldest mode:
-  boot AT resume (catch-up), end banner says "all caught up".
-  GET /api/articles (cursor + feed_id + since_ts + order) →
-  IntersectionObserver → beacons `{ts,id,reads:{feed:ts},global}` →
-  per-feed cursors precisely; global resume = deepest passed (newest mode)
-  or frontier (oldest mode).
+## Key flows
+- **Add feed:** probe -> POST /api/feeds -> background refresh -> upsert ->
+  summarize_pending drains -> viewer.
+- **Bare page:** conditional GET / hash guard -> unchanged stops; changed ->
+  candidate links -> LLM picks articles (usage `discovery`).
+- **Images:** `_cache_image` stores candidates (filename = sha256(url)[:24]),
+  then `imgstore.dedupe` collapses byte twins and perceptual twins (<=
+  `TWIN_BITS` of 64 on the centre crop). A gallery twin of the hero REPLACES
+  the hero (og images are usually cropped drafts). Stored `images` column =
+  all kept names, hero first; the viewer hides the hero from the gallery.
+  `images_mode` filters at read time (no re-digest).
+- **Read state:** dwell engine marks the topmost >=55%-visible unread card
+  after `ui.read_delay` s -> beacon -> per-feed cursors (+ global in New/all).
+- **Refresh:** button and pull-to-refresh share `doRefreshWork()`: POST
+  /api/poll -> settle wait unless throttled -> restart stream -> refresh
+  pips. The top rail (`#stream-progress`, min 400 ms) is the one busy signal.
 
-## Versioning policy (cut releases the same way every time)
-Given `MAJOR.MINOR.PATCH`, tagged `vX.Y.Z`, `__version__` in
-`rssgate/__init__.py`, CHANGELOG entry per release:
-- **MAJOR**: breaks a working client/config — endpoint removals/semantic
-  changes, config keys without migration, non-additive schema changes.
-- **MINOR**: backwards-compatible capability — new endpoints/params, admin
-  features, config keys with defaults, additive `_migrate()` columns.
-- **PATCH**: bug fixes, perf, docs, tests, UI polish without contract change.
-Rule of thumb: could an existing client/config notice? → MAJOR. Only new
-possibilities? → MINOR. Nothing contract-visible? → PATCH. When unsure, cut
-smaller and fix forward. Release checklist: pytest green → bump → changelog
-→ `git tag -a vX.Y.Z -m "..."` → `git push --follow-tags`.
-
-## Testing conventions
-- Never hit the network: monkeypatch `rssgate.fetcher._get`, `requests.get`,
-  use the `client` fixture (LLM methods stubbed class-wide in conftest).
-- FakeLLM pattern asserts call *counts* to prove token efficiency.
-- db.add_feed returns the inserted Row (`row["id"]`), not an int.
-
-## Hard-won lessons (the share-masthead saga, v0.42-v0.56)
-The share card burned a week of iterations. Root causes, in one place:
-1. **Changelog ran ahead of disk.** v0.52.0's release notes described a
-   rewrite whose patch script had died mid-`&&`-chain - the commit, tag
-   and notes shipped, the code never did. Never release from intent:
-   after any generator/patch script, grep the ON-DISK file for a marker
-   string of the new code, and curl the SERVED asset for the same.
-2. **"No difference after hard reload" = doubt your rule, not their
-   cache** (static assets have been ?v=-cache-busted since v0.52.3, so
-   client staleness is structurally dead). The v0.55.0 span really was
-   dead on arrival: the re-wrap escape clause fired on every 16:9 photo.
-3. **Test the shape that breaks.** The first span test used an
-   image-free fixture and passed while every photoreal card regressed.
-   Geometry tests must replicate the hostile production case (16:9 og
-   image + long title), not a convenient one - a test that cannot fail
-   in the exact scenario users reported is decoration.
-4. **When geometry moves, move probes by arithmetic**, not trial-and-
-   error: derive sample coords from the layout formulas (bandB = ...,
-   imgY = bandB - ih) and assert those instead of nudging constants.
-5. Spatial complaints need spatial assertions (pixels at x-zones, wall-
-   clock durations), and canvas/visual output is UI: verify it in the
-   browser tier, never by source inspection.
-
-## Running
+## Share card (viewer.js) - read before touching
 ```
-.venv/bin/python run.py --config config.yaml   # http://127.0.0.1:8088
-.venv/bin/python -m pytest                     # hermetic suite (ui tier excluded by default)
-.venv/bin/python -m pytest -m ui               # REAL BROWSER tier - required before any UI/template/CSS change
+renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
+  -> shareLayout(a, env)           PURE: measures text, returns
+                                   {W, H, ops, geo:{rects, lines, ...}}
+       layoutBanner | layoutFloat  one function per style (ui.share_style)
+  -> paintShare(ctx, L, assets)    dumb interpreter of ops (fill/img/text)
+  -> window.__lastShareGeo         geometry seam for tests
 ```
-See docs/TESTING.md. UI changes are not done until the browser tier passes; never verify UI by grepping sources - assert computed style, geometry, and page errors.
+- Layout code never draws; paint code never measures. A new style is a new
+  `layoutX` returning the same shape; register it in `shareLayout`.
+- `geo.rects` must include `hero`, `qr`, `caption`, `via`, `title`, `meta`
+  when present, and `geo.lines` every digest line box. The browser suite
+  checks every style for zero overlaps between text and graphics, pixels
+  inside the rects (photo, QR modules, accent), and visible paragraph gaps.
+- **banner** (default): full-bleed hero (natural ratio clamped 16:9..2.4:1,
+  centre cover crop), title, meta, one digest column, hairline, footer
+  (QR + "Read the full article" + domain | via RSSgate). Type scales with
+  card width so phone-sized views stay readable.
+- **float**: hero floats top-right of the digest; QR + caption sink to the
+  digest's bottom-left via a fixed-point loop (place, re-wrap, re-place until
+  stable); via bottom-right.
+- The agent usually cannot SEE the PNG. Verify with geometry + pixel probes,
+  and when the user judges the look, change one thing per iteration and ask.
+
+## Admin page (admin.html / admin.js)
+- Sections are `section.panel#sec-*`, listed in `.sec-nav` under group labels
+  (Overview / Reading / Sources / Processing). Keep nav order == section order.
+  The nav spy is visual only; it never scrolls the page.
+- Deep links `/admin#sec-*` are re-applied after the initial async renders
+  (page height changes); viewer pips link to `#sec-queue` / `#sec-failures`.
+- Destructive actions go in a `.danger-zone` with a plain-language note and
+  a confirm().
+- Feed rows are slim; per-feed settings live in the cog modal (`#cfg-modal`),
+  autosaving per field. The feed filter appears past 8 feeds.
+
+## Workflow and release checklist
+1. Make the change. For patch scripts: assert every anchor exists
+   (`assert old in s`) - a silent `str.replace` miss shipped fake fixes here.
+2. `node --check` edited JS; `pyflakes rssgate tests` (one known warning:
+   `web.refresh_all` is imported only as a conftest stub seam).
+3. Hermetic tier green. For any template/CSS/JS change: browser tier green
+   **twice** (a one-off failure that never repeats is a watch item; write
+   it down).
+4. Bump `__version__`, add the CHANGELOG entry (say what actually changed),
+   commit, `git tag -a vX.Y.Z`, `git push --follow-tags`.
+5. Restart the live server; confirm `/api/status` shows the version and,
+   for UI changes, curl the served asset for a marker of the new code.
+
+Versioning: MAJOR = breaks a client/config; MINOR = new capability (endpoint,
+param, admin feature, config key with default, additive column); PATCH = fix,
+perf, docs, tests, polish. When unsure, cut smaller.
+
+## Hard-won lessons
+1. **Release from disk, not intent.** v0.52.0 shipped notes for a rewrite
+   whose patch script died mid-chain. Grep the file and curl the served
+   asset before writing the changelog.
+2. **"No difference after reload" means doubt your logic first.** Assets are
+   cache-busted; the v0.55.0 title span was dead because its escape clause
+   fired on every 16:9 photo.
+3. **Test the shape that breaks.** A span test without a photo passed while
+   every real card failed. Use production-shaped fixtures (16:9 og image,
+   long title, long digest).
+4. **Derive probe coordinates from layout, never hand-tune them.** Share
+   tests read `__lastShareGeo`; hard-coded pixels had to be re-aimed on
+   every layout tweak and hid real regressions.
+5. **Prove a test can fail.** Break the guarded code once (and restore it
+   with a targeted edit, NOT `git checkout`, which wipes uncommitted work)
+   and watch the test go red.
+6. **Shared session DB = shared fate.** Browser tests that read global
+   counts or another test's feed broke four times in one day. Seed with
+   `_mkfeed()` and query by your own feed id.
+7. **Wait for state, not time.** `wait_for_timeout(350)` and "any label is
+   cfg-ok" were flaky; wait for the specific selector/condition.
+8. **Read the real API shape.** `/api/status` is flat (`pending`, `errors`);
+   a guessed nested `queue` object rendered pips that always showed 0.
+9. **Idempotency is a feature.** A repair pass that rewrote every row on
+   every run reported "232 repaired" for weeks; assert a second run is a no-op.
+10. **CSS has no `//` comments.** One swallowed the next rule and hid the
+    lightbox for five releases.
+
+## Known follow-ups (not started)
+- systemd user unit for the live server.
+- Per-feed smart_block indicator in the cog modal; "Retry all failed".
+- The browser tier is serial (~1 min); per-worker servers would allow xdist.

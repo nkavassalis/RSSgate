@@ -20,7 +20,7 @@ served file for a class name proves the class is *mentioned*, never that it is
 
 ## Tier 1 — hermetic (`pytest`)
 
-`tests/` minus the `ui` marker. No network, no browser, runs in ~4s, covers
+`tests/` minus the `ui` marker. No network, no browser, runs in seconds, covers
 config/DB/fetch/refresh/API/contract rules. This is the default run:
 
 ```
@@ -77,6 +77,52 @@ before booting, so a killed test run never wedges the next.
    Several "mysterious SIGTERM 143s" during test bring-up were self-inflicted
    this way. The ui fixture's evictor keeps its pattern split so it can never
    match the pytest process or the invoking shell.
+
+## Writing browser tests fast (helpers in `tests/test_ui_real.py`)
+
+The `ui_server` fixture is **session-scoped**: one app, one database, one
+image dir for the whole run (`UI_DB`, `UI_IMG_DIR`). That makes the tier
+fast and makes isolation your job:
+
+| Helper | Use |
+|---|---|
+| `_new_page(browser, **ctx)` | page with `pg.errors` collecting uncaught errors; end every test with `assert pg.errors == []` |
+| `_mkfeed(prefix)` | brand-new uniquely-addressed feed, returns id. **Seed your own data**; never depend on another test's feed or on global counts |
+| `_seed_article(fid, guid, title=, ts=, status=, summary=, image=, link=)` | one article in any status |
+| `_feed_article(pg, fid)` | the API card for that feed, fetched in-page (what the viewer would render) |
+| `RAIL_RECORDER` | init script recording `#stream-progress` class changes from document-start (DOMContentLoaded races the boot fetch) |
+| `SHARE_PROBE` / `_share(pg, art, zones)` | render a share card and count dark/accent/orange/blue pixels in named zones given in logical card px |
+| `share_page` fixture | light-scheme page for share tests; asserts no page errors on teardown |
+| `_crop_png(seed)` | portrait 200x600 orange image with a blue band at rows 270-330: proves crop/scale behaviour by colour |
+
+App-side test seams (keep them; they cost nothing in production):
+`window.__renderCardPng(a, {style, width})`, `window.__lastShareGeo`
+(layout rects/lines of the last render), `window.__SETTLE_MS` (shrinks the
+2.5 s poll settle wait), `window.refreshPips()`.
+
+Patterns:
+- **Wait for state, not time**: `wait_for_selector("label:has(#x).cfg-ok")`,
+  `wait_for_function(...)`; avoid `wait_for_timeout` except to prove
+  something does NOT happen.
+- **Spatial bugs get spatial assertions**: bounding boxes, computed styles,
+  pixel counts inside layout-derived rects, wall-clock durations.
+- **Parametrize over variants** (share styles, color schemes, viewports) so
+  a new variant inherits every invariant.
+- **Canary new guards**: temporarily break the code under test, see red,
+  restore with a targeted edit.
+- Playwright globs: `*` does not cross `/`; use `**/api/articles*`.
+- `fill()` does not fire `change`; press Tab after it.
+
+## Hermetic tier conventions
+- Never touch the network: monkeypatch `rssgate.fetcher._get` /
+  `requests.get`; the `client` fixture stubs LLM methods and
+  `web.refresh_feed` / `web.refresh_all`.
+- **API tests write through `client.conn`.** The `conn` fixture is a
+  different database file than the one the app serves.
+- `db.add_feed` returns the inserted Row (`row["id"]`).
+- Token discipline is proven with FakeLLM call counts; extend, never weaken.
+- Image tests must use hash-shaped filenames (`sha256(...)[:24] + ".png"`):
+  `imgstore.safe_path` rejects anything else, and release silently skips it.
 
 ## What tier 2 still cannot do (honest limits)
 
