@@ -56,7 +56,9 @@
       + (a.categories || []).map(c =>
           `<span class="chip user" title="your category">${esc(c)}</span>`).join(' ');
     const raw = a.digest_source === 'excerpt'
-      ? ' <span class="chip raw excerpt" title="the site only serves real browsers, so this is the excerpt the feed itself provides (no LLM used)">feed excerpt</span>'
+      ? ' <span class="chip raw excerpt" title="the full article could not be fetched (the site blocks automated readers), so this is the excerpt the feed itself provides">\u26a0 feed excerpt</span>'
+      : a.digest_source === 'feed'
+        ? ' <span class="chip raw" title="this feed is set to use the text the feed provides, without fetching the article page">from feed</span>'
       : a.feed_summarize === false
         ? ' <span class="chip raw" title="shown as extracted, no LLM used">raw</span>' : '';
     const sub = a.feed_description && a.feed_description !== a.feed_title

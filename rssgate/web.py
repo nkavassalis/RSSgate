@@ -168,15 +168,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def api_feeds():
         out = []
         for f in db.list_feeds(conn):
-            n = conn.execute("SELECT COUNT(*) c FROM articles WHERE feed_id=?",
-                             (f["id"],)).fetchone()["c"]
-            hid = conn.execute(
-                "SELECT COUNT(*) c FROM articles WHERE feed_id=? AND status='hidden'",
-                (f["id"],)).fetchone()["c"]
             out.append({k: f[k] for k in f.keys() if k not in ("etag", "last_modified")}
-                       | {"article_count": n, "hidden_count": hid,
-                          "ready_count": db.feed_ready_count(conn, f["id"]),
-                          "display_title": (f["custom_title"] or f["title"] or f["url"]),
+                       | db.feed_counts(conn, f["id"])
+                       | {"display_title": (f["custom_title"] or f["title"] or f["url"]),
                           "unread": db.feed_unread(conn, f["id"], f["last_read_ts"]),
                           "categories": db.parse_categories(f["categories"]),
                           "auto_categories": db.parse_categories(f["auto_categories"])})
@@ -253,6 +247,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             names = [c.strip().lower() for c in data["category_block"]
                      if c.strip()]
             fields["category_block"] = ",".join(names)
+        if data.get("content_source") in ("auto", "feed", "page"):
+            fields["content_source"] = data["content_source"]
         if data.get("unpause"):
             db.feed_unblock(conn, fid)        # user overrides a site-block pause
         if "hide_sponsored" in data:

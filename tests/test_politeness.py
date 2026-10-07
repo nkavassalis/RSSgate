@@ -203,3 +203,73 @@ def test_entry_excerpt_parses_and_backfills_known_posts(conn):
                       feed_text="never clobbers")
     assert conn.execute("SELECT feed_text FROM articles WHERE id=?",
                         (aid,)).fetchone()[0] == "filled later"
+
+
+# ---- per-feed content source: auto | feed | page --------------------------
+
+class CountLLM:
+    provider, model = "fake", "fake"
+
+    def __init__(self):
+        self.calls, self.last = 0, ""
+
+    def chat(self, messages, **k):
+        self.calls += 1
+        self.last = messages[-1]["content"]
+        return "digest of feed text", {"prompt_tokens": 1, "completion_tokens": 1}
+
+
+def _feed_with(conn, url, src, text):
+    fid = db.add_feed(conn, url, type_="feed")["id"]
+    db.update_feed(conn, fid, content_source=src)
+    aid = db.upsert_article(conn, fid, "x", url + "/x", "t", None, feed_text=text)
+    return fid, aid
+
+
+def test_feed_only_never_fetches_page_and_shows_teaser(conn, cfg, monkeypatch):
+    hits = []
+    monkeypatch.setattr("requests.get", lambda url, **kw: hits.append(url) or R())
+    llm = CountLLM()
+    _, aid = _feed_with(conn, "https://fo.test", "feed", "A teaser line. " * 8)
+    assert refresh.summarize_pending(conn, load_config(cfg), llm, limit=1) == 1
+    a = conn.execute("SELECT status, digest_source, summary FROM articles"
+                     " WHERE id=?", (aid,)).fetchone()
+    assert a["status"] == "ready" and a["digest_source"] == "feed"
+    assert llm.calls == 0 and hits == []          # no page, no tokens
+
+
+def test_feed_only_long_text_gets_llm_digest(conn, cfg, monkeypatch):
+    monkeypatch.setattr("requests.get", lambda url, **kw: (_ for _ in ()).throw(
+        AssertionError("article page must not be fetched")))
+    llm = CountLLM()
+    full = "A full article paragraph carried by the feed itself. " * 20
+    _, aid = _feed_with(conn, "https://fl.test", "feed", full)
+    refresh.summarize_pending(conn, load_config(cfg), llm, limit=1)
+    a = conn.execute("SELECT status, digest_source, summary FROM articles"
+                     " WHERE id=?", (aid,)).fetchone()
+    assert llm.calls == 1 and full[:200] in llm.last
+    assert a["status"] == "ready" and a["digest_source"] == "feed"
+    assert a["summary"] == "digest of feed text"
+
+
+def test_page_only_never_falls_back(conn, cfg, monkeypatch):
+    monkeypatch.setattr("requests.get", lambda url, **kw: CF())
+    _, aid = _feed_with(conn, "https://po.test", "page", "Plenty of feed text. " * 9)
+    refresh.summarize_pending(conn, load_config(cfg), NoLLM(), limit=1)
+    a = conn.execute("SELECT status, digest_source FROM articles WHERE id=?",
+                     (aid,)).fetchone()
+    assert a["digest_source"] != "excerpt" and a["status"] in ("error", "pending")
+
+
+def test_content_source_put_and_excerpt_count(client):
+    conn = client.conn
+    fid = db.add_feed(conn, "https://cs.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "a", "https://cs.test/a", "t", None)
+    db.set_article(conn, aid, status="ready", digest_source="excerpt")
+    assert client.put(f"/api/feeds/{fid}", json={"content_source": "bogus"}
+                      ).status_code == 200
+    f = next(x for x in client.get("/api/feeds").get_json() if x["id"] == fid)
+    assert f["content_source"] == "auto" and f["excerpt_count"] == 1
+    client.put(f"/api/feeds/{fid}", json={"content_source": "feed"})
+    f = next(x for x in client.get("/api/feeds").get_json() if x["id"] == fid)
+    assert f["content_source"] == "feed"

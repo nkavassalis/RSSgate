@@ -334,6 +334,7 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40,
 
 
 EXCERPT_MIN = 80     # shorter feed text isn't worth a card on its own
+FULLTEXT_MIN = 600   # feed text at least this long is digested like a page
 
 
 def _use_excerpt(conn, art) -> bool:
@@ -369,40 +370,63 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                 db.set_article(conn, art["id"], status="hidden")  # 0 tokens spent
                 continue
             from . import net
-            resp = net.get(art["link"], timeout=30)
-            if net.is_challenge(resp):
-                # browser-only page: the feed's own text is all we can get
-                if _use_excerpt(conn, art):
-                    done += 1
-                else:
-                    fail(conn, cfg, art["id"], "site requires a browser"
-                         " (bot challenge) and the feed has no text")
-                continue
-            if resp.status_code in net.BLOCK_STATUSES:
-                # the SITE refuses us: pause the whole feed, keep the post
-                # queued (not failed) - burning the backlog deepens bans
-                until = db.feed_block(conn, art["feed_id"], _backoff_minutes(cfg))
-                db.set_article(conn, art["id"], status="pending", started_at=None)
-                log.warning("feed %s blocked by site (HTTP %s); paused until %s",
-                            art["feed_id"], resp.status_code, until)
-                continue
-            if not resp.ok:
-                transient = resp.status_code == 429 or resp.status_code >= 500
-                fail(conn, cfg, art["id"],
-                     f"fetch HTTP {resp.status_code}"
-                     + (" (transient)" if transient else ""))
-                continue
+            src = (feed["content_source"] if feed and "content_source" in
+                   feed.keys() else "auto") or "auto"
             cap = cfg["summarizer"]["max_input_chars"]
-            if "max_input_chars" in feed.keys() and feed["max_input_chars"]:
+            if feed and "max_input_chars" in feed.keys() and feed["max_input_chars"]:
                 cap = min(cap, feed["max_input_chars"])   # per-feed tighter cap
-            text = extract_article_text(resp.text, cap)
-            if len(text) < 120:
-                if _use_excerpt(conn, art):       # page empty, feed has text
+            if src == "feed":
+                # feed text only: never touch the article page
+                ft = (art["feed_text"] or "") if "feed_text" in art.keys() else ""
+                if len(ft) < EXCERPT_MIN:
+                    fail(conn, cfg, art["id"], "feed provides no text"
+                         " (content source: feed text only)")
+                    continue
+                db.set_article(conn, art["id"], digest_source="feed")
+                if len(ft) < FULLTEXT_MIN:            # a teaser: show as-is
+                    db.set_article(conn, art["id"], summary=ft, status="ready",
+                                   summarized_at=db.now_iso(), llm_ms=0,
+                                   body_hash=hashlib.sha256(ft.encode()).hexdigest())
+                    _cache_image(conn, art, "")
                     done += 1
                     continue
-                fail(conn, cfg, art["id"], f"extracted text too short ({len(text)} ch)")
-                continue
-            _cache_image(conn, art, resp.text)
+                text, page_html = ft[:cap], ""
+            else:
+                resp = net.get(art["link"], timeout=30)
+                if net.is_challenge(resp):
+                    # browser-only page: the feed's own text is all we can get
+                    if src == "auto" and _use_excerpt(conn, art):
+                        done += 1
+                    else:
+                        fail(conn, cfg, art["id"], "site requires a browser"
+                             " (bot challenge)" + ("" if src == "page" else
+                                                   " and the feed has no text"))
+                    continue
+                if resp.status_code in net.BLOCK_STATUSES:
+                    # the SITE refuses us: pause the whole feed, keep the post
+                    # queued (not failed) - burning the backlog deepens bans
+                    until = db.feed_block(conn, art["feed_id"], _backoff_minutes(cfg))
+                    db.set_article(conn, art["id"], status="pending", started_at=None)
+                    log.warning("feed %s blocked by site (HTTP %s); paused until %s",
+                                art["feed_id"], resp.status_code, until)
+                    continue
+                if not resp.ok:
+                    transient = resp.status_code == 429 or resp.status_code >= 500
+                    fail(conn, cfg, art["id"],
+                         f"fetch HTTP {resp.status_code}"
+                         + (" (transient)" if transient else ""))
+                    continue
+                text = extract_article_text(resp.text, cap)
+                if len(text) < 120:
+                    if src == "auto" and _use_excerpt(conn, art):
+                        done += 1                     # page empty, feed has text
+                        continue
+                    fail(conn, cfg, art["id"], f"extracted text too short ({len(text)} ch)")
+                    continue
+                page_html = resp.text
+                if "digest_source" in art.keys() and art["digest_source"]:
+                    db.set_article(conn, art["id"], digest_source="")
+            _cache_image(conn, art, page_html)
             body_hash = hashlib.sha256(text.encode()).hexdigest()
             if feed and not feed["summarize"]:
                 # raw mode: cleaned extracted text IS the digest (zero tokens)

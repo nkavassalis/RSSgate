@@ -70,6 +70,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(feeds)")}
     if "hide_sponsored" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
+    if "content_source" not in cols:      # auto | feed | page
+        conn.execute("ALTER TABLE feeds ADD COLUMN content_source TEXT"
+                     " NOT NULL DEFAULT 'auto'")
     if "backoff_until" not in cols:       # site-block pause (403/429)
         conn.execute("ALTER TABLE feeds ADD COLUMN backoff_until TEXT")
     if "backoff_level" not in cols:
@@ -414,6 +417,17 @@ def recent_errors(conn, limit: int = 20) -> list[sqlite3.Row]:
 
 
 TRANSIENT_RE = None  # set in refresh to avoid re-import; see refresh.TRANSIENT_RE
+
+
+def feed_counts(conn, feed_id: int) -> dict:
+    """Per-feed article tallies for the admin table, one query."""
+    r = conn.execute(
+        "SELECT COUNT(*) n,"
+        " SUM(status='hidden') hid, SUM(status='ready') rdy,"
+        " SUM(status='ready' AND digest_source='excerpt') exc"
+        " FROM articles WHERE feed_id=?", (feed_id,)).fetchone()
+    return {"article_count": r["n"] or 0, "hidden_count": r["hid"] or 0,
+            "ready_count": r["rdy"] or 0, "excerpt_count": r["exc"] or 0}
 
 
 def feed_ready_count(conn, feed_id: int) -> int:

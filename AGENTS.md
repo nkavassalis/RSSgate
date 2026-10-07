@@ -111,10 +111,14 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
   `images_mode` filters at read time (no re-digest).
 - **Read state:** dwell engine marks the topmost >=55%-visible unread card
   after `ui.read_delay` s -> beacon -> per-feed cursors (+ global in New/all).
-- **Excerpts:** `fetcher.entry_excerpt` stores each entry's feed text at
-  ingest (filled into known posts if missing, never overwritten). Used
-  when the page is a challenge or extracts to <120 chars (`_use_excerpt`,
-  needs >= `EXCERPT_MIN` chars).
+- **Content source** (`feeds.content_source`): `auto` = article page, with
+  fallback to the feed's own text (`fetcher.entry_excerpt`, stored at ingest
+  as `articles.feed_text`) when the page is a challenge or extracts to <120
+  chars (`_use_excerpt`, >= `EXCERPT_MIN`); `feed` = never fetch article
+  pages (teaser shown as-is, >= `FULLTEXT_MIN` chars digested by the LLM);
+  `page` = never fall back. `articles.digest_source` records the outcome
+  ('' page / 'excerpt' forced fallback / 'feed' chosen) and drives the card
+  chips and the admin "N from feed excerpt" badge.
 - **Digest queue:** `claim_pending` takes the NEWEST pending post first
   (across feeds, skipping paused feeds), so a new feed's latest posts
   digest first and its backlog drips in at the paced rate.

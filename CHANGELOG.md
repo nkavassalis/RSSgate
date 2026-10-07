@@ -35,6 +35,21 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.64.0] — 2026-10-07
+
+### Added
+- Per-feed Content source (cog modal, autosave; feeds.content_source):
+  auto (article page, fall back to the feed's text - default), feed (never
+  fetch article pages; teasers shown as-is, feed text >= 600 chars gets an
+  LLM digest like a page), page (never fall back; failures stay visible).
+- Fallback is flagged: cards show "⚠ feed excerpt" (forced fallback) or
+  "from feed" (chosen source); feed rows show "N from feed excerpt" and a
+  non-default source badge; the cog stats line counts fallbacks.
+  GET /api/feeds adds content_source and excerpt_count.
+
+### Internal
+- /api/feeds counts moved into db.feed_counts (one query; SQL back in db.py).
+
 ## Reconstructed history (v0.32.0 - v0.63.0)
 
 From v0.32 onward the release script inserted entries with an

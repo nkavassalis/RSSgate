@@ -1034,7 +1034,35 @@ def test_excerpt_cards_are_labelled(ui_server, browser):
     if card.count() == 0:                       # select by title fallback
         card = pg.locator(".card", has_text="Excerpt probe")
     chip = card.locator(".chip.excerpt")
-    assert chip.count() == 1 and chip.inner_text() == "feed excerpt"
+    assert chip.count() == 1 and "feed excerpt" in chip.inner_text()
     assert chip.evaluate("e => getComputedStyle(e).display") != "none"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_content_source_select_and_fallback_badges(ui_server, browser):
+    """Cog 'Content source' autosaves; the feed row shows the non-default
+    source and how many posts fell back to the feed's excerpt."""
+    from rssgate import db
+    fid = _mkfeed("csrc")
+    aid = _seed_article(fid, "x1", title="fallback probe")
+    conn = db.connect(UI_DB)
+    db.set_article(conn, aid, digest_source="excerpt"); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    assert "1 from feed excerpt" in row.locator(".excerpt-pill").inner_text()
+    row.locator("button[data-act=cfg]").click()
+    pg.wait_for_selector(".cfg-panel [data-role=csrc]")
+    assert "fell back" in pg.inner_text(".cfg-panel .hint")
+    pg.select_option(".cfg-panel [data-role=csrc]", "feed")
+    pg.wait_for_selector(".cfg-panel label:has([data-role=csrc]).cfg-ok",
+                         timeout=5000)
+    pg.click(".cfg-panel button[data-act=cfg-done]")
+    pg.wait_for_selector(f"tr[data-id='{fid}'] .src-pill", timeout=5000)
+    assert row.locator(".src-pill").inner_text() == "feed text only"
+    conn = db.connect(UI_DB)
+    assert db.get_feed(conn, fid)["content_source"] == "feed"
+    conn.close()
     assert pg.errors == []
     pg.close()

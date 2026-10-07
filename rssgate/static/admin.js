@@ -47,6 +47,10 @@ async function renderFeeds() {
           <button class="btn ghost sm" data-act="rename" title="rename feed">&#9998;</button>
         </span>
           <div class="hint">${esc(f.last_status || '')}</div>
+          ${f.content_source && f.content_source !== 'auto'
+            ? `<span class="src-pill">${f.content_source === 'feed' ? 'feed text only' : 'article page only'}</span>` : ''}
+          ${f.excerpt_count
+            ? `<span class="excerpt-pill" title="the article page couldn't be used, so these posts show the feed's own excerpt">${f.excerpt_count} from feed excerpt</span>` : ''}
           ${f.backoff_until && f.backoff_until > new Date().toISOString().slice(0, 19) + 'Z'
             ? `<span class="paused-pill" title="the site refused our requests (403/429); polling and digests for this feed wait until then">paused by site until ${esc(f.backoff_until.slice(11, 16))} UTC</span>`
             : ''}</td>
@@ -639,10 +643,20 @@ async function openFeedCfg(id) {
     <p class="hint"><span class="type-tag">${esc(feed.type || 'feed')}</span>
        ${feed.article_count || 0} posts \u00b7
        ${feed.ready_count || 0} digested \u00b7
-       ${feed.unread || 0} unread${feed.hidden_count ?
+       ${feed.unread || 0} unread${feed.excerpt_count ?
+        ` \u00b7 <b class="warn">${feed.excerpt_count} fell back to the feed's excerpt</b>` : ''}${feed.hidden_count ?
         ` \u00b7 <b>${feed.hidden_count} hidden by filters</b>` : ''}
        \u00b7 images:${esc(feed.images_mode || 'auto')}</p>
     <div class="cfg-grid">
+      <label>Content source
+        <select data-role="csrc">
+          ${[['auto', 'Auto - article page, fall back to the feed\'s text'],
+             ['feed', 'Feed text only - never fetch article pages'],
+             ['page', 'Article page only - never fall back']].map(([v, t]) =>
+            `<option value="${v}"${(feed.content_source || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <small>(feed text only suits sites that block readers or feeds that
+        already carry full articles; long feed text still gets an LLM digest)</small></label>
       <label class="snap-pick"><input type="checkbox" data-role="llm"
         ${feed.summarize === 0 ? '' : 'checked'} style="width:auto">
         Use LLM digest <small>(unchecked = show raw extracted text, zero tokens)</small></label>
@@ -699,6 +713,7 @@ async function openFeedCfg(id) {
     llm:     () => ({ summarize: q('[data-role=llm]').checked }),
     spons:   () => ({ hide_sponsored: q('[data-role=spons]').checked }),
     imgmode: () => ({ images_mode: q('[data-role=imgmode]').value }),
+    csrc:    () => ({ content_source: q('[data-role=csrc]').value }),
     cat:     () => ({ category_block: [...body.querySelectorAll(
                  '.cat-pick input:not(:checked)')].map(i => i.dataset.cat) }),
   };

@@ -377,3 +377,13 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
   padding:1px 8px; border-radius:999px; color:#b26a00;
   background:color-mix(in srgb, #f5a623 18%, transparent); }
 @media (prefers-color-scheme: dark) { .paused-pill { color:#ffc56b; } }
+
+.src-pill, .excerpt-pill { display:inline-block; margin:3px 4px 0 0;
+  font-size:.72rem; padding:1px 8px; border-radius:999px; }
+.src-pill { border:1px solid var(--line); color:var(--muted); }
+.excerpt-pill, .chip.excerpt { color:#b26a00;
+  background:color-mix(in srgb, #f5a623 18%, transparent); }
+.chip.excerpt { border-color:transparent; }
+b.warn { color:#b26a00; }
+@media (prefers-color-scheme: dark) {
+  .excerpt-pill, .chip.excerpt, b.warn { color:#ffc56b; } }
