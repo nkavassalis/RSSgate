@@ -916,3 +916,31 @@ def test_share_text_never_touches_qr_or_via(ui_server, browser):
     assert r["dark"] < 30, f"text encroaching the via/QR line: {r}"
     assert pg.errors == []
     pg.close()
+
+
+def test_share_qr_is_the_last_line(ui_server, browser):
+    """Fixed point holds: no digest text below the QR caption - the QR
+    zone bottom equals (or exceeds) the final text baseline."""
+    fid = _seed_crop_probe()
+    conn = __import__("rssgate").db.connect(UI_DB)
+    __import__("rssgate").db.set_article(
+        conn, conn.execute("SELECT id FROM articles WHERE link="
+        "'https://crop.test/1'").fetchone()["id"],
+        summary=" ".join(["Digest prose of moderate length keeps adding"
+                         " lines until the column is long enough that"
+                         " the code block can nestle into its final"
+                         " rows at the bottom left margin"] * 4))
+    conn.commit(); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    geo = pg.evaluate("""async (a) => {
+      await window.__renderCardPng(a);
+      return window.__lastShareGeo; }""", art)
+    assert geo["qzT"] is not None and geo["qs"] > 0
+    assert geo["dY"] <= geo["qzT"] + geo["qs"] + 22 + 2, \
+        f"text line lives below the QR caption: {geo}"
+    assert pg.errors == []
+    pg.close()

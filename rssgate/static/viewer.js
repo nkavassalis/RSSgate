@@ -397,19 +397,24 @@
       }
       return { out, dY, trunc };
     }
-    const pass1 = flow(null);
-    const qzB0 = Math.max(pass1.dY, heroB);
-    let qzT = Math.max(bandTop, qzB0 - QS - CAP);
-    const flow2 = flow(qzT);
-    if (Math.abs(flow2.dY - pass1.dY) > 48) {   // zone shifted a lot?
-      qzT = Math.max(bandTop, Math.max(flow2.dY, heroB) - QS - CAP);
-      var final = flow(qzT);
-    } else var final = flow2;
+    // fixed point: place QR at the text's foot, re-wrap, repeat until
+    // the QR bottom and the text bottom meet (QR is the last row)
+    let qzT = null, final = flow(null);
+    if (qr) {
+      for (let it = 0; it < 6; it++) {
+        const t = Math.max(bandTop,
+                           Math.max(final.dY, heroB) - QS - CAP);
+        if (qzT !== null && Math.abs(t - qzT) < 2) { qzT = t; break; }
+        qzT = t;
+        final = flow(qzT);
+      }
+    }
     if (final.trunc && final.out.length)
       final.out[final.out.length - 1].t =
         (final.out[final.out.length - 1].t || '')
           .replace(/[,.;:\s]+$/, '') + '\u2026';
-    const qrBottom = qzT + QS + CAP;
+    const qrBottom = qr ? qzT + QS + CAP : 0;
+    window.__lastShareGeo = { qzT, qs: QS, dY: final.dY };  // test seam
     const contentBottom = Math.max(final.dY, heroB, qrBottom) + 12;
     const H = Math.round(contentBottom) + 20 + PAD;
     const cv = document.createElement('canvas');
