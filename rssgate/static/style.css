@@ -387,3 +387,8 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
 b.warn { color:#b26a00; }
 @media (prefers-color-scheme: dark) {
   .excerpt-pill, .chip.excerpt, b.warn { color:#ffc56b; } }
+
+.challenge-pill { display:inline-block; margin:3px 4px 0 0;
+  font-size:.72rem; padding:1px 8px; border-radius:999px; color:#c0392b;
+  background:color-mix(in srgb, #e74c3c 16%, transparent); }
+@media (prefers-color-scheme: dark) { .challenge-pill { color:#ff7a6e; } }

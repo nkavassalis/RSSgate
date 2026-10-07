@@ -73,6 +73,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "content_source" not in cols:      # auto | feed | page
         conn.execute("ALTER TABLE feeds ADD COLUMN content_source TEXT"
                      " NOT NULL DEFAULT 'auto'")
+    if "challenge_at" not in cols:        # site serves a browser check
+        conn.execute("ALTER TABLE feeds ADD COLUMN challenge_at TEXT")
+    if "challenge_hits" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN challenge_hits INTEGER"
+                     " NOT NULL DEFAULT 0")
     if "backoff_until" not in cols:       # site-block pause (403/429)
         conn.execute("ALTER TABLE feeds ADD COLUMN backoff_until TEXT")
     if "backoff_level" not in cols:
@@ -657,6 +662,15 @@ def claim_pending(conn, limit: int = 1) -> list[sqlite3.Row]:
     rows = cur.fetchall()
     conn.commit()
     return rows
+
+
+def feed_challenge(conn, feed_id: int) -> None:
+    """Flag a site that answers with a browser check (Cloudflare-style
+    "Just a moment"). Informational: feeds whose pages can't be fetched
+    should switch content_source to 'feed'."""
+    conn.execute("UPDATE feeds SET challenge_at=?, challenge_hits=challenge_hits+1"
+                 " WHERE id=?", (now_iso(), feed_id))
+    conn.commit()
 
 
 def feed_paused(feed) -> bool:

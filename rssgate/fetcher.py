@@ -35,10 +35,13 @@ def _get(url: str, etag: str | None = None, last_modified: str | None = None) ->
     except requests.RequestException as exc:
         return {"ok": False, "not_modified": False, "status": 0, "error": str(exc),
                 "content": b"", "content_type": "", "etag": None, "last_modified": None}
+    chal = net.is_challenge(resp)
     if resp.status_code == 304:
         return {"ok": True, "not_modified": True, "status": 304, "content": b"",
-                "content_type": "", "etag": None, "last_modified": None}
+                "content_type": "", "etag": None, "last_modified": None,
+                "challenge": chal}
     return {
+        "challenge": chal,
         "ok": resp.ok, "not_modified": False, "status": resp.status_code,
         "content": resp.content if resp.ok else b"",
         "content_type": resp.headers.get("content-type", ""),

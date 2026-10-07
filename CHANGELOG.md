@@ -35,6 +35,21 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.65.0] — 2026-10-07
+
+### Added
+- Browser-check detection flag: when a site answers with a Cloudflare-style
+  JS challenge (feed, bare-page or article fetch), the feed is flagged
+  (feeds.challenge_at / challenge_hits). Admin shows a "browser-check
+  site" badge on the row and a warning right at the Content source
+  control recommending "Feed text only"; feed status explains itself.
+- Challenges are informational only: never a block, never a backoff.
+
+### Watch item
+- One hermetic test failed once in five full runs (name lost to the
+  re-run) and never recurred; likely the known cross-test thread/timing
+  interference class. Being watched, not ignored.
+
 ## [0.64.0] — 2026-10-07
 
 ### Added

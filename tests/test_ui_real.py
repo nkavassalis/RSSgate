@@ -1066,3 +1066,24 @@ def test_content_source_select_and_fallback_badges(ui_server, browser):
     conn.close()
     assert pg.errors == []
     pg.close()
+
+
+def test_challenge_flag_warns_in_admin(ui_server, browser):
+    """A site that serves a browser check gets a row badge and a warning
+    right at the Content source control."""
+    from rssgate import db
+    fid = _mkfeed("chal")
+    conn = db.connect(UI_DB)
+    db.feed_challenge(conn, fid); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    badge = row.locator(".challenge-pill")
+    assert badge.count() == 1
+    assert "browser-check site" in badge.inner_text()
+    row.locator("button[data-act=cfg]").click()
+    pg.wait_for_selector(".cfg-panel [data-role=csrc]")
+    txt = pg.inner_text(".cfg-panel label:has([data-role=csrc])")
+    assert "browser check" in txt and "Feed text only" in txt
+    assert pg.errors == []
+    pg.close()

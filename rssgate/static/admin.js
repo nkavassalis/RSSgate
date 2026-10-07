@@ -51,6 +51,8 @@ async function renderFeeds() {
             ? `<span class="src-pill">${f.content_source === 'feed' ? 'feed text only' : 'article page only'}</span>` : ''}
           ${f.excerpt_count
             ? `<span class="excerpt-pill" title="the article page couldn't be used, so these posts show the feed's own excerpt">${f.excerpt_count} from feed excerpt</span>` : ''}
+          ${f.challenge_at
+            ? `<span class="challenge-pill" title="the site answers automated requests with a browser check (often Cloudflare 'Just a moment'): article pages can't be fetched">browser-check site</span>` : ''}
           ${f.backoff_until && f.backoff_until > new Date().toISOString().slice(0, 19) + 'Z'
             ? `<span class="paused-pill" title="the site refused our requests (403/429); polling and digests for this feed wait until then">paused by site until ${esc(f.backoff_until.slice(11, 16))} UTC</span>`
             : ''}</td>
@@ -655,8 +657,9 @@ async function openFeedCfg(id) {
              ['page', 'Article page only - never fall back']].map(([v, t]) =>
             `<option value="${v}"${(feed.content_source || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}
         </select>
-        <small>(feed text only suits sites that block readers or feeds that
-        already carry full articles; long feed text still gets an LLM digest)</small></label>
+        <small>${feed.challenge_at
+          ? '<b class="warn">\u26a0 This site answers with a browser check (often Cloudflare \u201cJust a moment\u201d): its article pages can\'t be fetched. \u201cFeed text only\u201d is usually the right choice here.</b>'
+          : '(feed text only suits sites that block readers or feeds that already carry full articles; long feed text still gets an LLM digest)'}</small></label>
       <label class="snap-pick"><input type="checkbox" data-role="llm"
         ${feed.summarize === 0 ? '' : 'checked'} style="width:auto">
         Use LLM digest <small>(unchecked = show raw extracted text, zero tokens)</small></label>

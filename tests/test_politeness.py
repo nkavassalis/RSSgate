@@ -273,3 +273,39 @@ def test_content_source_put_and_excerpt_count(client):
     client.put(f"/api/feeds/{fid}", json={"content_source": "feed"})
     f = next(x for x in client.get("/api/feeds").get_json() if x["id"] == fid)
     assert f["content_source"] == "feed"
+
+
+# ---- browser-check detection flag -----------------------------------------
+
+def test_challenge_flag_recorded_on_feed(conn, cfg, monkeypatch):
+    """Every challenge we see flags the feed (for the admin warning)."""
+    monkeypatch.setattr("requests.get", lambda url, **kw: CF())
+    fid = db.add_feed(conn, "https://flg.test/feed", type_="feed")["id"]
+    db.upsert_article(conn, fid, "c1", "https://flg.test/1", "t", None)
+    refresh.summarize_pending(conn, load_config(cfg), NoLLM(), limit=1)
+    f = db.get_feed(conn, fid)
+    assert f["challenge_hits"] == 1 and f["challenge_at"]
+    db.upsert_article(conn, fid, "c2", "https://flg.test/2", "t", None)
+    refresh.summarize_pending(conn, load_config(cfg), NoLLM(), limit=1)
+    f = db.get_feed(conn, fid)
+    assert f["challenge_hits"] == 2
+    assert not db.feed_paused(f)               # challenges don't back off
+
+
+def test_bare_page_challenge_flags_feed(conn, cfg, monkeypatch):
+    monkeypatch.setattr("requests.get", lambda url, **kw: CF())
+    fid = db.add_feed(conn, "https://blg.test/news", type_="page")["id"]
+    status = refresh.refresh_feed(conn, db.get_feed(conn, fid), load_config(cfg))
+    assert "browser check" in status
+    assert db.get_feed(conn, fid)["challenge_hits"] == 1
+
+
+def test_challenge_flag_visible_in_feeds_api(client):
+    conn = client.conn
+    fid = db.add_feed(conn, "https://vis.test/feed", type_="feed")["id"]
+    db.feed_challenge(conn, fid)
+    f = next(x for x in client.get("/api/feeds").get_json() if x["id"] == fid)
+    assert f["challenge_at"] and f["challenge_hits"] == 1
+    other = db.add_feed(conn, "https://vis.test/other", type_="feed")["id"]
+    f2 = next(x for x in client.get("/api/feeds").get_json() if x["id"] == other)
+    assert not f2.get("challenge_at")

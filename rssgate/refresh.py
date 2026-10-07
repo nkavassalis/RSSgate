@@ -89,6 +89,13 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
 
     if ftype == "feed":
         res = fetch_feed(url, feed["etag"], feed["last_modified"])
+        if not res["ok"] and res.get("challenge"):
+            db.feed_challenge(conn, feed_id)
+            status = ("browser check blocks this site (Cloudflare-style) -"
+                      " try Content source: Feed text only")
+            db.update_feed(conn, feed_id, last_fetched_at=db.now_iso(),
+                           last_status=status)
+            return status
         if not res["ok"] and res.get("status") in (403, 429):
             until = db.feed_block(conn, feed_id, _backoff_minutes(cfg))
             status = (f"blocked by site (HTTP {res['status']}),"
@@ -137,6 +144,11 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
 
     # bare page: skip everything unless the page content actually changed
     res = fetch_page(url, feed["etag"], feed["last_modified"])
+    if not res["ok"] and res.get("challenge"):
+        db.feed_challenge(conn, feed_id)
+        status = "browser check blocks this site (Cloudflare-style)"
+        db.update_feed(conn, feed_id, last_fetched_at=db.now_iso(), last_status=status)
+        return status
     if not res["ok"] and res.get("status") in (403, 429):
         until = db.feed_block(conn, feed_id, _backoff_minutes(cfg))
         status = f"blocked by site (HTTP {res['status']}), paused until {until}"
@@ -394,6 +406,7 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             else:
                 resp = net.get(art["link"], timeout=30)
                 if net.is_challenge(resp):
+                    db.feed_challenge(conn, art["feed_id"])
                     # browser-only page: the feed's own text is all we can get
                     if src == "auto" and _use_excerpt(conn, art):
                         done += 1
