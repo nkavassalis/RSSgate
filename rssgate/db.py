@@ -683,6 +683,23 @@ def article_needing_image(conn, name: str) -> str | None:
     return row["image_url"] if row else None
 
 
+def delete_articles_status(conn, status: str) -> tuple[int, set[str]]:
+    """Delete all articles with the given terminal status.
+    Returns (deleted_count, referenced image filenames)."""
+    rows = conn.execute(
+        "DELETE FROM articles WHERE status=?"
+        " RETURNING image, images", (status,)).fetchall()
+    conn.commit()
+    files: set[str] = set()
+    for r in rows:
+        if r["image"]:
+            files.add(r["image"])
+        for name in (r["images"] or "").split(","):
+            if name and name != "-":
+                files.add(name)
+    return len(rows), files
+
+
 def delete_old_articles(conn, months: int) -> tuple[int, set[str]]:
     """Delete articles older than `months` (approx 30.44-day months) across
     all statuses. Returns (deleted_count, image filenames they referenced)."""

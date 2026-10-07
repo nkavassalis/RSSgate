@@ -944,3 +944,76 @@ def test_share_qr_is_the_last_line(ui_server, browser):
         f"text line lives below the QR caption: {geo}"
     assert pg.errors == []
     pg.close()
+
+
+def test_status_pips_visibility_and_links(ui_server, browser):
+    """Zero counts -> both pips display:none. Seed pending+error ->
+    counts render, green links to admin queue, red to failures."""
+    from rssgate import db
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    assert pg.eval_on_selector("#pip-queue",
+                               "e => getComputedStyle(e).display") == "none"
+    assert pg.eval_on_selector("#pip-fail",
+                               "e => getComputedStyle(e).display") == "none"
+    conn = db.connect(UI_DB)
+    fid = db.add_feed(conn, "https://pips.test/feed", type_="feed")["id"]
+    for i, st in (("q1", "pending"), ("q2", "pending"), ("f1", "error")):
+        aid = db.upsert_article(conn, fid, i, f"https://pips.test/{i}",
+                                "pip probe", "2027-03-01T00:00:00Z")
+        conn.execute("UPDATE articles SET status=?, summary='x'"
+                     " WHERE id=?", (st, aid))
+    conn.commit(); conn.close()
+    pg.reload(wait_until="networkidle")
+    assert pg.inner_text("#pip-queue-n") == "2"
+    assert pg.inner_text("#pip-fail-n") == "1"
+    assert pg.eval_on_selector("#pip-queue",
+                               "e => getComputedStyle(e).display") != "none"
+    pg.click("#pip-fail")
+    pg.wait_for_url("**/admin#sec-failures", wait_until="networkidle")
+    top = pg.evaluate("""() => document.getElementById('sec-failures')
+        .getBoundingClientRect().top""")
+    assert 0 <= top < 200, f"failures panel not anchored into view: {top}"
+    pg.go_back(wait_until="networkidle")
+    pg.click("#pip-queue")
+    pg.wait_for_url("**/admin#sec-queue", wait_until="networkidle")
+    top = pg.evaluate("""() => document.getElementById('sec-queue')
+        .getBoundingClientRect().top""")
+    assert 0 <= top < 200, f"queue panel not anchored into view: {top}"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_admin_clear_failed_button_flow(ui_server, browser):
+    """Clear-all button empties the error pile, reports it, and the
+    viewer's red pip vanishes on next refresh."""
+    from rssgate import db
+    conn = db.connect(UI_DB)
+    fid = db.add_feed(conn, "https://clearbtn.test/feed",
+                      type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "cb1", "https://clearbtn.test/1",
+                            "doomed post", "2027-03-02T00:00:00Z")
+    conn.execute("UPDATE articles SET status='error', summary='x'"
+                 " WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-failures", wait_until="networkidle")
+    pg.wait_for_selector("#fail-clear-btn")
+    pg.on("dialog", lambda d: d.accept())
+    pg.click("#fail-clear-btn")
+    pg.wait_for_function(
+        "document.getElementById('fail-clear-result')"
+        ".textContent.includes('cleared')", timeout=5000)
+    txt = pg.inner_text("#fail-clear-result")
+    import re
+    assert re.search(r"cleared \d+ posts?", txt), txt
+    c2 = db.connect(UI_DB)
+    n = c2.execute("SELECT COUNT(*) c FROM articles WHERE"
+                   " status='error' AND feed_id=?", (fid,)).fetchone()["c"]
+    assert n == 0
+    c2.close()
+    pg.goto(ui_server + "/", wait_until="networkidle")
+    assert pg.eval_on_selector("#pip-fail",
+                               "e => getComputedStyle(e).display") == "none"
+    assert pg.errors == []
+    pg.close()

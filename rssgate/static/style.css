@@ -346,3 +346,17 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
 .cfg-modal { max-width:640px; width:min(640px,94vw); max-height:86vh; overflow:auto; }
 
 .grid-break { grid-column: 1 / -1; height: 0; }
+
+/* ---- status pips (viewer topbar) ---- */
+.pip { font-size:12px; font-weight:600; text-decoration:none;
+  padding:3px 10px; border-radius:999px; margin-left:8px;
+  align-self:center; }
+.pip-ok  { background:color-mix(in srgb, #2ecc71 18%, transparent);
+  color:#27ae60; }
+.pip-err { background:color-mix(in srgb, #e74c3c 18%, transparent);
+  color:#c0392b; }
+@media (prefers-color-scheme: dark) {
+  .pip-ok  { color:#4be08a; }
+  .pip-err { color:#ff7a6e; }
+}
+section.panel { scroll-margin-top:72px; }

@@ -528,6 +528,12 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         from . import maint
         return jsonify(maint.run_all(conn, load_config(config_path)))
 
+    @app.route("/api/articles/clear-failed", methods=["POST"])
+    def api_clear_failed():
+        n, files = db.delete_articles_status(conn, "error")
+        released = db.release_files(conn, files)
+        return jsonify({"deleted": n, "images_released": released})
+
     @app.route("/api/status")
     def api_status():
         import os, time as _t

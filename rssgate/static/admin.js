@@ -761,4 +761,16 @@ async function renderFailures() {
     }));
 }
 $('fail-refresh').addEventListener('click', renderFailures);
+$('fail-clear-btn').addEventListener('click', async () => {
+  if (!confirm('Delete ALL failed posts? Their cached images go too.'))
+    return;
+  const r = await (await fetch('/api/articles/clear-failed',
+    { method: 'POST' })).json();
+  $('fail-clear-result').textContent =
+    `cleared ${r.deleted} post` + (r.deleted === 1 ? '' : 's')
+    + `, released ${r.images_released} image`
+    + (r.images_released === 1 ? '' : 's');
+  renderFailures();
+  if (window.refreshPips) window.refreshPips();
+});
 $('cfg-logfail').addEventListener('change', () => {});   // saved with Save config

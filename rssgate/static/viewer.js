@@ -535,6 +535,19 @@
   }
   window.addEventListener('touchend', ptrEnd, { passive: true });
   window.addEventListener('touchcancel', ptrEnd, { passive: true });
+  async function refreshPips() {
+    try {
+      const s = await (await fetch('/api/status')).json();
+      const pend = (s.pending || 0) + (s.processing || 0);
+      const fail = s.errors || 0;
+      $('pip-queue-n').textContent = pend;
+      $('pip-fail-n').textContent = fail;
+      $('pip-queue').hidden = pend === 0;
+      $('pip-fail').hidden = fail === 0;
+    } catch (e) { /* decorative */ }
+  }
+  window.refreshPips = refreshPips;
+
   async function doRefreshWork() {       // shared by button + pull-to-refresh
     try {
       const r = await fetch('/api/poll', { method: 'POST' });
@@ -543,6 +556,7 @@
         await new Promise(rz => setTimeout(rz, 2500));
     } catch { /* offline: restart anyway */ }
     restart();
+    refreshPips();
   }
   async function doPullRefresh() {
     ptrBusy = true;
@@ -760,6 +774,7 @@
       $('new-above-btn').dataset.resumeId = s.resume_id || '0';
     }
     loadNext();
+    refreshPips();
   });
 
   // ---- continue-reading: jump the stream to the saved resume point -------

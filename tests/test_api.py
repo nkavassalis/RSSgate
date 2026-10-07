@@ -181,3 +181,22 @@ def test_trimmed_hero_revives_lazily(client, tmp_path, monkeypatch):
         return R()
     monkeypatch.setattr("requests.get", fake_get)
     assert client.get(f"/image/{name}").status_code == 200   # revived
+
+
+def test_clear_failed_endpoint(client):
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://clear.test/f", type_="feed")["id"]
+    for i in range(3):
+        aid = db.upsert_article(conn, fid, f"e{i}", f"https://clear.test/{i}",
+                                "failing", None)
+        conn.execute("UPDATE articles SET status='error' WHERE id=?", (aid,))
+    ok = db.upsert_article(conn, fid, "k", "https://clear.test/ok",
+                           "survivor", None)
+    conn.commit()
+    r = client.post("/api/articles/clear-failed")
+    assert r.status_code == 200 and r.get_json()["deleted"] == 3
+    left = conn.execute("SELECT COUNT(*) c FROM articles").fetchone()["c"]
+    assert left == 1
+    assert conn.execute("SELECT id FROM articles WHERE id=?",
+                        (ok,)).fetchone()
