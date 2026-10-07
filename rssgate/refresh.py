@@ -239,9 +239,13 @@ def _cache_image(conn, art, page_html: str):
             return None
         # Content-level dedupe: the same photo under variant URLs (og
         # size vs body size) must not eat a gallery slot next to itself.
-        import hashlib
         d = imgstore.directory()
-        seen, keep = set(), []
+        import hashlib
+        seen, sigs, keep = set(), [], []
+
+        def ham(a, b):
+            return bin(a ^ b).count("1")
+
         for u, n in pairs:
             try:
                 h = hashlib.sha256((d / n).read_bytes()).hexdigest()
@@ -249,8 +253,13 @@ def _cache_image(conn, art, page_html: str):
                 h = None
             if h and h in seen:
                 continue
+            ph = imgstore.ahash(n)
+            if ph is not None and any(ham(ph, o) <= 10 for o in sigs):
+                continue                       # same photo, variant URL
             if h:
                 seen.add(h)
+            if ph is not None:
+                sigs.append(ph)
             keep.append((u, n))
         urls = [u for u, _ in keep]
         names = [n for _, n in keep]

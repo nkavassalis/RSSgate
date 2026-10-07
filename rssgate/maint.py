@@ -44,6 +44,44 @@ def prune_orphans(conn) -> tuple[int, int]:
     return n, size
 
 
+def dedupe_galleries(conn) -> int:
+    """Drop gallery entries perceptually identical to the hero or an
+    earlier kept image (resized twins slip past byte hashes). Repairs
+    rows written before perceptual dedupe existed. Returns count."""
+    n = 0
+    rows = list(conn.execute(
+        "SELECT id, image, images FROM articles"
+        " WHERE images IS NOT NULL AND images LIKE '%,%'"))
+    for r in rows:
+        names = [x for x in (r["images"] or "").split(",")
+                 if x and x != "-"]
+        if len(names) < 2 or not r["image"]:
+            continue
+        hero = imgstore.ahash(r["image"])
+        if hero is None:
+            continue
+
+        def ham(a, b):
+            return bin(a ^ b).count("1")
+
+        keep, sigs = [], [hero]
+        for nm in names:
+            if nm == r["image"]:
+                continue
+            ph = imgstore.ahash(nm)
+            if ph is not None and any(ham(ph, o) <= 10 for o in sigs):
+                continue
+            if ph is not None:
+                sigs.append(ph)
+            keep.append(nm)
+        if len(keep) != len(names):
+            db.set_article(conn, r["id"],
+                           images=",".join(keep) if keep else "-")
+            db.release_files(conn, set(names) - set(keep))
+            n += 1
+    return n
+
+
 def enforce_cache_size(max_mb: float) -> tuple[int, int]:
     """Delete oldest cache files until under the cap. Returns (count, bytes)."""
     d = imgstore.directory()
@@ -90,6 +128,7 @@ def run_all(conn, cfg) -> dict:
         report["orphans_freed_mb"] = round(osize / 1e6, 2)
 
         # size cap may delete referenced files -> clean dangling refs too
+        report["galleries_deduped"] = dedupe_galleries(conn)
         max_mb = float(cfg.get("maintenance", {}).get("images_max_mb", 0) or 0)
         d = imgstore.directory()
         if d and max_mb > 0:

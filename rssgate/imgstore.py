@@ -116,6 +116,25 @@ def safe_path(name: str) -> Path | None:
     return p if p.is_file() else None
 
 
+def ahash(name: str, bits: int = 16) -> int | None:
+    """Average perceptual hash (grayscale, mean-threshold): survives
+    resize variants that byte hashing cannot. Returns bits*bits bitmask."""
+    if not _dir:
+        return None
+    try:
+        from PIL import Image
+        with Image.open(_dir / name) as im:
+            im = im.convert("L").resize((bits, bits), Image.BILINEAR)
+            px = list(im.tobytes())
+        avg = sum(px) / len(px)
+        mask = 0
+        for p in px:
+            mask = (mask << 1) | (1 if p > avg else 0)
+        return mask
+    except Exception:  # noqa: BLE01 - decorative dedupe
+        return None
+
+
 def cache_mb() -> float:
     """Live image-cache size in MB (scandir sum; admin panel truth)."""
     import os

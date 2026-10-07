@@ -543,13 +543,13 @@ def test_stream_progress_rail(ui_server, browser):
     installed before the app scripts run."""
     pg = _new_page(browser)
     pg.add_init_script("""
-      addEventListener('DOMContentLoaded', () => {
-        const el = document.getElementById('stream-progress');
-        window.__rail = [];
-        new MutationObserver(() => window.__rail.push([el.className,
-          performance.now()]))
-          .observe(el, { attributes: true, attributeFilter: ['class'] });
-      });
+      window.__rail = [];
+      new MutationObserver(rs => {
+        for (const r of rs)
+          if (r.type === 'attributes' && r.target.id === 'stream-progress')
+            window.__rail.push([r.target.className, performance.now()]);
+      }).observe(document, { childList: true, subtree: true,
+                             attributes: true, attributeFilter: ['class'] });
     """)
     pg.goto(ui_server + "/", wait_until="networkidle")
     pg.wait_for_timeout(600)               # let the first spin settle

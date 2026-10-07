@@ -95,3 +95,43 @@ def test_status_cache_mb_is_live(conn, tmp_path):
         (d / "a").write_bytes(b"x" * 3_000_000)
     imgstore.init(str(d))
     assert imgstore.cache_mb() == 3.0
+
+
+def test_dedupe_galleries_repairs_resized_twins(conn, tmp_path):
+    from rssgate import db, imgstore, maint
+    from PIL import Image
+    import io
+    imgstore.init(str(tmp_path / "images"))
+    d = tmp_path / "images"
+
+    def base(size, kind):
+        im = Image.new("L", (32, 32))
+        for y in range(32):
+            for x in range(32):
+                im.putpixel((x, y), 0 if kind == "checker"
+                            and (x // 8 + y // 8) % 2 else
+                            (x * 7 + y * 3) % 256)
+        if size != (32, 32):
+            im = im.resize(size, Image.BILINEAR)
+        return im
+
+    def png(name, size=(32, 32), kind="gradient"):
+        buf = io.BytesIO(); base(size, kind).save(buf, "PNG")
+        (d / name).write_bytes(buf.getvalue())
+        return name
+    import hashlib
+    def hname(url):
+        return hashlib.sha256(url.encode()).hexdigest()[:24] + ".png"
+    fid = db.add_feed(conn, "https://ah.test/f", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "a1", "https://ah.test/1", "T", None)
+    hero = png(hname("https://ah.test/hero"))
+    twin = png(hname("https://ah.test/twin"), size=(64, 64))
+    other = png(hname("https://ah.test/other"), kind="checker")
+    db.set_article(conn, aid, image=hero,
+                   images=",".join([hero, twin, other]))
+    assert maint.dedupe_galleries(conn) == 1
+    row = conn.execute("SELECT images FROM articles WHERE id=?",
+                       (aid,)).fetchone()
+    imgs = [x for x in row["images"].split(",") if x and x != "-"]
+    assert imgs == [other] or imgs == []           # twin gone, distinct kept
+    assert (d / other).exists() and not (d / twin).exists()
