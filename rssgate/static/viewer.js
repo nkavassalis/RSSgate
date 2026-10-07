@@ -357,19 +357,13 @@
       if (out.length === 4) out[3] = out[3].replace(/[,.;:\s]+$/, '') + '\u2026';
       return out;
     }
-    // pass 1: title spans the FULL card width over the bottom-flush
-    // graphics; only long titles that would touch the image/QR band
-    // re-wrap to the narrow column
-    const fullW = W - PAD * 2;
-    const narrowW = (qr ? imgX - GAP - QS - GAP : imgX - GAP) - PAD;
-    let tLines = titleLines(a.title, fullW);
-    const estBand = Math.max(PAD + ih, PAD + tLines.length * 33 + 6 + 26 + QS);
-    const imgTopEst = estBand - ih;
-    if (PAD + tLines.length * 33 + 6 > imgTopEst)
-      tLines = titleLines(a.title, narrowW);
+    // title spans the FULL card width; the bottom-flush image drops
+    // BELOW the title band instead of stealing its right side
+    const tLines = titleLines(a.title, W - PAD * 2);
     const titleH = tLines.length * 33 + 6;
     const yMeta = PAD + titleH + 6;                 // meta baseline
-    const bandB = Math.max(PAD + ih, yMeta + 20 + QS);   // shared bottom
+    const bandB = Math.max(PAD + ih, yMeta + 20 + QS,
+                           yMeta + 20 + ih);        // image under title
     const imgY = bandB - ih;                        // bottom-flush
     const qrY = bandB - QS;                         // bottom-flush
     const yDigest = bandB + 20;

@@ -715,10 +715,10 @@ def _probe_crop_colors(pg, ui_server, fid):
       cv.width = bmp.width; cv.height = bmp.height;
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
       const SX = Math.round(bmp.width * 0.94);        // small photo column
-      const top = [...g.getImageData(SX, 80, 1, 1).data];
-      const mid = [...g.getImageData(SX, 230, 1, 1).data];  // photo centre
+      const top = [...g.getImageData(SX, 250, 1, 1).data];
+      const mid = [...g.getImageData(SX, 361, 1, 1).data];  // photo centre
       let dark = 0;
-      const z = g.getImageData(1200, 200, 220, 210).data;  // QR zone
+      const z = g.getImageData(1200, 380, 220, 200).data;  // QR zone
       for (let i = 0; i < z.length; i += 4)
         if (z[i] < 90 && z[i+1] < 90 && z[i+2] < 90) dark++;
       return { top: top.slice(0, 3), mid: mid.slice(0, 3), dark,
