@@ -341,7 +341,7 @@
       ih = Math.round(hero.height * s);
     }
     const imgX = W - PAD - iw;
-    const QS = qr ? Math.max(84, Math.min(ih || 100, 150)) : 0;
+    const QS = qr ? Math.max(72, Math.min((ih || 100) * 0.8, 120)) : 0;
     const CAP = 22;                          // caption line under QR
     m.font = `700 26px ${fam}`;
     function wrapAt(text, tw, max) {
