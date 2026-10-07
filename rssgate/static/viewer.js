@@ -331,20 +331,25 @@
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
-    /* masthead: title+meta left | QR | hero right.
-       QR bottom == hero bottom; QR top rides just under the meta. */
-    const TW = hero ? Math.round(W * 0.33) : 0;
-    const TH = hero ? Math.round(TW * 84 / 110) : 0;
+    /* masthead v4: photo small, flush right, bottom-flush with the QR;
+       QR rides the date line; digest starts under the lower edge. */
+    const IW = Math.round(W * 0.24);                 // photo width cap
+    const IH = 150;                                  // photo height cap
+    let iw = 0, ih = 0;
+    if (hero) {
+      const sc0 = Math.min(IW / hero.width, IH / hero.height);
+      iw = Math.round(hero.width * sc0);
+      ih = Math.round(hero.height * sc0);
+    }
     const QS = qr ? 100 : 0;
-    const thumbX = W - PAD - TW;
-    const qrX = thumbX - GAP - QS;
-    const textW = (qr ? qrX - GAP : thumbX) - PAD;
+    const imgX = W - PAD - iw;
     m.font = `700 26px ${fam}`;
     function titleLines(text) {
+      const tw = (qr ? imgX - GAP - QS - GAP : imgX - GAP) - PAD;
       const out = []; let line = '';
       for (const w of (text || '(untitled)').split(/\s+/).filter(Boolean)) {
         const t = line ? line + ' ' + w : w;
-        if (m.measureText(t).width > textW && line) {
+        if (m.measureText(t).width > tw && line) {
           out.push(line); line = w;
           if (out.length === 4) break;
         } else line = t;
@@ -355,14 +360,11 @@
     }
     const tLines = titleLines(a.title);
     const titleH = tLines.length * 33 + 6;
-    const yMeta = PAD + titleH + 6;                // meta baseline
-    // hero top at PAD; QR band: top >= meta bottom + 12, bottom pinned
-    // to hero bottom (a big QR may stretch the hero band down)
-    const qrTopMin = yMeta + 22;
-    const THeff = Math.max(TH, QS + qrTopMin - PAD);
-    const qrY = PAD + THeff - QS;                  // flush with hero bottom
-    const mastheadB = Math.max(PAD + THeff, qr ? qrY + QS : 0);
-    const yDigest = mastheadB + 20;
+    const yMeta = PAD + titleH + 6;                 // meta baseline
+    const bandB = Math.max(PAD + ih, yMeta + 20 + QS);   // shared bottom
+    const imgY = bandB - ih;                        // bottom-flush
+    const qrY = bandB - QS;                         // bottom-flush
+    const yDigest = bandB + 20;
     const full = W - PAD * 2;
     m.font = `16px ${fam}`;
     const dAll = wrapLines(m, a.summary || '', full);
@@ -380,23 +382,20 @@
     const meta = [(a.feed_title || '').trim(), when]
                    .filter(Boolean).join('  \u00b7  ');
     const contentBottom = yDigest + digestH;
-    const H = Math.round(contentBottom) + 44;     // via-row in the pad
+    const H = Math.round(contentBottom) + 44;      // via-row in the pad
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
     x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff');
     x.fillRect(0, 0, W, H);
     if (hero) {
-      x.save(); roundRect(x, thumbX, PAD, TW, THeff, 10); x.clip();
-      const sc = Math.max(TW / hero.width, THeff / hero.height);
-      const dw = hero.width * sc, dh = hero.height * sc;
-      x.drawImage(hero, thumbX + (TW - dw) / 2,
-                  PAD + (THeff - dh) / 2, dw, dh);
+      x.save(); roundRect(x, imgX, imgY, iw, ih, 10); x.clip();
+      x.drawImage(hero, imgX, imgY, iw, ih);
       x.restore();
     }
     if (qr) {
-      x.fillStyle = '#ffffff'; x.fillRect(qrX, qrY, QS, QS);
-      x.drawImage(qr, qrX, qrY, QS, QS);
+      x.fillStyle = '#ffffff'; x.fillRect(imgX - GAP - QS, qrY, QS, QS);
+      x.drawImage(qr, imgX - GAP - QS, qrY, QS, QS);
     }
     let y = PAD;
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
