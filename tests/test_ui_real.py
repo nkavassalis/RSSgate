@@ -800,3 +800,89 @@ def test_share_title_spans_full_width(ui_server, browser):
     assert r["dark"] > 200, f"title does not span right zone: {r}"
     assert pg.errors == []
     pg.close()
+
+
+def test_share_title_spans_even_with_photo(ui_server, browser):
+    """THE case v0.55.0 failed: a 16:9 photo article with a wide title
+    must STILL span - text pixels past the old wrap boundary, in the
+    title band ABOVE the image top edge."""
+    import hashlib
+    from io import BytesIO
+    from rssgate import db
+    from PIL import Image
+    import rssgate.imgstore as ig
+    conn = db.connect(UI_DB)
+    row = conn.execute("SELECT id FROM feeds WHERE"
+                       " url='https://wide.test/feed'").fetchone()
+    fid = row["id"] if row else db.add_feed(
+        conn, "https://wide.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "w2", "https://wide.test/2",
+        "Photos must never steal the headline territory on share cards",
+        "2027-02-02T00:00:00Z")
+    img = Image.new("RGB", (1200, 675), (255, 136, 0))
+    buf = BytesIO(); img.save(buf, "PNG")
+    ig.init(str(UI_IMG_DIR))
+    fname = (hashlib.sha256(b"https://wide.test/hero.png").hexdigest()[:24]
+             + ".png")
+    UI_IMG_DIR.joinpath(fname).write_bytes(buf.getvalue())
+    db.set_article(conn, aid, image=fname,
+                   image_url="https://wide.test/hero.png")
+    conn.execute("UPDATE articles SET status='ready',"
+                 " summary='wide photo digest' WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=10').then(r => r.json())
+        .then(d => d.items.find(i => i.title.startsWith('Photos must')))""",
+        fid)
+    assert art, "wide+photo article missing"
+    r = pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      const zone = g.getImageData(1240, 66, 260, 58).data;  // title right
+      let dark = 0;
+      for (let i = 0; i < zone.length; i += 4)
+        if (zone[i] < 120 && zone[i+1] < 120) dark++;
+      return { dark };
+    }""", art)
+    assert r["dark"] > 200, f"title dodged the photo instead of spanning: {r}"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_share_via_line_on_band(ui_server, browser):
+    """via-RSSgate sits LEFT on the hero/QR bottom line; the old
+    bottom-right footer zone is gone (card ends right after content)."""
+    fid = _seed_crop_probe()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    r = pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      const accent = (X, Y) => { const q = g.getImageData(X, Y, 1, 1).data;
+        return q[2] > 200 && q[0] < 190 && q[1] < 160; };
+      // band bottom line: bandB=274 logical -> phys y 548; scan y 530..560
+      let onBand = 0;
+      for (let Y = 528; Y < 566; Y += 2)
+        for (let X = 56; X < 320; X += 2) if (accent(X, Y)) onBand++;
+      // old footer corner: bottom-right 200x30
+      let footer = 0;
+      const z = g.getImageData(bmp.width - 260, bmp.height - 60, 230, 50);
+      for (let i = 0; i < z.data.length; i += 4)
+        if (z.data[i+2] > 200 && z.data[i] < 190) footer++;
+      return { onBand, footer, h: bmp.height };
+    }""", art)
+    assert r["onBand"] > 60, f"no via label on the band line: {r}"
+    assert r["footer"] < 30, f"old footer still haunted: {r}"
+    assert pg.errors == []
+    pg.close()

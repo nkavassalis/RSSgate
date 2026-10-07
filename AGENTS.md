@@ -136,6 +136,29 @@ smaller and fix forward. Release checklist: pytest green → bump → changelog
 - FakeLLM pattern asserts call *counts* to prove token efficiency.
 - db.add_feed returns the inserted Row (`row["id"]`), not an int.
 
+## Hard-won lessons (the share-masthead saga, v0.42-v0.56)
+The share card burned a week of iterations. Root causes, in one place:
+1. **Changelog ran ahead of disk.** v0.52.0's release notes described a
+   rewrite whose patch script had died mid-`&&`-chain - the commit, tag
+   and notes shipped, the code never did. Never release from intent:
+   after any generator/patch script, grep the ON-DISK file for a marker
+   string of the new code, and curl the SERVED asset for the same.
+2. **"No difference after hard reload" = doubt your rule, not their
+   cache** (static assets have been ?v=-cache-busted since v0.52.3, so
+   client staleness is structurally dead). The v0.55.0 span really was
+   dead on arrival: the re-wrap escape clause fired on every 16:9 photo.
+3. **Test the shape that breaks.** The first span test used an
+   image-free fixture and passed while every photoreal card regressed.
+   Geometry tests must replicate the hostile production case (16:9 og
+   image + long title), not a convenient one - a test that cannot fail
+   in the exact scenario users reported is decoration.
+4. **When geometry moves, move probes by arithmetic**, not trial-and-
+   error: derive sample coords from the layout formulas (bandB = ...,
+   imgY = bandB - ih) and assert those instead of nudging constants.
+5. Spatial complaints need spatial assertions (pixels at x-zones, wall-
+   clock durations), and canvas/visual output is UI: verify it in the
+   browser tier, never by source inspection.
+
 ## Running
 ```
 .venv/bin/python run.py --config config.yaml   # http://127.0.0.1:8088

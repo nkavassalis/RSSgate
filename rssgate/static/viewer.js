@@ -331,60 +331,74 @@
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
-    /* masthead v4: photo small, flush right, bottom-flush with the QR;
-       QR rides the date line; digest starts under the lower edge. */
-    const IW = Math.round(W * 0.30);                 // photo width cap
-    const IH = 175;                                  // photo height cap
+    /* masthead: full-width title, full-width meta line; hero + QR drop
+       BELOW the meta, bottom-flush with each other; digest flows left
+       of them, then full width past their bottom. */
+    const IW = Math.round(W * 0.30), IH = 175, QS = qr ? 100 : 0;
     let iw = 0, ih = 0;
     if (hero) {
-      const sc0 = Math.min(IW / hero.width, IH / hero.height);
-      iw = Math.round(hero.width * sc0);
-      ih = Math.round(hero.height * sc0);
+      const s = Math.min(IW / hero.width, IH / hero.height);
+      iw = Math.round(hero.width * s);
+      ih = Math.round(hero.height * s);
     }
-    const QS = qr ? 100 : 0;
     const imgX = W - PAD - iw;
     m.font = `700 26px ${fam}`;
-    function titleLines(text, tw) {
+    function wrapAt(text, tw, max) {
       const out = []; let line = '';
       for (const w of (text || '(untitled)').split(/\s+/).filter(Boolean)) {
         const t = line ? line + ' ' + w : w;
         if (m.measureText(t).width > tw && line) {
           out.push(line); line = w;
-          if (out.length === 4) break;
+          if (out.length === max) break;
         } else line = t;
       }
-      if (line && out.length < 4) out.push(line);
-      if (out.length === 4) out[3] = out[3].replace(/[,.;:\s]+$/, '') + '\u2026';
+      if (line && out.length < max) out.push(line);
+      if (out.length === max)
+        out[max - 1] = out[max - 1].replace(/[,.;:\s]+$/, '') + '\u2026';
       return out;
     }
-    // title spans the FULL card width; the bottom-flush image drops
-    // BELOW the title band instead of stealing its right side
-    const tLines = titleLines(a.title, W - PAD * 2);
+    const tLines = wrapAt(a.title, W - PAD * 2, 4);
     const titleH = tLines.length * 33 + 6;
-    const yMeta = PAD + titleH + 6;                 // meta baseline
-    const bandB = Math.max(PAD + ih, yMeta + 20 + QS,
-                           yMeta + 20 + ih);        // image under title
-    const imgY = bandB - ih;                        // bottom-flush
-    const qrY = bandB - QS;                         // bottom-flush
-    const yDigest = bandB + 20;
+    const yMeta = PAD + titleH + 6;                    // meta baseline
+    const bandTop = yMeta + 26;                        // below the meta
+    const bandB = Math.max(bandTop + ih, bandTop + QS + 8);
+    const imgY = bandB - ih, qrY = bandB - QS;
+    const yDigest = bandTop;
     const full = W - PAD * 2;
+    const bandTextW = (qr ? imgX - GAP - QS - GAP : imgX - GAP) - PAD;
+    // zone-aware digest: narrow beside the graphics, full past them
     m.font = `16px ${fam}`;
-    const dAll = wrapLines(m, a.summary || '', full);
-    let dLines = dAll.slice(0, 40);
-    while (dLines.length && dLines[dLines.length - 1] === '') dLines.pop();
-    if (dAll.length > 40) {
-      const li = dLines.length - 1;
-      dLines[li] = dLines[li].replace(/[,.;:\s]+$/, '') + '\u2026';
+    const dLines = [];
+    let spacers = 0, dY = yDigest, truncated = false;
+    const paras = (a.summary || '').split(/\n\s*\n/).filter(p => p.trim());
+    outer: for (let p = 0; p < paras.length; p++) {
+      if (p) { spacers++; dY += 8; }
+      let words = paras[p].split(/\s+/);
+      while (words.length) {
+        const narrow = dY < bandB - 26;   // bottom line: via-RSSgate's
+        const tw = narrow ? bandTextW : full;
+        let line = '', i = 0;
+        for (; i < words.length; i++) {
+          const t = line ? line + ' ' + words[i] : words[i];
+          if (m.measureText(t).width > tw && line) break;
+          line = t;
+        }
+        if (dLines.length >= 40) { truncated = true; break outer; }
+        dLines.push(line); words = words.slice(i); dY += 24;
+      }
     }
-    const digestH = dLines.length * 24 + 10
-                  + dLines.filter(l => !l).length * 12;
+    if (truncated && dLines.length)
+      dLines[dLines.length - 1] =
+        dLines[dLines.length - 1].replace(/[,.;:\s]+$/, '') + '\u2026';
+    if (dY < bandB) dY = bandB;           // resume below the band
+    const digestH = dY - yDigest;
     const when = new Date(a.ts).toLocaleString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
     const meta = [(a.feed_title || '').trim(), when]
                    .filter(Boolean).join('  \u00b7  ');
-    const contentBottom = yDigest + digestH;
-    const H = Math.round(contentBottom) + 44;      // via-row in the pad
+    const contentBottom = Math.max(bandB, yDigest + digestH);
+    const H = Math.round(contentBottom) + PAD + 4;  // no footer row
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
@@ -408,12 +422,9 @@
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
     x.font = `16px ${fam}`;
     y = yDigest;
-    dLines.forEach(l => { y += 24; if (l) x.fillText(l, PAD, y);
-                             else y += 12; });
+    for (const l of dLines) { y += 24; x.fillText(l, PAD, y); }
     x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-    x.textAlign = 'right';
-    x.fillText('via RSSgate', W - PAD, H - PAD + 4);
-    x.textAlign = 'left';
+    x.fillText('via RSSgate', PAD, bandB);        // on the band's line
     return await new Promise(res => cv.toBlob(res, 'image/png'));
   }
 
