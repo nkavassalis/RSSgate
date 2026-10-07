@@ -330,9 +330,9 @@
                              .catch(() => null) : null;
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
-    /* masthead: full-width title + meta; band below = QR left, digest
-       middle, hero right, all bottom-flush; caption + full-width text
-       below. */
+    /* Layout: full-width title + meta; hero floats top-right of the
+       digest; QR floats bottom-LEFT of the digest with a caption,
+       text wrapping around both. Two passes locate the QR zone. */
     const IW = Math.round(W * 0.30), IH = 175;
     let iw = 0, ih = 0;
     if (hero) {
@@ -342,9 +342,7 @@
     }
     const imgX = W - PAD - iw;
     const QS = qr ? Math.max(84, Math.min(ih || 100, 150)) : 0;
-    const qrX = PAD;
-    const textX = PAD + QS + GAP;
-    const bandTextW = (imgX - GAP) - textX;
+    const CAP = 22;                          // caption line under QR
     m.font = `700 26px ${fam}`;
     function wrapAt(text, tw, max) {
       const out = []; let line = '';
@@ -362,43 +360,57 @@
     }
     const tLines = wrapAt(a.title, W - PAD * 2, 4);
     const titleH = tLines.length * 33 + 6;
-    const yMeta = PAD + titleH + 6;                    // meta baseline
-    const bandTop = yMeta + 26;
-    const bandB = Math.max(bandTop + ih, bandTop + QS + 8);
-    const imgY = bandB - ih, qrY = bandB - QS;
-    // digest flows in the middle channel, then full width below
-    m.font = `16px ${fam}`;
-    const dLines = [];
-    let dY = bandTop, truncated = false;
+    const yMeta = PAD + titleH + 6;
+    const bandTop = yMeta + 26;                  // digest starts here
+    const heroB = bandTop + ih;                  // hero bottom (right)
     const paras = (a.summary || '').split(/\n\s*\n/).filter(p => p.trim());
-    outer: for (let p = 0; p < paras.length; p++) {
-      if (p) dY += 8;
-      let words = paras[p].split(/\s+/);
-      while (words.length) {
-        const narrow = dY + 24 <= bandB - 8;
-        if (!narrow && dY < bandB + 34) dY = bandB + 34;  // caption air
-        const tw = narrow ? bandTextW : W - PAD * 2;
-        let line = '', i = 0;
-        for (; i < words.length; i++) {
-          const t = line ? line + ' ' + words[i] : words[i];
-          if (m.measureText(t).width > tw && line) break;
-          line = t;
+    function flow(qzT) {                       // qzT=null → hero only
+      m.font = `16px ${fam}`;
+      const out = [];
+      let dY = bandTop, trunc = false;
+      outer: for (let p = 0; p < paras.length; p++) {
+        if (p) dY += 8;
+        let words = paras[p].split(/\s+/);
+        while (words.length) {
+          const y = dY + 24;
+          const inHero = y + 24 > bandTop && dY < heroB - 6;
+          const inQr = qzT !== null && dY + 24 > qzT - 24 && dY < qzT + QS + CAP;
+          let x0 = PAD;
+          let tw = W - PAD * 2;
+          if (inHero) tw = imgX - GAP - PAD;
+          if (inQr) { x0 = PAD + QS + GAP;
+                      tw = (inHero ? imgX - GAP : W - PAD) - x0; }
+          if (tw < 120) { dY += 24; out.push({ t: '', y, x: x0 });
+                          words = words; break; }
+          let line = '', i = 0;
+          for (; i < words.length; i++) {
+            const t = line ? line + ' ' + words[i] : words[i];
+            if (m.measureText(t).width > tw && line) break;
+            line = t;
+          }
+          if (out.length >= 40) { trunc = true; break outer; }
+          if (line) out.push({ t: line, y, x: x0 });
+          else out.push({ t: words[0] || '', y, x: x0 });
+          words = words.slice(Math.max(i, 1));
+          dY += 24;
         }
-        if (dLines.length >= 40) { truncated = true; break outer; }
-        dLines.push({ t: line, y: dY + 24, x: narrow ? textX : PAD });
-        words = words.slice(i); dY += 24;
       }
+      return { out, dY, trunc };
     }
-    if (truncated && dLines.length)
-      dLines[dLines.length - 1].t =
-        dLines[dLines.length - 1].t.replace(/[,.;:\s]+$/, '') + '\u2026';
-    const when = new Date(a.ts).toLocaleString(undefined, {
-      month: 'short', day: 'numeric', year: 'numeric',
-      hour: 'numeric', minute: '2-digit' });      // sharer's timezone
-    const meta = [(a.feed_title || '').trim(), when]
-                   .filter(Boolean).join('  \u00b7  ');
-    const contentBottom = Math.max(bandB + (qr ? 52 : 10), bandTop, dY)
-                          + 10;
+    const pass1 = flow(null);
+    const qzB0 = Math.max(pass1.dY, heroB);
+    let qzT = Math.max(bandTop, qzB0 - QS - CAP);
+    const flow2 = flow(qzT);
+    if (Math.abs(flow2.dY - pass1.dY) > 48) {   // zone shifted a lot?
+      qzT = Math.max(bandTop, Math.max(flow2.dY, heroB) - QS - CAP);
+      var final = flow(qzT);
+    } else var final = flow2;
+    if (final.trunc && final.out.length)
+      final.out[final.out.length - 1].t =
+        (final.out[final.out.length - 1].t || '')
+          .replace(/[,.;:\s]+$/, '') + '\u2026';
+    const qrBottom = qzT + QS + CAP;
+    const contentBottom = Math.max(final.dY, heroB, qrBottom) + 12;
     const H = Math.round(contentBottom) + 20 + PAD;
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
@@ -406,25 +418,29 @@
     x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff');
     x.fillRect(0, 0, W, H);
     if (hero) {
-      x.save(); roundRect(x, imgX, imgY, iw, ih, 10); x.clip();
-      x.drawImage(hero, imgX, imgY, iw, ih);
+      x.save(); roundRect(x, imgX, bandTop, iw, ih, 10); x.clip();
+      x.drawImage(hero, imgX, bandTop, iw, ih);
       x.restore();
     }
     if (qr) {
-      x.fillStyle = '#ffffff'; x.fillRect(qrX, qrY, QS, QS);
-      x.drawImage(qr, qrX, qrY, QS, QS);
+      x.fillStyle = '#ffffff'; x.fillRect(PAD, qzT, QS, QS);
+      x.drawImage(qr, PAD, qzT, QS, QS);
       x.fillStyle = col('--muted', '#71717a'); x.font = `12px ${fam}`;
-      x.fillText('Link to full article', qrX, bandB + 18);
+      x.fillText('Link to full article', PAD, qzT + QS + 15);
     }
     let y = PAD;
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
     x.font = `700 26px ${fam}`;
     tLines.forEach(l => { y += 26; x.fillText(l, PAD, y); });
     x.fillStyle = col('--muted', '#71717a'); x.font = `14px ${fam}`;
-    x.fillText(meta, PAD, yMeta + 12);
+    x.fillText(meta = [(a.feed_title || '').trim(),
+      new Date(a.ts).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit' })]      // sharer's timezone
+      .filter(Boolean).join('  \u00b7  '), PAD, yMeta + 12);
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
     x.font = `16px ${fam}`;
-    for (const l of dLines) x.fillText(l.t, l.x, l.y);
+    for (const l of final.out) if (l.t) x.fillText(l.t, l.x, l.y);
     x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
     x.textAlign = 'right';
     x.fillText('via RSSgate', W - PAD, contentBottom + 20);

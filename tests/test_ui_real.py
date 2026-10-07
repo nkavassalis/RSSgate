@@ -904,9 +904,10 @@ def test_share_text_never_touches_qr_or_via(ui_server, browser):
       const cv = document.createElement('canvas');
       cv.width = bmp.width; cv.height = bmp.height;
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      // crop probe: bandB=274. Caption ends ~phys 584, first wide
-      // glyph top ~phys 640: the air strip between must stay clean.
-      const z = g.getImageData(60, 596, 1480, 34).data;
+      // Long summary: qzT~215 (QR phys 430..730), hero ends phys 548.
+      // Seam column between QR box (x<=356) and wrap start (x>=388),
+      // strictly BELOW the hero: only QR-wrapped lines may cross here.
+      const z = g.getImageData(344, 600, 42, 30).data;
       let dark = 0;
       for (let i = 0; i < z.length; i += 4)
         if (z[i] < 110 && z[i+1] < 110 && z[i+2] < 110) dark++;
