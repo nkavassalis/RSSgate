@@ -205,7 +205,11 @@ perf, docs, tests, polish. When unsure, cut smaller.
 11. **Bursts get you banned.** Adding a 100-entry feed fetched every page
     back-to-back and TechPowerUp blocked the IP (feed included). Pacing and
     backoff are now in `net`/`db`; keep new fetch code on that path.
-12. **Same-size canary edits can run stale bytecode.** A revert that keeps
+12. **Unchecked edits fail silently - for months.** Every CHANGELOG entry
+    from v0.32 to v0.63 was lost: the release script's `str.replace`
+    anchor no longer existed. `tests/test_release.py` now fails unless the
+    newest CHANGELOG entry is `__version__`. Assert anchors in every edit.
+13. **Same-size canary edits can run stale bytecode.** A revert that keeps
     the file size within the same second reuses the `.pyc`; clear
     `__pycache__` (or change the size) after a canary.
 

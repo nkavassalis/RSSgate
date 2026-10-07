@@ -35,6 +35,332 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## Reconstructed history (v0.32.0 - v0.63.0)
+
+From v0.32 onward the release script inserted entries with an
+unchecked str.replace on an anchor that no longer existed, so none were
+written. Entries below were rebuilt on 2026-10-07 from tags and commit
+subjects; today's releases carry full notes. Releases now assert the
+entry exists before tagging (see AGENTS.md).
+
+## [0.63.0] — 2026-10-07
+
+### Added
+- Feed-excerpt fallback: each entry's feed text is stored at ingest
+  (articles.feed_text; filled into known posts, never overwritten). When an
+  article page is a browser-only bot challenge, or extracts to almost
+  nothing, the post is published from that text - zero tokens,
+  digest_source=excerpt, labelled "feed excerpt" on the card.
+- net.is_challenge(): Cloudflare-style JS challenges are told apart from
+  bans and never pause the feed; with no feed text the failure reads
+  "site requires a browser (bot challenge)".
+### Why
+- guru3d sits behind Cloudflare "Just a moment..."; headless Chromium was
+  tested and does not pass it.
+
+## [0.62.0] — 2026-10-07
+
+### Added
+- rssgate/net.py: one outbound path for feed/article/image hosts - the
+  User-Agent (fetch.user_agent) and per-host pacing (fetch.per_host_interval,
+  default 3s, shared by all workers).
+- Site-block backoff: 403/429 pauses the FEED (fetch.block_backoff_minutes,
+  default 60, doubling, max 24h; feeds.backoff_until/backoff_level). Paused
+  feeds are skipped by polling, refresh-all and the digest queue; their
+  posts stay queued. A successful fetch clears it; cog modal "Resume now".
+- Admin "Fetching politely": UA field with "Use this browser's" / "Reset",
+  pacing and backoff settings (autosave, live).
+### Changed
+- Digest queue takes the newest pending post first.
+### Why
+- Adding TechPowerUp fetched ~100 pages back-to-back; the site IP-banned us.
+
+## [0.61.1] — 2026-10-07
+
+### Fixed
+- Removed a dead duplicate POST /api/poll handler (it shared the request
+  connection with a thread); /api/poll reports throttled: true so the
+  viewer skips its settle wait.
+### Docs
+- AGENTS.md, docs/TESTING.md and docs/API.md rewritten.
+
+## [0.61.0] — 2026-10-07
+
+### Changed
+- Admin nav grouped (Overview / Reading / Sources / Processing), sections
+  reordered to match; feed cog settings autosave per field (Done replaces
+  Apply); Danger zone for "Clear all failed posts".
+### Added
+- Feed filter box (past 8 feeds).
+### Fixed
+- Saving feed settings with "Hide sponsored" off re-queued every hidden post.
+- Admin deep links landed on stale positions after async renders.
+
+## [0.60.0] — 2026-10-07
+
+### Added
+- ui.share_style = banner (default) | float. Banner: full-bleed hero, title,
+  meta, one readable digest column, footer with QR + "Read the full
+  article" + domain | via RSSgate.
+### Internal
+- Share renderer split into shareLayout (pure geometry -> ops + geo) and
+  paintShare; share tests parametrized over styles, driven by
+  window.__lastShareGeo. /api/resume loads config once.
+
+## [0.59.1] — 2026-10-07
+
+### Performance
+- Expression index on COALESCE(published_at, fetched_at), id for the stream.
+### Fixed
+- maint.dedupe_galleries rewrote most rows every run; now idempotent.
+### Internal
+- imgstore.dedupe(): one duplicate rule for ingest and repair; lint clean;
+  browser-test helpers (_mkfeed, SHARE_PROBE, RAIL_RECORDER, __SETTLE_MS).
+
+## [0.59.0] — 2026-10-07
+
+- queue/failure pips with deep links; clear-all-failed with image release
+
+## [0.58.2] — 2026-10-07
+
+- QR scaled to 80% (72-120px)
+
+## [0.58.1] — 2026-10-07
+
+- QR fixed-point placement - truly the last line
+
+## [0.58.0] — 2026-10-07
+
+- QR sinks to digest bottom-left with caption; text wraps both floats
+
+## [0.57.0] — 2026-10-07
+
+- QR hero-height twin at band's left with caption; center-channel text flow
+
+## [0.56.3] — 2026-10-07
+
+- via to bottom-right corner; air below the graphics band
+
+## [0.56.2] — 2026-10-07
+
+- text yields to QR/via lines; canary test with proven lethality
+
+## [0.56.1] — 2026-10-07
+
+- paragraph gap carries explicit y; pixel-measured gap test
+
+## [0.56.0] — 2026-10-07
+
+- full-width meta, digest flows beside graphics, via on the band line, sag post-mortem in AGENTS.md
+
+## [0.55.1] — 2026-10-07
+
+- image drops below the full-width title (the span now survives reality)
+
+## [0.55.0] — 2026-10-07
+
+- full-width title flow above the bottom-flush masthead graphics
+
+## [0.54.0] — 2026-10-07
+
+- gallery twin promotes to hero; centre-crop 8x8 hash; hero size halfway
+
+## [0.53.0] — 2026-10-07
+
+- small flush-right hero, bottom-aligned with QR
+
+## [0.52.4] — 2026-10-07
+
+- share hero 40% -> 33% width
+
+## [0.52.3] — 2026-10-07
+
+- version-stamped static assets
+
+## [0.52.2] — 2026-10-07
+
+- actually ship the flush-aligned share masthead (missed in 0.52.0)
+
+## [0.52.1] — 2026-10-07
+
+- perceptual threshold 10->20 (og crop variants)
+
+## [0.52.0] — 2026-10-07
+
+- perceptual dedupe + gallery repair pass; flush-aligned share QR
+
+## [0.51.4] — 2026-10-07
+
+- gallery-ratio feed thumbs + 100px share QR
+
+## [0.51.3] — 2026-10-06
+
+- QR between text and hero under the date; hero at gallery ratio; minimal footer
+
+## [0.51.2] — 2026-10-06
+
+- QR nests under the date beside the hero; label-only footer
+
+## [0.51.1] — 2026-10-06
+
+- title-only beside hero, full-width body below, natural-aspect thumbs
+
+## [0.51.0] — 2026-10-06
+
+- share card float layout + content-level gallery dedupe
+
+## [0.50.0] — 2026-10-06
+
+- single-current read marking + configurable read_delay (default 5s)
+
+## [0.49.1] — 2026-10-06
+
+- deterministic visual-only nav spy (pass-over geometry, no auto-jump)
+
+## [0.49.0] — 2026-10-06
+
+- /image lazily revives trimmed heroes (hash-verified refetch)
+
+## [0.48.3] — 2026-10-06
+
+- two-row status panel + explicit cache-cap enforcement docs
+
+## [0.48.2] — 2026-10-06
+
+- live image-cache size in Status (flat state JSON was mis-parsed -> 0)
+
+## [0.48.1] — 2026-10-06
+
+- type badge moves into modal stats line; rows end clean
+
+## [0.48.0] — 2026-10-06
+
+- lightbox CSS-comment fix, Enabled column, type under cog, posts in modal, full-page feed-settings modal
+
+## [0.47.0] — 2026-10-06
+
+- feed rows slim - LLM/Ads/Images behind the cog; row refresh/delete into panel
+
+## [0.46.0] — 2026-10-06
+
+- per-feed images_mode (auto/hero/off), read-time filter, row autosave select
+
+## [0.45.2] — 2026-10-06
+
+- IMG_JUNK_RE kills loader gifs + Most Read widget images in galleries
+
+## [0.45.1] — 2026-10-06
+
+- snapshot paragraphs keep their breaks; README canonizes the home-screen-over-VPN pattern
+
+## [0.45.0] — 2026-10-06
+
+- native share sheet first for snapshots (standalone/https); clipboard+download fallback
+
+## [0.44.3] — 2026-10-06
+
+- PTR hands work indication to the top rail; one refresh animation everywhere
+
+## [0.44.2] — 2026-10-06
+
+- refresh button spins + rail covers full poll window; no more delayed hard reload
+
+## [0.44.1] — 2026-10-06
+
+- 400ms min-dwell loading rail + duration-measured browser test
+
+## [0.44.0] — 2026-10-06
+
+- hide untranscribed by default (admin toggle) + stream loading rail
+
+## [0.43.1] — 2026-10-06
+
+- Feeds section follows Categories
+
+## [0.43.0] — 2026-10-06
+
+- Status panel + admin reorder, X-home close button, authoritative nav feedback, 800/1280 defaults
+
+## [0.42.2] — 2026-10-06
+
+- admin grid right-column wrapper (sections no longer wrap into nav gutter) + geometry test
+
+## [0.42.1] — 2026-10-06
+
+- two-pane admin nav, Display & sharing panel completes (img-per-post joins, all autosave)
+
+## [0.42.0] — 2026-10-06
+
+- admin-configurable snapshot + reading column widths (clamped, resume-delivered, CSS-var driven)
+
+## [0.41.0] — 2026-10-06
+
+- unread-first all-feeds view (tuple keyset + client dedupe); snapshot absolute local timestamp
+
+## [0.40.1] — 2026-10-06
+
+- snapshot footer on one baseline row, QR flush right, no dead space
+
+## [0.40.0] — 2026-10-06
+
+- QR footer on share snapshots, local /api/qr.png encoder
+
+## [0.39.1] — 2026-10-06
+
+- feed_unread mirrors stream visibility (dropped can't hold a pill hostage)
+
+## [0.39.0] — 2026-10-06
+
+- copy-snapshot card PNG (clipboard with download fallback), browser-verified
+
+## [0.38.0] — 2026-10-06
+
+- smart default blocking of declared ad categories (user-ownership tri-state)
+
+## [0.37.3] — 2026-10-05
+
+- 'daily deal' sponsored pattern (Techdirt leak)
+
+## [0.37.2] — 2026-10-04
+
+- PTR stands down on horizontally-led gestures (drawer swipes no longer reload)
+
+## [0.37.1] — 2026-10-04
+
+- admin back arrow pops history (no ghost page under browser edge-back)
+
+## [0.37.0] — 2026-10-04
+
+- restore missing On checkbox (unbreaks every Save), checkbox autosave, data-role contract guard
+
+## [0.36.0] — 2026-10-04
+
+- decisive-intent axis lock - scrolling no longer peeks the drawer
+
+## [0.35.2] — 2026-10-04
+
+- extraction threshold actually applied; thin posts extract
+
+## [0.35.1] — 2026-10-04
+
+- extraction thresholds fit thin posts
+
+## [0.35.0] — 2026-10-04
+
+- two-tier junk pruning - hyphenated CSS class names no longer eat whole articles
+
+## [0.34.0] — 2026-10-03
+
+- edge-swipe drawer (finger-tracking reveal, swipe-left dismiss, axis lock) + browser tests
+
+## [0.33.0] — 2026-10-03
+
+- category chips autosave with visible confirmation (add + remove), browser-tier coverage
+
+## [0.32.0] — 2026-10-03
+
+- real-browser UI test tier (Playwright), LLM-down endpoint degradation, PTR target guard, docs/TESTING.md
+
 ## [0.31.1] — 2026-10-03
 
 ### Fixed
