@@ -25,6 +25,8 @@ def main():
         print(f"created default config at {args.config}")
 
     cfg = load_config(args.config)
+    from rssgate import net
+    net.configure(cfg)                    # UA + per-host pacing for all fetches
     os.makedirs(cfg["server"]["data_dir"], exist_ok=True)
     db_path = os.path.join(cfg["server"]["data_dir"], "rssgate.sqlite")
     conn = db.connect(db_path)

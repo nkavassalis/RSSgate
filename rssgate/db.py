@@ -70,6 +70,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(feeds)")}
     if "hide_sponsored" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN hide_sponsored INTEGER NOT NULL DEFAULT 0")
+    if "backoff_until" not in cols:       # site-block pause (403/429)
+        conn.execute("ALTER TABLE feeds ADD COLUMN backoff_until TEXT")
+    if "backoff_level" not in cols:
+        conn.execute("ALTER TABLE feeds ADD COLUMN backoff_level INTEGER"
+                     " NOT NULL DEFAULT 0")
     if "images_mode" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN images_mode TEXT NOT NULL"
                      " DEFAULT 'auto'")
@@ -617,12 +622,43 @@ def claim_pending(conn, limit: int = 1) -> list[sqlite3.Row]:
     cur = conn.execute(
         "UPDATE articles SET status='processing', started_at=? WHERE id IN"
         " (SELECT a.id FROM articles a JOIN feeds f ON f.id=a.feed_id"
-        "  WHERE a.status='pending' AND f.enabled=1 ORDER BY a.id LIMIT ?)"
+        "  WHERE a.status='pending' AND f.enabled=1"
+        "    AND COALESCE(f.backoff_until, '') <= ?"     # site-paused feeds wait
+        "  ORDER BY COALESCE(a.published_at, a.fetched_at) DESC, a.id DESC"
+        "  LIMIT ?)"                                      # newest news first
         " RETURNING *",
-        (now_iso(), limit))
+        (now_iso(), now_iso(), limit))
     rows = cur.fetchall()
     conn.commit()
     return rows
+
+
+def feed_paused(feed) -> bool:
+    """True while a site-block backoff is in force for this feed row."""
+    keys = feed.keys() if hasattr(feed, "keys") else feed
+    return bool("backoff_until" in keys and feed["backoff_until"]
+                and feed["backoff_until"] > now_iso())
+
+
+def feed_block(conn, feed_id: int, base_minutes: float = 60) -> str:
+    """Pause a feed after the site refused us (403/429). Doubles per repeat
+    (capped at 24h); a successful feed fetch resets it. Returns until-ISO."""
+    row = conn.execute("SELECT backoff_level FROM feeds WHERE id=?",
+                       (feed_id,)).fetchone()
+    level = (row["backoff_level"] if row else 0) + 1
+    minutes = min(24 * 60, base_minutes * 2 ** (level - 1))
+    until = (datetime.datetime.now(datetime.timezone.utc)
+             + datetime.timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute("UPDATE feeds SET backoff_until=?, backoff_level=? WHERE id=?",
+                 (until, level, feed_id))
+    conn.commit()
+    return until
+
+
+def feed_unblock(conn, feed_id: int) -> None:
+    conn.execute("UPDATE feeds SET backoff_until=NULL, backoff_level=0"
+                 " WHERE id=?", (feed_id,))
+    conn.commit()
 
 
 def mark_processing(conn, article_id: int) -> None:

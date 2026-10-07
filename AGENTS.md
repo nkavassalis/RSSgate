@@ -44,6 +44,9 @@ rssgate/
                     dedupe(names) = THE hero/gallery duplicate rule.
   extract.py        article text + image candidates (og first, article-root
                     scoped content images, avatar/junk filters).
+  net.py            THE outbound HTTP path: get() adds the User-Agent
+                    (fetch.user_agent or DEFAULT_UA) and paces requests per
+                    host (fetch.per_host_interval). BLOCK_STATUSES = 403/429.
   fetcher.py        conditional GET, feed parsing, page fingerprint, probe.
   llm.py            provider-agnostic client; no DB; raises LLMError.
   web.py            create_app(config_path, conn=None). Thin routes only.
@@ -75,10 +78,18 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
    !important}` exists and overlays ship hidden; every template id is used
    by its script; every emitted `data-act` has a handler; every `$('id')`
    resolves. If it fails, wire the thing - never weaken the test.
-9. **Autosave doctrine.** Every editable admin field saves itself on
-   `change` (single-field patch) and flashes its label `cfg-saving` ->
-   `cfg-ok`/`cfg-bad`. No Apply buttons. Patches carry only the field that
-   changed (a full-form Apply once re-queued every hidden post).
+9. **Autosave doctrine.** Editable admin fields save themselves on
+   `change` (single-field patch) and flash their label `cfg-saving` ->
+   `cfg-ok`/`cfg-bad`; patches carry only the field that changed (a
+   full-form Apply once re-queued every hidden post). Legacy exception: the
+   Language model and Polling & summarizer fields still share one "Save
+   settings" button - convert them when you touch them; add nothing new to it.
+10. **Be polite to sites.** Every request to a feed/article/image host goes
+   through `net.get` (UA + per-host pacing). A 403/429 from a site pauses
+   the FEED (`db.feed_block`, doubling to 24h, cleared by a successful
+   fetch or the cog modal's Resume now); paused feeds are skipped by the
+   scheduler, refresh_all and claim_pending, and their posts stay `pending`
+   instead of failing. Never retry around a block or rotate identities.
 
 ## Key flows
 - **Add feed:** probe -> POST /api/feeds -> background refresh -> upsert ->
@@ -93,6 +104,9 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
   `images_mode` filters at read time (no re-digest).
 - **Read state:** dwell engine marks the topmost >=55%-visible unread card
   after `ui.read_delay` s -> beacon -> per-feed cursors (+ global in New/all).
+- **Digest queue:** `claim_pending` takes the NEWEST pending post first
+  (across feeds, skipping paused feeds), so a new feed's latest posts
+  digest first and its backlog drips in at the paced rate.
 - **Refresh:** button and pull-to-refresh share `doRefreshWork()`: POST
   /api/poll -> settle wait unless throttled -> restart stream -> refresh
   pips. The top rail (`#stream-progress`, min 400 ms) is the one busy signal.
@@ -177,6 +191,12 @@ perf, docs, tests, polish. When unsure, cut smaller.
    every run reported "232 repaired" for weeks; assert a second run is a no-op.
 10. **CSS has no `//` comments.** One swallowed the next rule and hid the
     lightbox for five releases.
+11. **Bursts get you banned.** Adding a 100-entry feed fetched every page
+    back-to-back and TechPowerUp blocked the IP (feed included). Pacing and
+    backoff are now in `net`/`db`; keep new fetch code on that path.
+12. **Same-size canary edits can run stale bytecode.** A revert that keeps
+    the file size within the same second reuses the `.pyc`; clear
+    `__pycache__` (or change the size) after a canary.
 
 ## Known follow-ups (not started)
 - systemd user unit for the live server.

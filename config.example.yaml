@@ -40,6 +40,11 @@ polling:
   # Run an initial fetch of every feed on startup.
   fetch_on_start: true
 
+fetch:
+  user_agent: ""            # empty = built-in browser-like UA; admin can copy yours
+  per_host_interval: 3      # seconds between requests to the same site
+  block_backoff_minutes: 60 # pause a feed after 403/429; doubles per repeat, max 24h
+
 summarizer:
   # Target summary length: short | medium | long
   length: medium

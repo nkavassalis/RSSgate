@@ -40,6 +40,12 @@ DEFAULTS: dict = {
         "page_interval_minutes": 180,
         "fetch_on_start": True,
     },
+    "fetch": {
+        # sent to feed/article/image hosts; empty = built-in browser-like UA
+        "user_agent": "",
+        "per_host_interval": 3,        # seconds between hits to one site
+        "block_backoff_minutes": 60,   # pause after 403/429; doubles, <=24h
+    },
     "summarizer": {
         "length": "medium",           # short | medium | long
         "max_input_chars": 24000,

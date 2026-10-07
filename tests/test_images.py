@@ -9,6 +9,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
 class FakeResp:
     def __init__(self, body=b"", text=None, ok=True, ctype="image/jpeg"):
         self.body, self._text, self.ok, self.ctype = body, text, ok, ctype
+        self.status_code = 200 if ok else 500
         self.headers = {"content-type": ctype}
     @property
     def text(self):

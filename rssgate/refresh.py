@@ -71,6 +71,13 @@ def _purpose_model(cfg, key: str) -> str:
     return (cfg.get("llm", {}).get(key) or "").strip()
 
 
+def _backoff_minutes(cfg) -> float:
+    try:
+        return max(1.0, float(cfg.get("fetch", {}).get("block_backoff_minutes", 60)))
+    except (TypeError, ValueError):
+        return 60.0
+
+
 def refresh_feed(conn, feed, cfg, llm=None) -> str:
     """Fetch one feed/page. Returns a status string. Never summarizes here;
     new articles are queued as 'pending' for the summarizer."""
@@ -82,6 +89,15 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
 
     if ftype == "feed":
         res = fetch_feed(url, feed["etag"], feed["last_modified"])
+        if not res["ok"] and res.get("status") in (403, 429):
+            until = db.feed_block(conn, feed_id, _backoff_minutes(cfg))
+            status = (f"blocked by site (HTTP {res['status']}),"
+                      f" paused until {until}")
+            db.update_feed(conn, feed_id, last_fetched_at=db.now_iso(),
+                           last_status=status)
+            return status
+        if res["ok"] and feed["backoff_level"]:
+            db.feed_unblock(conn, feed_id)        # site talks to us again
         if not res["ok"]:
             status = f"error: {res.get('error', res.get('status'))}"
             db.update_feed(conn, feed_id, last_fetched_at=db.now_iso(), last_status=status)
@@ -121,6 +137,13 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
 
     # bare page: skip everything unless the page content actually changed
     res = fetch_page(url, feed["etag"], feed["last_modified"])
+    if not res["ok"] and res.get("status") in (403, 429):
+        until = db.feed_block(conn, feed_id, _backoff_minutes(cfg))
+        status = f"blocked by site (HTTP {res['status']}), paused until {until}"
+        db.update_feed(conn, feed_id, last_fetched_at=db.now_iso(), last_status=status)
+        return status
+    if res["ok"] and feed["backoff_level"]:
+        db.feed_unblock(conn, feed_id)
     if not res["ok"]:
         status = f"error: {res.get('error', res.get('status'))}"
         db.update_feed(conn, feed_id, last_fetched_at=db.now_iso(), last_status=status)
@@ -162,7 +185,7 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
 def refresh_all(conn, cfg, llm=None) -> list[str]:
     results = []
     for feed in db.list_feeds(conn):
-        if feed["enabled"]:
+        if feed["enabled"] and not db.feed_paused(feed):
             results.append(f"{feed['url']}: {refresh_feed(conn, feed, cfg, llm)}")
     return results
 
@@ -266,8 +289,7 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40,
     images; tried pages are marked so the budget always advances.
     Force: page-extract everything, repairing poisoned image_url values
     (e.g. avatars saved as heroes by pre-v1.9 backfills)."""
-    import requests
-    from .fetcher import UA
+    from . import net
     imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
     cond = "status IN ('ready','error')" if force else (
         "status IN ('ready','error')"
@@ -296,8 +318,7 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40,
             break
         try:
             fetched += 1
-            resp = requests.get(art["link"], headers={"user-agent": UA},
-                                timeout=25)
+            resp = net.get(art["link"], timeout=25)
             names = _cache_image(conn, art, resp.text if resp.ok else "")
             if names and len(names) > 1:
                 stored += 1
@@ -332,9 +353,16 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             if feed and feed["hide_sponsored"] and is_sponsored(art["title"], art["link"]):
                 db.set_article(conn, art["id"], status="hidden")  # 0 tokens spent
                 continue
-            import requests
-            from .fetcher import UA
-            resp = requests.get(art["link"], headers={"user-agent": UA}, timeout=30)
+            from . import net
+            resp = net.get(art["link"], timeout=30)
+            if resp.status_code in net.BLOCK_STATUSES:
+                # the SITE refuses us: pause the whole feed, keep the post
+                # queued (not failed) - burning the backlog deepens bans
+                until = db.feed_block(conn, art["feed_id"], _backoff_minutes(cfg))
+                db.set_article(conn, art["id"], status="pending", started_at=None)
+                log.warning("feed %s blocked by site (HTTP %s); paused until %s",
+                            art["feed_id"], resp.status_code, until)
+                continue
             if not resp.ok:
                 transient = resp.status_code == 429 or resp.status_code >= 500
                 fail(conn, cfg, art["id"],

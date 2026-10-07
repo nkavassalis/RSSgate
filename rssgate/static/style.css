@@ -372,3 +372,8 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
 .danger-zone h3 { margin:0 0 8px; font-size:.9rem; color:#c62828; }
 @media (prefers-color-scheme: dark) { .danger-zone h3, .btn.danger { color:#ff7a6e; } }
 .feed-q { width:100%; margin:0 0 10px; }
+
+.paused-pill { display:inline-block; margin-top:3px; font-size:.72rem;
+  padding:1px 8px; border-radius:999px; color:#b26a00;
+  background:color-mix(in srgb, #f5a623 18%, transparent); }
+@media (prefers-color-scheme: dark) { .paused-pill { color:#ffc56b; } }

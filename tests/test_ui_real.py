@@ -984,3 +984,35 @@ def test_danger_zone_holds_destructive_action(ui_server, browser):
     assert zone > maint, "danger zone must sit below routine maintenance"
     assert pg.errors == []
     pg.close()
+
+
+def test_fetch_politeness_controls(ui_server, browser):
+    """'Use this browser's' copies navigator.userAgent into fetch config
+    (autosave); a site-paused feed shows a badge; Resume clears it."""
+    from rssgate import db
+    fid = _mkfeed("paused")
+    conn = db.connect(UI_DB); db.feed_block(conn, fid, 60); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-polling", wait_until="networkidle")
+    pg.click("#ua-mine-btn")
+    pg.wait_for_selector("label:has(#cfg-ua).cfg-ok", timeout=5000)
+    ua = pg.evaluate("navigator.userAgent")
+    saved = pg.evaluate("fetch('/api/config').then(r => r.json())"
+                        ".then(c => c.fetch.user_agent)")
+    assert saved == ua and pg.input_value("#cfg-ua") == ua
+    row = pg.locator(f"tr[data-id='{fid}']")
+    assert row.locator(".paused-pill").count() == 1
+    assert "paused by site" in row.locator(".paused-pill").inner_text()
+    row.locator("button[data-act=cfg]").click()
+    pg.click(".cfg-panel button[data-act=cfg-unpause]")
+    pg.wait_for_selector(f"tr[data-id='{fid}']:not(:has(.paused-pill))",
+                         timeout=5000)
+    conn = db.connect(UI_DB)
+    assert db.get_feed(conn, fid)["backoff_level"] == 0
+    conn.close()
+    pg.click(".cfg-panel button[data-act=cfg-done]")
+    pg.click("#ua-default-btn")                    # leave config default
+    pg.wait_for_function("""() => fetch('/api/config').then(r => r.json())
+        .then(c => c.fetch.user_agent === '')""", timeout=5000)
+    assert pg.errors == []
+    pg.close()

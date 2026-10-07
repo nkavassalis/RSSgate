@@ -41,3 +41,13 @@ def client(tmp_path, monkeypatch):
     with app.test_client() as c:
         c.conn = conn
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _no_host_pacing():
+    """net pacing is process-global; a config PUT in one test must not make
+    later tests sleep 3s per request."""
+    from rssgate import net
+    yield
+    net._cfg.update({"ua": "", "interval": 0.0})
+    net._next_ok.clear()

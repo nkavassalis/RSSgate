@@ -14,8 +14,9 @@ import requests
 
 from .extract import extract_candidate_links, page_title
 
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 rssgate/0.1")
+from . import net
+
+UA = net.DEFAULT_UA      # back-compat alias; live value: net.user_agent()
 
 XML_SNIFF = re.compile(r"^\s*(<\?xml|<rss|<feed|<rdf:RDF)", re.I)
 
@@ -23,14 +24,14 @@ XML_SNIFF = re.compile(r"^\s*(<\?xml|<rss|<feed|<rdf:RDF)", re.I)
 def _get(url: str, etag: str | None = None, last_modified: str | None = None) -> dict:
     """Conditional GET. Returns dict(ok, not_modified, status, content, content_type,
     etag, last_modified)."""
-    headers = {"user-agent": UA, "accept": "application/rss+xml, application/atom+xml,"
+    headers = {"accept": "application/rss+xml, application/atom+xml,"
                " application/xml, text/html;q=0.9, */*;q=0.5"}
     if etag:
         headers["if-none-match"] = etag
     if last_modified:
         headers["if-modified-since"] = last_modified
     try:
-        resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+        resp = net.get(url, headers=headers, timeout=30, allow_redirects=True)
     except requests.RequestException as exc:
         return {"ok": False, "not_modified": False, "status": 0, "error": str(exc),
                 "content": b"", "content_type": "", "etag": None, "last_modified": None}

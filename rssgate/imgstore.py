@@ -81,10 +81,9 @@ def store(url: str, timeout=20) -> str | None:
         existing = has(url)
         if existing:
             return existing
-        import requests
-        from .fetcher import UA
-        with requests.get(url, headers={"user-agent": UA}, timeout=timeout,
-                          stream=True, allow_redirects=True) as r:
+        from . import net
+        with net.get(url, timeout=timeout, stream=True,
+                     allow_redirects=True) as r:
             if not r.ok:
                 return None
             ctype = (r.headers.get("content-type") or "").lower()

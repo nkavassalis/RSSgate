@@ -23,10 +23,11 @@ break the panel).
 
 | Method / path | Description |
 |---|---|
-| `GET /api/feeds` | All feeds with `categories[]`, `auto_categories[]`, counts (`article_count`, `ready_count`, `unread`, `hidden_count`), `last_status`, settings (`summarize`, `hide_sponsored`, `images_mode`, `digest_length`, `system_prompt`, `max_input_chars`, `sync_deletes`, `smart_block` 0 untouched / 1 auto-seeded / 2 user-owned). |
+| `GET /api/feeds` | All feeds with `categories[]`, `auto_categories[]`, counts (`article_count`, `ready_count`, `unread`, `hidden_count`), `last_status`, settings (`summarize`, `hide_sponsored`, `images_mode`, `digest_length`, `system_prompt`, `max_input_chars`, `sync_deletes`, `smart_block` 0 untouched / 1 auto-seeded / 2 user-owned), site-block state `backoff_until` (ISO or null) / `backoff_level`. |
 | `POST /api/feeds` | Add `{url, type?: auto\|feed\|page, categories?: [str], refresh?: bool}`. 400 bad URL, 409 duplicate. |
 | `POST /api/feeds/probe` | Find the real feed for any URL: `{type: feed\|page\|unknown\|error, candidates:[{url,title}], page_title?, error?}`. Candidates are verified by fetching; no LLM. |
 | `PUT /api/feeds/<id>` | Field-wise patch; only keys present change: `categories`, `enabled`, `custom_title`, `summarize` (false = raw mode), `hide_sponsored` (true sweeps existing items to hidden; false re-queues them), `images_mode` (auto\|hero\|off), `digest_length` (default\|terse\|normal\|detailed), `system_prompt`, `max_input_chars`, `sync_deletes`, `category_block` (list; hides pre-LLM, retroactive). Never re-digests by itself. |
+| `PUT /api/feeds/<id>` `{unpause: true}` | Clear a site-block pause (`backoff_until`/`backoff_level`) and try the site again. |
 | `DELETE /api/feeds/<id>` | Delete feed, its articles, and images only they used. |
 | `POST /api/feeds/<id>/refresh` | Poll one feed now. |
 | `POST /api/feeds/<id>/redigest` | User-confirmed re-processing with cleared hashes: `{ok, requeued}`. |
@@ -58,7 +59,7 @@ break the panel).
 | Method / path | Description |
 |---|---|
 | `GET /api/config` | Full config; `llm.api_key` masked to `***` plus `api_key_set`. |
-| `PUT /api/config` | Deep-merge patch persisted to `config.yaml`. `server` is file-only. `ui` accepts only validated keys: `order`, `snapshot_width` (360-1440), `stream_width` (480-1600), `hide_untranscribed`, `read_delay` (0-60), `share_style` (banner\|float). `api_key: "***"` keeps the key. `{length}` is appended to a system prompt that lacks it. |
+| `PUT /api/config` | Deep-merge patch persisted to `config.yaml`. `server` is file-only. `ui` accepts only validated keys: `order`, `snapshot_width` (360-1440), `stream_width` (480-1600), `hide_untranscribed`, `read_delay` (0-60), `share_style` (banner\|float). `fetch` accepts `user_agent` (printable, <=400 chars; "" = default), `per_host_interval` (0-60 s), `block_backoff_minutes` (1-1440); applied live. `api_key: "***"` keeps the key. `{length}` is appended to a system prompt that lacks it. |
 | `GET /api/models` | Provider model list (`[]` + error when unavailable). |
 | `POST /api/llm/test` | "Reply with exactly: OK" round trip; usage logged. |
 | `GET /api/usage` | `{today, month, all_time}` tokens. |

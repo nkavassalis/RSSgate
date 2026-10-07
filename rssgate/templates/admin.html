@@ -183,6 +183,28 @@ RSSgate Admin</title>
       <button class="btn ghost" id="poll-now-btn">Poll all feeds now</button>
       <span id="save-result" class="hint"></span>
     </div>
+
+    <h2>Fetching politely</h2>
+    <label>User-Agent sent to sites
+      <input id="cfg-ua" type="text" spellcheck="false" maxlength="400"
+             placeholder="(built-in browser-like default)"></label>
+    <div class="row">
+      <button class="btn ghost" id="ua-mine-btn">Use this browser's</button>
+      <button class="btn ghost" id="ua-default-btn">Reset to default</button>
+    </div>
+    <div class="grid2">
+      <label>Seconds between requests to one site (0-60)
+        <input id="cfg-hostgap" type="number" min="0" max="60" step="1"></label>
+      <label>Pause a feed after the site blocks us (minutes, 1-1440)
+        <input id="cfg-backoff" type="number" min="1" max="1440" step="5"></label>
+    </div>
+    <p class="hint">These save instantly. Sites block readers that fetch too
+      fast: a new feed can mean dozens of article pages at once. Requests to
+      the same site are spaced out, and when a site answers "403 forbidden" or
+      "429 too many requests" the feed pauses (doubling on repeats, up to a day)
+      and its posts wait in the queue instead of failing. Some sites only
+      serve real browsers: "Use this browser's" copies the User-Agent of the
+      browser you're using right now.</p>
   </section>
 
   <section class="panel" id="sec-queue">

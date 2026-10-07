@@ -120,6 +120,10 @@ Patterns:
 - **API tests write through `client.conn`.** The `conn` fixture is a
   different database file than the one the app serves.
 - `db.add_feed` returns the inserted Row (`row["id"]`).
+- Per-host pacing (`rssgate.net`) is process-global and 0 by default; an
+  autouse conftest fixture resets it after every test, so a config PUT in
+  one test can't make the rest sleep. Fake responses must carry
+  `status_code` (block detection reads it), like real `requests` objects.
 - Token discipline is proven with FakeLLM call counts; extend, never weaken.
 - Image tests must use hash-shaped filenames (`sha256(...)[:24] + ".png"`):
   `imgstore.safe_path` rejects anything else, and release silently skips it.

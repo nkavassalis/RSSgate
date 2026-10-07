@@ -48,7 +48,8 @@ class Scheduler(threading.Thread):
         llm = None
         db.requeue_stale_processing(self.conn)
         for feed in db.list_feeds(self.conn):
-            if not feed["enabled"] or not self._due(feed, now):
+            if (not feed["enabled"] or db.feed_paused(feed)
+                    or not self._due(feed, now)):
                 continue
             if llm is None:
                 llm = self.llm_factory()

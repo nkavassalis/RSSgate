@@ -252,6 +252,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             names = [c.strip().lower() for c in data["category_block"]
                      if c.strip()]
             fields["category_block"] = ",".join(names)
+        if data.get("unpause"):
+            db.feed_unblock(conn, fid)        # user overrides a site-block pause
         if "hide_sponsored" in data:
             fields["hide_sponsored"] = 1 if data["hide_sponsored"] else 0
             if not data["hide_sponsored"]:  # un-hide everything when flag goes off
@@ -422,6 +424,20 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 ui_patch["read_delay"] = int(rd)
         if ui_patch:
             patch["ui"] = ui_patch        # rest of ui: file only
+        fetch = patch.pop("fetch", None)
+        if isinstance(fetch, dict):
+            fp = {}
+            ua = fetch.get("user_agent")
+            if isinstance(ua, str) and len(ua) <= 400 and ua.isprintable():
+                fp["user_agent"] = ua.strip()
+            iv = fetch.get("per_host_interval")
+            if isinstance(iv, (int, float)) and 0 <= iv <= 60:
+                fp["per_host_interval"] = iv
+            bo = fetch.get("block_backoff_minutes")
+            if isinstance(bo, (int, float)) and 1 <= bo <= 1440:
+                fp["block_backoff_minutes"] = bo
+            if fp:
+                patch["fetch"] = fp
         patch.get("llm", {}).pop("api_key_set", None)
         if patch.get("llm", {}).get("api_key") == "***":
             del patch["llm"]["api_key"]
@@ -432,6 +448,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         merged = _merge(current, patch)
         merged.setdefault("llm", {}).pop("api_key_set", None)
         save_config(merged, config_path)
+        from . import net
+        net.configure(merged)             # UA/pacing apply without restart
         return jsonify(masked_config(merged))
 
     @app.route("/api/models")

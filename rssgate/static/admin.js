@@ -46,7 +46,10 @@ async function renderFeeds() {
           ${f.custom_title ? ' <b class="hint" title="renamed">(you)</b>' : ''}
           <button class="btn ghost sm" data-act="rename" title="rename feed">&#9998;</button>
         </span>
-          <div class="hint">${esc(f.last_status || '')}</div></td>
+          <div class="hint">${esc(f.last_status || '')}</div>
+          ${f.backoff_until && f.backoff_until > new Date().toISOString().slice(0, 19) + 'Z'
+            ? `<span class="paused-pill" title="the site refused our requests (403/429); polling and digests for this feed wait until then">paused by site until ${esc(f.backoff_until.slice(11, 16))} UTC</span>`
+            : ''}</td>
       <td class="cats">
         <div class="catchips" data-role="cats">${(f.categories || []).map(catChip).join('')}</div>
         <select data-role="catadd"><option value="">+ category…</option></select>
@@ -273,6 +276,10 @@ async function loadConfig() {
   $('cfg-readdelay').value = (cfg.ui || {}).read_delay ?? 5;
   $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
   $('cfg-sharestyle').value = (cfg.ui || {}).share_style || 'banner';
+  const fc = cfg.fetch || {};
+  $('cfg-ua').value = fc.user_agent || '';
+  $('cfg-hostgap').value = fc.per_host_interval ?? 3;
+  $('cfg-backoff').value = fc.block_backoff_minutes ?? 60;
   $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 800;
   $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
   renderFailures();
@@ -326,6 +333,37 @@ function cfgUiFlash(input, key, val) {
                     setTimeout(() => label.classList.remove('cfg-bad'), 2500);
                     alert('Save failed: ' + err.message); loadConfig(); });
 }
+function cfgFetchFlash(input, key, val) {
+  const label = input.closest('label');
+  label.classList.add('cfg-saving');
+  api('/api/config', { method: 'PUT',
+    body: JSON.stringify({ fetch: { [key]: val } }) })
+    .then(() => { label.classList.remove('cfg-saving');
+                  label.classList.add('cfg-ok');
+                  setTimeout(() => label.classList.remove('cfg-ok'), 1200); })
+    .catch(err => { label.classList.remove('cfg-saving');
+                    label.classList.add('cfg-bad');
+                    setTimeout(() => label.classList.remove('cfg-bad'), 2500);
+                    alert('Save failed: ' + err.message); loadConfig(); });
+}
+$('cfg-ua').addEventListener('change', e =>
+  cfgFetchFlash(e.target, 'user_agent', e.target.value.trim()));
+$('ua-mine-btn').addEventListener('click', () => {
+  $('cfg-ua').value = navigator.userAgent;
+  cfgFetchFlash($('cfg-ua'), 'user_agent', navigator.userAgent);
+});
+$('ua-default-btn').addEventListener('click', () => {
+  $('cfg-ua').value = '';
+  cfgFetchFlash($('cfg-ua'), 'user_agent', '');
+});
+$('cfg-hostgap').addEventListener('change', e => {
+  const v = Math.max(0, Math.min(60, +e.target.value || 0));
+  e.target.value = v; cfgFetchFlash(e.target, 'per_host_interval', v);
+});
+$('cfg-backoff').addEventListener('change', e => {
+  const v = Math.max(1, Math.min(1440, Math.round(+e.target.value || 60)));
+  e.target.value = v; cfgFetchFlash(e.target, 'block_backoff_minutes', v);
+});
 $('cfg-sharestyle').addEventListener('change', e =>
   cfgUiFlash(e.target, 'share_style', e.target.value));
 $('cfg-readdelay').addEventListener('change', e => {
@@ -644,6 +682,7 @@ async function openFeedCfg(id) {
     <div class="row">
       <button class="btn" data-act="cfg-done">Done</button>
       <button class="btn ghost" data-act="cfg-refresh" title="fetch this feed now">&#x21bb; Refresh now</button>
+      ${feed.backoff_level ? '<button class="btn ghost" data-act="cfg-unpause" title="clear the site-block pause and try again now">Resume now</button>' : ''}
       <button class="btn ghost danger" data-act="cfg-del">&#10005; Delete feed</button>
       <span class="cfg-status hint">changes save as you make them</span>
     </div>`;
@@ -693,6 +732,13 @@ async function openFeedCfg(id) {
     if (redo) await maybeRedigest(id);
   });
   q('[data-act=cfg-done]').addEventListener('click', () => { veil.hidden = true; });
+  const up = q('[data-act=cfg-unpause]');
+  if (up) up.addEventListener('click', async () => {
+    await api(`/api/feeds/${id}`, { method: 'PUT',
+                                    body: JSON.stringify({ unpause: true }) });
+    up.remove(); q('.cfg-status').textContent = 'resumed \u2713';
+    renderFeeds();
+  });
   q('[data-act=cfg-refresh]').addEventListener('click', async () => {
     const st = q('.cfg-status');
     st.textContent = 'refreshing\u2026';
