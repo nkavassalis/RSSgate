@@ -375,7 +375,8 @@
       if (p) { spacers++; dY += 8; }
       let words = paras[p].split(/\s+/);
       while (words.length) {
-        const narrow = dY < bandB - 26;   // bottom line: via-RSSgate's
+        const narrow = dY + 24 <= bandB - 26;  // keep clear of via line
+        if (dY + 24 > bandB - 26 && dY < bandB) dY = bandB;  // first wide
         const tw = narrow ? bandTextW : full;
         let line = '', i = 0;
         for (; i < words.length; i++) {

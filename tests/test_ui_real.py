@@ -932,3 +932,41 @@ def test_share_paragraph_gap_survives(ui_server, browser):
     assert r["maxGap"] >= 14, f"paragraph gap collapsed: {r}"
     assert pg.errors == []
     pg.close()
+
+
+def test_share_text_never_touches_qr_or_via(ui_server, browser):
+    """Long digest: the two rows directly above the via baseline, right
+    of the label zone and left of the QR, must be card background."""
+    fid = _seed_crop_probe()
+    conn = __import__("rssgate").db.connect(UI_DB)
+    __import__("rssgate").db.set_article(
+        conn, conn.execute("SELECT id FROM articles WHERE link="
+        "'https://crop.test/1'").fetchone()["id"],
+        summary=" ".join(["Digest text runs long enough through many"
+                         " lines to cross the whole masthead band and"
+                         " force the flow to switch from the narrow"
+                         " column to full width somewhere inside it"] * 3))
+    conn.commit(); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    r = pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      // crop probe: bandB=274, narrow baselines <=248 (rows to 251 ->
+      // phys 502). Danger corridor: phys 506..560, between the via
+      // label (ends ~x260) and the QR (starts x1196).
+      const z = g.getImageData(300, 506, 850, 54).data;
+      let dark = 0;
+      for (let i = 0; i < z.length; i += 4)
+        if (z[i] < 110 && z[i+1] < 110 && z[i+2] < 110) dark++;
+      return { dark };
+    }""", art)
+    assert r["dark"] < 30, f"text encroaching the via/QR line: {r}"
+    assert pg.errors == []
+    pg.close()
