@@ -375,8 +375,9 @@
       if (p) { spacers++; dY += 8; }
       let words = paras[p].split(/\s+/);
       while (words.length) {
-        const narrow = dY + 24 <= bandB - 26;  // keep clear of via line
-        if (dY + 24 > bandB - 26 && dY < bandB) dY = bandB;  // first wide
+        const narrow = dY + 24 <= bandB - 8;   // clear of the band floor
+        if (dY + 24 > bandB - 8 && dY < bandB + 10)
+          dY = bandB + 10;                     // air below graphics
         const tw = narrow ? bandTextW : full;
         let line = '', i = 0;
         for (; i < words.length; i++) {
@@ -399,8 +400,8 @@
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
     const meta = [(a.feed_title || '').trim(), when]
                    .filter(Boolean).join('  \u00b7  ');
-    const contentBottom = Math.max(bandB, yDigest + digestH);
-    const H = Math.round(contentBottom) + PAD + 4;  // no footer row
+    const contentBottom = Math.max(bandB + 10, yDigest + digestH);
+    const H = Math.round(contentBottom) + 20 + PAD;  // via line + margin
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
@@ -425,7 +426,8 @@
     x.font = `16px ${fam}`;
     for (const l of dLines) x.fillText(l.t, PAD, l.y);
     x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-    x.fillText('via RSSgate', PAD, bandB);        // on the band's line
+    x.textAlign = 'right';
+    x.fillText('via RSSgate', W - PAD, contentBottom + 20);
     return await new Promise(res => cv.toBlob(res, 'image/png'));
   }
 

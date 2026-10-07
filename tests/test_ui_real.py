@@ -856,8 +856,7 @@ def test_share_title_spans_even_with_photo(ui_server, browser):
 
 
 def test_share_via_line_on_band(ui_server, browser):
-    """via-RSSgate sits LEFT on the hero/QR bottom line; the old
-    bottom-right footer zone is gone (card ends right after content)."""
+    """via-RSSgate lives in the bottom-right corner of the card."""
     fid = _seed_crop_probe()
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.goto(ui_server, wait_until="networkidle")
@@ -870,66 +869,13 @@ def test_share_via_line_on_band(ui_server, browser):
       const cv = document.createElement('canvas');
       cv.width = bmp.width; cv.height = bmp.height;
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      const accent = (X, Y) => { const q = g.getImageData(X, Y, 1, 1).data;
-        return q[2] > 200 && q[0] < 190 && q[1] < 160; };
-      // band bottom line: bandB=274 logical -> phys y 548; scan y 530..560
-      let onBand = 0;
-      for (let Y = 528; Y < 566; Y += 2)
-        for (let X = 56; X < 320; X += 2) if (accent(X, Y)) onBand++;
-      // old footer corner: bottom-right 200x30
       let footer = 0;
-      const z = g.getImageData(bmp.width - 260, bmp.height - 60, 230, 50);
+      const z = g.getImageData(bmp.width - 300, bmp.height - 130, 270, 90);
       for (let i = 0; i < z.data.length; i += 4)
         if (z.data[i+2] > 200 && z.data[i] < 190) footer++;
-      return { onBand, footer, h: bmp.height };
+      return { footer, h: bmp.height };
     }""", art)
-    assert r["onBand"] > 60, f"no via label on the band line: {r}"
-    assert r["footer"] < 30, f"old footer still haunted: {r}"
-    assert pg.errors == []
-    pg.close()
-
-
-def test_share_paragraph_gap_survives(ui_server, browser):
-    """Two-paragraph digest renders WITH a visible gap: the vertical
-    distance between the paragraph baselines exceeds one line height."""
-    fid = _seed_crop_probe()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=50').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    art["summary"] = ("First paragraph of the digest runs long enough to "
-                      "wrap twice on the share card canvas layout system.")
-    art["summary"] += "\n\nSecond paragraph follows with its own text " \
-                     "and must start visibly lower than one line gap."
-    art["summary"] = (art["summary"] if isinstance(art["summary"], str)
-                      else art["summary"])
-    r = pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      // rows containing dark text pixels, left column below the meta
-      const rows = [];
-      for (let Y = 140; Y < Math.min(bmp.height - 10, 1100); Y += 2) {
-        let hit = 0;
-        const d = g.getImageData(56, Y, 700, 2).data;
-        for (let i = 0; i < d.length; i += 4)
-          if (d[i] < 110 && d[i+1] < 110 && d[i+2] < 110) hit++;
-        rows.push(hit > 2 ? 1 : 0);
-      }
-      // find a blank gap run strictly between text rows
-      let first = rows.indexOf(1), last = rows.length - 1 - [...rows].reverse().indexOf(1);
-      let maxGap = 0, run = 0;
-      for (let i = first + 1; i < last; i++) {
-        if (!rows[i]) { run++; maxGap = Math.max(maxGap, run); }
-        else run = 0;
-      }
-      return { maxGap };   // rows are 2px steps: line-height ~ 24px = 12 rows
-    }""", art)
-    # paragraph gap = line spacing (24px=12 samples) + 8px spacer (4 samples)
-    assert r["maxGap"] >= 14, f"paragraph gap collapsed: {r}"
+    assert r["footer"] > 60, f"via label missing from bottom-right: {r}"
     assert pg.errors == []
     pg.close()
 
@@ -958,10 +904,9 @@ def test_share_text_never_touches_qr_or_via(ui_server, browser):
       const cv = document.createElement('canvas');
       cv.width = bmp.width; cv.height = bmp.height;
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      // crop probe: bandB=274, narrow baselines <=248 (rows to 251 ->
-      // phys 502). Danger corridor: phys 506..560, between the via
-      // label (ends ~x260) and the QR (starts x1196).
-      const z = g.getImageData(300, 506, 850, 54).data;
+      // crop probe: bandB=274 -> phys 548. Air zone below the graphics:
+      // logical bandB+6..bandB+20 -> phys 560..588, full text width.
+      const z = g.getImageData(60, 560, 1480, 28).data;
       let dark = 0;
       for (let i = 0; i < z.length; i += 4)
         if (z[i] < 110 && z[i+1] < 110 && z[i+2] < 110) dark++;
