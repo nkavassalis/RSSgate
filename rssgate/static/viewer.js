@@ -333,7 +333,7 @@
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
     /* masthead: title+meta left | QR | hero right.
        QR bottom == hero bottom; QR top rides just under the meta. */
-    const TW = hero ? Math.round(W * 0.40) : 0;
+    const TW = hero ? Math.round(W * 0.33) : 0;
     const TH = hero ? Math.round(TW * 84 / 110) : 0;
     const QS = qr ? 100 : 0;
     const thumbX = W - PAD - TW;
