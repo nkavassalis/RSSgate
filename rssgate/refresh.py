@@ -254,7 +254,7 @@ def _cache_image(conn, art, page_html: str):
             if h and h in seen:
                 continue
             ph = imgstore.ahash(n)
-            if ph is not None and any(ham(ph, o) <= 10 for o in sigs):
+            if ph is not None and any(ham(ph, o) <= 20 for o in sigs):
                 continue                       # same photo, variant URL
             if h:
                 seen.add(h)

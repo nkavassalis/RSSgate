@@ -69,7 +69,7 @@ def dedupe_galleries(conn) -> int:
             if nm == r["image"]:
                 continue
             ph = imgstore.ahash(nm)
-            if ph is not None and any(ham(ph, o) <= 10 for o in sigs):
+            if ph is not None and any(ham(ph, o) <= 20 for o in sigs):
                 continue
             if ph is not None:
                 sigs.append(ph)
