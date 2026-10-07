@@ -23,15 +23,19 @@ RSSgate Admin</title>
 <main class="admin-main">
   <div class="admin-body">
   <nav class="sec-nav" aria-label="Settings sections">
+    <span class="nav-group">Overview</span>
     <a href="#sec-status">Status</a>
     <a href="#sec-usage">Usage &amp; performance</a>
+    <span class="nav-group">Reading</span>
     <a href="#sec-display">Display &amp; sharing</a>
     <a href="#sec-categories">Categories</a>
+    <span class="nav-group">Sources</span>
     <a href="#sec-feeds">Feeds</a>
+    <span class="nav-group">Processing</span>
     <a href="#sec-llm">Language model</a>
-    <a href="#sec-failures">Failures &amp; cleanup</a>
-    <a href="#sec-queue">Work queue</a>
     <a href="#sec-polling">Polling &amp; digests</a>
+    <a href="#sec-queue">Work queue</a>
+    <a href="#sec-failures">Failures &amp; cleanup</a>
   </nav>
   <div class="sec-col">
 
@@ -100,6 +104,8 @@ RSSgate Admin</title>
 
   <section class="panel" id="sec-feeds">
     <h2>Feeds</h2>
+    <input id="feed-q" class="feed-q" type="search" hidden
+           placeholder="filter feeds by name, address or category">
     <table class="feed-table" id="feed-table">
       <thead><tr><th>Feed</th><th>Categories</th><th>Enabled</th>
       <th>Last fetch</th><th></th></tr></thead>
@@ -144,51 +150,6 @@ RSSgate Admin</title>
     </div>
   </section>
 
-  <section class="panel" id="sec-failures">
-    <h2>Transcription failures</h2>
-    <div class="row">
-      <button class="btn ghost" id="fail-refresh">&#8635; Refresh list</button>
-      <button class="btn" id="fail-clear-btn">Clear all failed posts</button>
-      <span id="fail-clear-result" class="hint"></span>
-      <label class="inline-check"><input type="checkbox" id="cfg-logfail">
-        store failure reasons per article (troubleshooting mode)</label>
-    </div>
-    <ul id="failure-list" class="failure-list"><li class="hint">click Refresh</li></ul>
-
-    <h2>Maintenance</h2>
-    <div class="grid2">
-      <label>Keep articles for
-        <select id="cfg-retention">
-          <option value="0">forever (default)</option>
-          <option value="1">1 month</option>
-          <option value="3">3 months</option>
-          <option value="6">6 months</option>
-          <option value="12">12 months</option>
-          <option value="24">24 months</option>
-        </select></label>
-      <label>Image cache cap (MB, 0 = unlimited)
-        <input id="cfg-imgcap" type="number" min="0" step="50"></label>
-    </div>
-    <div class="row">
-      <button class="btn ghost" id="maint-run-btn">Run maintenance now</button>
-      <span id="maint-result" class="hint"></span>
-    </div>
-    <p class="hint">Retention deletes articles older than the window (all statuses)
-      and their now-orphaned images. The cache cap trims oldest files first.
-      Runs automatically every 6 hours and once at startup.</p>
-  </section>
-
-  <section class="panel" id="sec-queue">
-    <h2>Work queue</h2>
-    <p class="hint" id="wq-summary">–</p>
-    <div id="wq-current" class="wq-current"></div>
-    <table class="feed-table" id="wq-table">
-      <thead><tr><th></th><th>Article</th><th>Feed</th><th>Finished</th>
-        <th>Duration</th><th>Tokens</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
   <section class="panel" id="sec-polling">
     <h2>Polling &amp; summarizer</h2>
     <div class="grid2">
@@ -223,6 +184,63 @@ RSSgate Admin</title>
       <span id="save-result" class="hint"></span>
     </div>
   </section>
+
+  <section class="panel" id="sec-queue">
+    <h2>Work queue</h2>
+    <p class="hint" id="wq-summary">–</p>
+    <div id="wq-current" class="wq-current"></div>
+    <table class="feed-table" id="wq-table">
+      <thead><tr><th></th><th>Article</th><th>Feed</th><th>Finished</th>
+        <th>Duration</th><th>Tokens</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="panel" id="sec-failures">
+    <h2>Transcription failures</h2>
+    <div class="row">
+      <button class="btn ghost" id="fail-refresh">&#8635; Refresh list</button>
+      <label class="inline-check"><input type="checkbox" id="cfg-logfail">
+        store failure reasons per article (troubleshooting mode)</label>
+    </div>
+    <ul id="failure-list" class="failure-list"><li class="hint">click Refresh</li></ul>
+
+    <h2>Maintenance</h2>
+    <div class="grid2">
+      <label>Keep articles for
+        <select id="cfg-retention">
+          <option value="0">forever (default)</option>
+          <option value="1">1 month</option>
+          <option value="3">3 months</option>
+          <option value="6">6 months</option>
+          <option value="12">12 months</option>
+          <option value="24">24 months</option>
+        </select></label>
+      <label>Image cache cap (MB, 0 = unlimited)
+        <input id="cfg-imgcap" type="number" min="0" step="50"></label>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="maint-run-btn">Run maintenance now</button>
+      <span id="maint-result" class="hint"></span>
+    </div>
+    <p class="hint">Retention deletes articles older than the window (all statuses)
+      and their now-orphaned images. The cache cap trims oldest files first.
+      Runs automatically every 6 hours and once at startup.</p>
+
+    <div class="danger-zone">
+      <h3>Danger zone</h3>
+      <div class="row">
+        <button class="btn danger" id="fail-clear-btn">Clear all failed posts</button>
+        <span id="fail-clear-result" class="hint"></span>
+      </div>
+      <p class="hint">Permanently deletes every post that failed to digest,
+        plus any cached images only they used. Use it after fixing the cause
+        (model down, bad prompt) - new posts from the same feeds will be
+        fetched again on the next poll. This cannot be undone.</p>
+    </div>
+  </section>
+
+
 
   
 

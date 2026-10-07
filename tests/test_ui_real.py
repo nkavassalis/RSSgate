@@ -432,7 +432,7 @@ def test_edge_gesture_ignores_scroll_jitter(ui_server, browser):
 
 
 def test_ads_checkbox_moves_behind_cog(ui_server, browser):
-    """v0.47: Ads/LLM live behind the cog, persisted via Apply; the row
+    """v0.47: Ads/LLM live behind the cog, autosaved per field; the row
     keeps only On + a compact img tag. No phantom boxes (v0.37 lineage:
     controls exist exactly where the code reaches for them)."""
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
@@ -449,10 +449,10 @@ def test_ads_checkbox_moves_behind_cog(ui_server, browser):
           if r.method == "PUT" and r.url.endswith(f"/api/feeds/{fid}") else None)
     row.locator("button[data-act=cfg]").click()
     pg.wait_for_selector(".cfg-panel [data-role=spons]", timeout=5000)
-    pg.check(".cfg-panel [data-role=spons]")
-    pg.click("button[data-act=apply-cfg]")
-    pg.wait_for_timeout(700)
-    assert puts and '"hide_sponsored":true' in puts[0]
+    pg.check(".cfg-panel [data-role=spons]")          # autosaves on change
+    pg.wait_for_selector(".cfg-panel label:has([data-role=spons]).cfg-ok",
+                         timeout=5000)
+    assert puts and puts[-1] == '{"hide_sponsored":true}', puts
     assert pg.errors == []
     api = pg.evaluate("() => fetch('/api/feeds').then(r=>r.json()).then("
                       f"f => f.find(x => x.id === {fid}).hide_sponsored)")
@@ -888,8 +888,8 @@ def test_status_pips_visibility_and_links(ui_server, browser):
                                "e => getComputedStyle(e).display") != "none"
     pg.click("#pip-fail")
     pg.wait_for_url("**/admin#sec-failures", wait_until="networkidle")
-    top = pg.evaluate("""() => document.getElementById('sec-failures')
-        .getBoundingClientRect().top""")
+    top, vh = pg.evaluate("""() => [document.getElementById('sec-failures')
+        .getBoundingClientRect().top, innerHeight]""")
     assert 0 <= top < 200, f"failures panel not anchored into view: {top}"
     pg.go_back(wait_until="networkidle")
     pg.click("#pip-queue")
@@ -932,5 +932,55 @@ def test_admin_clear_failed_button_flow(ui_server, browser):
     pg.goto(ui_server + "/", wait_until="networkidle")
     assert pg.eval_on_selector("#pip-fail",
                                "e => getComputedStyle(e).display") == "none"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_admin_nav_groups_and_feed_filter(ui_server, browser):
+    """Grouped nav: 4 group labels visible on desktop, hidden in the
+    mobile chip row. Feed filter appears past 8 feeds and hides
+    non-matching rows (computed display:none, not just a class)."""
+    for i in range(9):
+        _mkfeed("filt")
+    tag = _mkfeed("needle")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    groups = pg.eval_on_selector_all(
+        ".sec-nav .nav-group", "els => els.map(e => [e.textContent,"
+        " getComputedStyle(e).display])")
+    assert [g[0] for g in groups] == ["Overview", "Reading", "Sources",
+                                      "Processing"], groups
+    assert all(g[1] != "none" for g in groups)
+    assert pg.eval_on_selector("#feed-q", "e => getComputedStyle(e)"
+                               ".display") != "none"
+    pg.fill("#feed-q", "needle")
+    shown = pg.eval_on_selector_all(
+        "#feed-table tbody tr[data-id]",
+        "rs => rs.filter(r => getComputedStyle(r).display !== 'none')"
+        ".map(r => +r.dataset.id)")
+    assert shown == [tag], shown
+    pg.fill("#feed-q", "")
+    assert pg.locator("#feed-table tbody tr[data-id]:visible").count() >= 10
+    m = _new_page(browser, viewport={"width": 390, "height": 844})
+    m.goto(ui_server + "/admin", wait_until="networkidle")
+    assert all(d == "none" for d in m.eval_on_selector_all(
+        ".sec-nav .nav-group", "els => els.map(e => getComputedStyle(e).display)"))
+    assert pg.errors == [] and m.errors == []
+    pg.close(); m.close()
+
+
+def test_danger_zone_holds_destructive_action(ui_server, browser):
+    """Clear-all lives inside the bordered danger zone at the END of the
+    failures section, away from routine buttons."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-failures", wait_until="networkidle")
+    inside = pg.evaluate("""() => !!document.querySelector(
+        '#sec-failures .danger-zone #fail-clear-btn')""")
+    assert inside
+    zone = pg.eval_on_selector("#sec-failures .danger-zone",
+                               "e => e.getBoundingClientRect().top")
+    maint = pg.eval_on_selector("#maint-run-btn",
+                                "e => e.getBoundingClientRect().top")
+    assert zone > maint, "danger zone must sit below routine maintenance"
     assert pg.errors == []
     pg.close()

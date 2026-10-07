@@ -297,7 +297,7 @@ label.cfg-bad { box-shadow:0 0 0 2px #c62828; border-radius:4px; }
 
 /* two-pane admin settings nav */
 .admin-body { display:block; }
-.sec-col { display:block; min-width:0; }
+.sec-col { display:block; min-width:0; padding-bottom:45vh; } /* last panels can reach the top */
 .sec-nav { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px;
   position:sticky; top:54px; z-index:5; background:var(--bg); padding:6px 0; }
 .sec-nav a { font-size:.78rem; padding:5px 10px; border-radius:999px;
@@ -359,4 +359,16 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
   .pip-ok  { color:#4be08a; }
   .pip-err { color:#ff7a6e; }
 }
-section.panel { scroll-margin-top:72px; }
+
+/* admin: grouped nav, danger zone, feed filter */
+.nav-group { display:none; font-size:.68rem; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+  padding:10px 10px 2px; }
+.nav-group:first-child { padding-top:0; }
+@media (min-width: 960px) { .nav-group { display:block; } }
+.danger-zone { margin-top:22px; padding:12px 14px 4px;
+  border:1px solid color-mix(in srgb, #c62828 45%, var(--line));
+  border-radius:10px; }
+.danger-zone h3 { margin:0 0 8px; font-size:.9rem; color:#c62828; }
+@media (prefers-color-scheme: dark) { .danger-zone h3, .btn.danger { color:#ff7a6e; } }
+.feed-q { width:100%; margin:0 0 10px; }

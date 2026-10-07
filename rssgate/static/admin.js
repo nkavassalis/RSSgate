@@ -23,6 +23,13 @@ document.getElementById('admin-close').addEventListener('click', e => {
 const chk = (root, sel, fb) => root.querySelector(sel) || { checked: !!fb };
 const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
 
+function applyFeedFilter() {
+  const q = $('feed-q').value.trim().toLowerCase();
+  $('feed-table').querySelectorAll('tbody tr[data-id]').forEach(tr => {
+    tr.hidden = !!q && !tr.dataset.search.includes(q);
+  });
+}
+$('feed-q').addEventListener('input', applyFeedFilter);
 async function renderFeeds() {
   const feeds = await api('/api/feeds');
   ALLCATS = (await api('/api/categories')).map(c => c.name);
@@ -31,6 +38,8 @@ async function renderFeeds() {
   const tbody = $('feed-table').querySelector('tbody');
   tbody.innerHTML = feeds.map(f => `
     <tr data-id="${f.id}" data-was-llm="${f.summarize === 0 ? 0 : 1}"
+        data-search="${esc([f.custom_title, f.title, f.url, f.categories]
+                            .filter(Boolean).join(' ').toLowerCase())}"
         class="${f.enabled ? '' : 'off'}">
       <td><span class="fname-cell" data-role="fname">
           <a href="${esc(f.url)}" target="_blank">${esc(f.custom_title || f.title || f.url)}</a>
@@ -54,6 +63,8 @@ async function renderFeeds() {
       </td>
     </tr>
 `).join('');
+  $('feed-q').hidden = feeds.length <= 8;   // filter earns its space
+  applyFeedFilter();
   // (inline cfg rows replaced by the cog modal)
 
   tbody.querySelectorAll('tr[data-id]').forEach(tr => {
@@ -538,7 +549,14 @@ async function renderLlmStats() {
   $('st-last').textContent = 'last LLM call: ' + (s.last_call_ts || 'never');
 }
 
-renderFeeds(); renderCategories(); loadConfig(); renderUsage(); renderLlmStats(); renderWorkqueue();
+// initial renders are async and change page height: re-apply a deep-link
+// (#sec-*) once they land, or the jump targets a stale position
+Promise.allSettled([renderFeeds(), renderCategories(), loadConfig(),
+                    renderUsage(), renderLlmStats(), renderWorkqueue()])
+  .then(() => {
+    const t = location.hash && document.getElementById(location.hash.slice(1));
+    if (t) t.scrollIntoView({ block: 'start' });
+  });
 setInterval(() => { renderUsage(); renderLlmStats(); }, 15000);
 setInterval(renderWorkqueue, 5000);
 
@@ -624,32 +642,57 @@ async function openFeedCfg(id) {
       </div>
     </div>
     <div class="row">
-      <button class="btn" data-act="apply-cfg">Apply</button>
+      <button class="btn" data-act="cfg-done">Done</button>
       <button class="btn ghost" data-act="cfg-refresh" title="fetch this feed now">&#x21bb; Refresh now</button>
       <button class="btn ghost danger" data-act="cfg-del">&#10005; Delete feed</button>
-      <span class="cfg-status hint"></span>
+      <span class="cfg-status hint">changes save as you make them</span>
     </div>`;
   veil.hidden = false;
   const q = s => body.querySelector(s);
-  q('[data-act=apply-cfg]').addEventListener('click', async () => {
-    const blocked = [...body.querySelectorAll('.cat-pick input:not(:checked)')]
-      .map(i => i.dataset.cat);
-    const patch = { digest_length: q('[data-role=dlen]').value,
-                    system_prompt: q('[data-role=sprompt]').value,
-                    max_input_chars: Math.max(0, +q('[data-role=micap]').value || 0),
-                    sync_deletes: q('[data-role=syncdel]').checked,
-                    summarize: q('[data-role=llm]').checked,
-                    hide_sponsored: q('[data-role=spons]').checked,
-                    images_mode: q('[data-role=imgmode]').value,
-                    category_block: blocked };
-    await api(`/api/feeds/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
-    q('.cfg-status').textContent = 'saved \u2713';
-    const promptChanged = patch.system_prompt !== body.dataset.wasPrompt
-      || patch.digest_length !== body.dataset.wasDlen;
-    const wasLlm = body.dataset.wasLlm === '1';
+  // autosave: each control persists its OWN field on change (textarea on
+  // blur), flashing its label like the Display panel. Settings that change
+  // what a digest IS (prompt, length, LLM on/off) offer a re-process.
+  const FIELD = {
+    dlen:    () => ({ digest_length: q('[data-role=dlen]').value }),
+    sprompt: () => ({ system_prompt: q('[data-role=sprompt]').value }),
+    micap:   () => ({ max_input_chars: Math.max(0, +q('[data-role=micap]').value || 0) }),
+    syncdel: () => ({ sync_deletes: q('[data-role=syncdel]').checked }),
+    llm:     () => ({ summarize: q('[data-role=llm]').checked }),
+    spons:   () => ({ hide_sponsored: q('[data-role=spons]').checked }),
+    imgmode: () => ({ images_mode: q('[data-role=imgmode]').value }),
+    cat:     () => ({ category_block: [...body.querySelectorAll(
+                 '.cat-pick input:not(:checked)')].map(i => i.dataset.cat) }),
+  };
+  body.addEventListener('change', async e => {
+    const el = e.target;
+    const role = el.dataset.role || (el.dataset.cat !== undefined ? 'cat' : '');
+    if (!FIELD[role]) return;
+    const label = el.closest('label') || el;
+    const st = q('.cfg-status');
+    label.classList.add('cfg-saving');
+    try {
+      await api(`/api/feeds/${id}`, { method: 'PUT',
+                                      body: JSON.stringify(FIELD[role]()) });
+      label.classList.remove('cfg-saving'); label.classList.add('cfg-ok');
+      setTimeout(() => label.classList.remove('cfg-ok'), 1200);
+      st.textContent = 'saved \u2713';
+    } catch (err) {
+      label.classList.remove('cfg-saving'); label.classList.add('cfg-bad');
+      setTimeout(() => label.classList.remove('cfg-bad'), 2500);
+      st.textContent = 'save failed: ' + err.message;
+      return;
+    }
+    let redo = false;
+    if (role === 'sprompt' && el.value !== body.dataset.wasPrompt) {
+      body.dataset.wasPrompt = el.value; redo = true; }
+    if (role === 'dlen' && el.value !== body.dataset.wasDlen) {
+      body.dataset.wasDlen = el.value; redo = true; }
+    if (role === 'llm' && (el.checked ? '1' : '0') !== body.dataset.wasLlm) {
+      body.dataset.wasLlm = el.checked ? '1' : '0'; redo = true; }
     await renderFeeds();
-    if (promptChanged || wasLlm !== patch.summarize) await maybeRedigest(id);
+    if (redo) await maybeRedigest(id);
   });
+  q('[data-act=cfg-done]').addEventListener('click', () => { veil.hidden = true; });
   q('[data-act=cfg-refresh]').addEventListener('click', async () => {
     const st = q('.cfg-status');
     st.textContent = 'refreshing\u2026';
