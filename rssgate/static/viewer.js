@@ -331,19 +331,21 @@
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
-    // masthead row: copy left | QR | hero right (gallery ratio 110:84)
+    /* masthead: title+meta left | QR | hero right.
+       QR bottom == hero bottom; QR top rides just under the meta. */
     const TW = hero ? Math.round(W * 0.40) : 0;
     const TH = hero ? Math.round(TW * 84 / 110) : 0;
     const QS = qr ? 100 : 0;
     const thumbX = W - PAD - TW;
     const qrX = thumbX - GAP - QS;
     const textW = (qr ? qrX - GAP : thumbX) - PAD;
-    function titleLines(text, y0) {         // wraps inside the text column
-      const out = []; let line = ''; let idx = 0;
+    m.font = `700 26px ${fam}`;
+    function titleLines(text) {
+      const out = []; let line = '';
       for (const w of (text || '(untitled)').split(/\s+/).filter(Boolean)) {
         const t = line ? line + ' ' + w : w;
         if (m.measureText(t).width > textW && line) {
-          out.push(line); idx++; line = w;
+          out.push(line); line = w;
           if (out.length === 4) break;
         } else line = t;
       }
@@ -351,13 +353,16 @@
       if (out.length === 4) out[3] = out[3].replace(/[,.;:\s]+$/, '') + '\u2026';
       return out;
     }
-    m.font = `700 26px ${fam}`;
     const tLines = titleLines(a.title);
     const titleH = tLines.length * 33 + 6;
-    const yMeta = PAD + titleH + 6;
-    const qrY = yMeta + 24;                  // directly under the date line
-    const mastheadB = Math.max(PAD + TH, qr ? qrY + QS : 0);
-    const yDigest = Math.max(yMeta + 40, mastheadB + 18);
+    const yMeta = PAD + titleH + 6;                // meta baseline
+    // hero top at PAD; QR band: top >= meta bottom + 12, bottom pinned
+    // to hero bottom (a big QR may stretch the hero band down)
+    const qrTopMin = yMeta + 22;
+    const THeff = Math.max(TH, QS + qrTopMin - PAD);
+    const qrY = PAD + THeff - QS;                  // flush with hero bottom
+    const mastheadB = Math.max(PAD + THeff, qr ? qrY + QS : 0);
+    const yDigest = mastheadB + 20;
     const full = W - PAD * 2;
     m.font = `16px ${fam}`;
     const dAll = wrapLines(m, a.summary || '', full);
@@ -372,18 +377,21 @@
     const when = new Date(a.ts).toLocaleString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
-    const meta = [(a.feed_title || '').trim(), when].filter(Boolean).join('  \u00b7  ');
+    const meta = [(a.feed_title || '').trim(), when]
+                   .filter(Boolean).join('  \u00b7  ');
     const contentBottom = yDigest + digestH;
-    const H = Math.round(contentBottom) + 28 + 24 + PAD;   // via-RSSgate row
+    const H = Math.round(contentBottom) + 44;     // via-row in the pad
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
-    x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff'); x.fillRect(0, 0, W, H);
+    x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff');
+    x.fillRect(0, 0, W, H);
     if (hero) {
-      x.save(); roundRect(x, thumbX, PAD, TW, TH, 10); x.clip();
-      const sc = Math.max(TW / hero.width, TH / hero.height);
+      x.save(); roundRect(x, thumbX, PAD, TW, THeff, 10); x.clip();
+      const sc = Math.max(TW / hero.width, THeff / hero.height);
       const dw = hero.width * sc, dh = hero.height * sc;
-      x.drawImage(hero, thumbX + (TW - dw) / 2, PAD + (TH - dh) / 2, dw, dh);
+      x.drawImage(hero, thumbX + (TW - dw) / 2,
+                  PAD + (THeff - dh) / 2, dw, dh);
       x.restore();
     }
     if (qr) {
@@ -396,16 +404,18 @@
     tLines.forEach(l => { y += 26; x.fillText(l, PAD, y); });
     x.fillStyle = col('--muted', '#71717a'); x.font = `14px ${fam}`;
     x.fillText(meta, PAD, yMeta + 12);
-    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a'); x.font = `16px ${fam}`;
+    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
+    x.font = `16px ${fam}`;
     y = yDigest;
     dLines.forEach(l => { y += 24; if (l) x.fillText(l, PAD, y);
                              else y += 12; });
     x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
     x.textAlign = 'right';
-    x.fillText('via RSSgate', W - PAD, contentBottom + 30);
+    x.fillText('via RSSgate', W - PAD, H - PAD + 4);
     x.textAlign = 'left';
     return await new Promise(res => cv.toBlob(res, 'image/png'));
   }
+
   async function doSnapshot(btn) {
     const card = btn.closest('.card');
     const a = card && snapData[card.dataset.id];
