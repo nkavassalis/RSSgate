@@ -763,3 +763,40 @@ def test_feed_thumb_uses_gallery_ratio(ui_server, browser):
     assert all(abs(a - 110/84) < 0.1 for a in ars), f"mixed ratios: {ars}"
     assert pg.errors == []
     pg.close()
+
+
+def test_share_title_spans_full_width(ui_server, browser):
+    """A one-line-at-full-width title must span: text pixels right of
+    the old narrow-column boundary, inside the title band."""
+    from rssgate import db
+    conn = db.connect(UI_DB)
+    fid = db.add_feed(conn, "https://wide.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "w1", "https://wide.test/1",
+        "Wide titles should flow across the whole masthead not dodge",
+        "2027-02-01T00:00:00Z")
+    conn.execute("UPDATE articles SET status='ready',"
+                 " summary='wide digest' WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=10').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    assert art, "wide-title article missing"
+    r = pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      // title band y 66..124 phys; right zone x 1240..1500 (past the
+      // old narrow wrap at ~612 logical). card bg is light, text dark
+      const zone = g.getImageData(1240, 66, 260, 58).data;
+      let dark = 0;
+      for (let i = 0; i < zone.length; i += 4)
+        if (zone[i] < 120 && zone[i+1] < 120) dark++;
+      return { dark };
+    }""", art)
+    assert r["dark"] > 200, f"title does not span right zone: {r}"
+    assert pg.errors == []
+    pg.close()

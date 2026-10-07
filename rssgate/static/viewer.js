@@ -344,8 +344,7 @@
     const QS = qr ? 100 : 0;
     const imgX = W - PAD - iw;
     m.font = `700 26px ${fam}`;
-    function titleLines(text) {
-      const tw = (qr ? imgX - GAP - QS - GAP : imgX - GAP) - PAD;
+    function titleLines(text, tw) {
       const out = []; let line = '';
       for (const w of (text || '(untitled)').split(/\s+/).filter(Boolean)) {
         const t = line ? line + ' ' + w : w;
@@ -358,7 +357,16 @@
       if (out.length === 4) out[3] = out[3].replace(/[,.;:\s]+$/, '') + '\u2026';
       return out;
     }
-    const tLines = titleLines(a.title);
+    // pass 1: title spans the FULL card width over the bottom-flush
+    // graphics; only long titles that would touch the image/QR band
+    // re-wrap to the narrow column
+    const fullW = W - PAD * 2;
+    const narrowW = (qr ? imgX - GAP - QS - GAP : imgX - GAP) - PAD;
+    let tLines = titleLines(a.title, fullW);
+    const estBand = Math.max(PAD + ih, PAD + tLines.length * 33 + 6 + 26 + QS);
+    const imgTopEst = estBand - ih;
+    if (PAD + tLines.length * 33 + 6 > imgTopEst)
+      tLines = titleLines(a.title, narrowW);
     const titleH = tLines.length * 33 + 6;
     const yMeta = PAD + titleH + 6;                 // meta baseline
     const bandB = Math.max(PAD + ih, yMeta + 20 + QS);   // shared bottom
