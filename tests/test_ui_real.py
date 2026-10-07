@@ -639,18 +639,19 @@ def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".snap-btn")
-    art = pg.evaluate("async () => (await (await fetch('/api/articles'))"
-                      ".json()).items[0]")
+    art = pg.evaluate("""async () => {
+      const d = await (await fetch('/api/articles?fresh=1&limit=50')).json();
+      return d.items.find(i => !i.image) || d.items[0]; }""")
     body = ("First paragraph of the digest, long enough to wrap across at "
             "least two canvas lines on its own so geometry is meaningful.\n\n"
             "Second paragraph starts on its own visual block in the image.")
     h = pg.evaluate("""async ([a, p, f]) => {
       const g = async s => { const b = await window.__renderCardPng(
-          {...a, summary: s});
+          {...a, summary: s, image: null, link: null});
         const bmp = await createImageBitmap(b); return bmp.height; };
       return { para: await g(p), flat: await g(f) };
     }""", [art, body, body.replace("\n\n", " ")])
-    assert h["para"] > h["flat"] + 20, h
+    assert h["para"] > h["flat"] + 4, h
     assert pg.errors == []
     pg.close()
 
@@ -884,5 +885,50 @@ def test_share_via_line_on_band(ui_server, browser):
     }""", art)
     assert r["onBand"] > 60, f"no via label on the band line: {r}"
     assert r["footer"] < 30, f"old footer still haunted: {r}"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_share_paragraph_gap_survives(ui_server, browser):
+    """Two-paragraph digest renders WITH a visible gap: the vertical
+    distance between the paragraph baselines exceeds one line height."""
+    fid = _seed_crop_probe()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    art["summary"] = ("First paragraph of the digest runs long enough to "
+                      "wrap twice on the share card canvas layout system.")
+    art["summary"] += "\n\nSecond paragraph follows with its own text " \
+                     "and must start visibly lower than one line gap."
+    art["summary"] = (art["summary"] if isinstance(art["summary"], str)
+                      else art["summary"])
+    r = pg.evaluate("""async (a) => {
+      const png = await window.__renderCardPng(a);
+      const bmp = await createImageBitmap(png);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+      // rows containing dark text pixels, left column below the meta
+      const rows = [];
+      for (let Y = 140; Y < Math.min(bmp.height - 10, 1100); Y += 2) {
+        let hit = 0;
+        const d = g.getImageData(56, Y, 700, 2).data;
+        for (let i = 0; i < d.length; i += 4)
+          if (d[i] < 110 && d[i+1] < 110 && d[i+2] < 110) hit++;
+        rows.push(hit > 2 ? 1 : 0);
+      }
+      // find a blank gap run strictly between text rows
+      let first = rows.indexOf(1), last = rows.length - 1 - [...rows].reverse().indexOf(1);
+      let maxGap = 0, run = 0;
+      for (let i = first + 1; i < last; i++) {
+        if (!rows[i]) { run++; maxGap = Math.max(maxGap, run); }
+        else run = 0;
+      }
+      return { maxGap };   // rows are 2px steps: line-height ~ 24px = 12 rows
+    }""", art)
+    # paragraph gap = line spacing (24px=12 samples) + 8px spacer (4 samples)
+    assert r["maxGap"] >= 14, f"paragraph gap collapsed: {r}"
     assert pg.errors == []
     pg.close()

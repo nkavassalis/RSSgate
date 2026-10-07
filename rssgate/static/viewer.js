@@ -384,12 +384,13 @@
           line = t;
         }
         if (dLines.length >= 40) { truncated = true; break outer; }
-        dLines.push(line); words = words.slice(i); dY += 24;
+        dLines.push({ t: line, y: dY + 24 });
+        words = words.slice(i); dY += 24;
       }
     }
     if (truncated && dLines.length)
-      dLines[dLines.length - 1] =
-        dLines[dLines.length - 1].replace(/[,.;:\s]+$/, '') + '\u2026';
+      dLines[dLines.length - 1].t =
+        dLines[dLines.length - 1].t.replace(/[,.;:\s]+$/, '') + '\u2026';
     if (dY < bandB) dY = bandB;           // resume below the band
     const digestH = dY - yDigest;
     const when = new Date(a.ts).toLocaleString(undefined, {
@@ -421,8 +422,7 @@
     x.fillText(meta, PAD, yMeta + 12);
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
     x.font = `16px ${fam}`;
-    y = yDigest;
-    for (const l of dLines) { y += 24; x.fillText(l, PAD, y); }
+    for (const l of dLines) x.fillText(l.t, PAD, l.y);
     x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
     x.fillText('via RSSgate', PAD, bandB);        // on the band's line
     return await new Promise(res => cv.toBlob(res, 'image/png'));
