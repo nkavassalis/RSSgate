@@ -719,7 +719,7 @@ def _probe_crop_colors(pg, ui_server, fid):
       const top = [...g.getImageData(SX, 250, 1, 1).data];
       const mid = [...g.getImageData(SX, 361, 1, 1).data];  // photo centre
       let dark = 0;
-      const z = g.getImageData(1200, 380, 220, 200).data;  // QR zone
+      const z = g.getImageData(60, 280, 290, 260).data;   // QR zone (left)
       for (let i = 0; i < z.length; i += 4)
         if (z[i] < 90 && z[i+1] < 90 && z[i+2] < 90) dark++;
       return { top: top.slice(0, 3), mid: mid.slice(0, 3), dark,
@@ -904,9 +904,9 @@ def test_share_text_never_touches_qr_or_via(ui_server, browser):
       const cv = document.createElement('canvas');
       cv.width = bmp.width; cv.height = bmp.height;
       const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      // crop probe: bandB=274 -> phys 548. Air zone below the graphics:
-      // logical bandB+6..bandB+20 -> phys 560..588, full text width.
-      const z = g.getImageData(60, 560, 1480, 28).data;
+      // crop probe: bandB=274. Caption ends ~phys 584, first wide
+      // glyph top ~phys 640: the air strip between must stay clean.
+      const z = g.getImageData(60, 596, 1480, 34).data;
       let dark = 0;
       for (let i = 0; i < z.length; i += 4)
         if (z[i] < 110 && z[i+1] < 110 && z[i+2] < 110) dark++;

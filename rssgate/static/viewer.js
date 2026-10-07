@@ -330,11 +330,10 @@
                              .catch(() => null) : null;
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
-    const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
-    /* masthead: full-width title, full-width meta line; hero + QR drop
-       BELOW the meta, bottom-flush with each other; digest flows left
-       of them, then full width past their bottom. */
-    const IW = Math.round(W * 0.30), IH = 175, QS = qr ? 100 : 0;
+    /* masthead: full-width title + meta; band below = QR left, digest
+       middle, hero right, all bottom-flush; caption + full-width text
+       below. */
+    const IW = Math.round(W * 0.30), IH = 175;
     let iw = 0, ih = 0;
     if (hero) {
       const s = Math.min(IW / hero.width, IH / hero.height);
@@ -342,6 +341,10 @@
       ih = Math.round(hero.height * s);
     }
     const imgX = W - PAD - iw;
+    const QS = qr ? Math.max(84, Math.min(ih || 100, 150)) : 0;
+    const qrX = PAD;
+    const textX = PAD + QS + GAP;
+    const bandTextW = (imgX - GAP) - textX;
     m.font = `700 26px ${fam}`;
     function wrapAt(text, tw, max) {
       const out = []; let line = '';
@@ -360,25 +363,21 @@
     const tLines = wrapAt(a.title, W - PAD * 2, 4);
     const titleH = tLines.length * 33 + 6;
     const yMeta = PAD + titleH + 6;                    // meta baseline
-    const bandTop = yMeta + 26;                        // below the meta
+    const bandTop = yMeta + 26;
     const bandB = Math.max(bandTop + ih, bandTop + QS + 8);
     const imgY = bandB - ih, qrY = bandB - QS;
-    const yDigest = bandTop;
-    const full = W - PAD * 2;
-    const bandTextW = (qr ? imgX - GAP - QS - GAP : imgX - GAP) - PAD;
-    // zone-aware digest: narrow beside the graphics, full past them
+    // digest flows in the middle channel, then full width below
     m.font = `16px ${fam}`;
     const dLines = [];
-    let spacers = 0, dY = yDigest, truncated = false;
+    let dY = bandTop, truncated = false;
     const paras = (a.summary || '').split(/\n\s*\n/).filter(p => p.trim());
     outer: for (let p = 0; p < paras.length; p++) {
-      if (p) { spacers++; dY += 8; }
+      if (p) dY += 8;
       let words = paras[p].split(/\s+/);
       while (words.length) {
-        const narrow = dY + 24 <= bandB - 8;   // clear of the band floor
-        if (dY + 24 > bandB - 8 && dY < bandB + 10)
-          dY = bandB + 10;                     // air below graphics
-        const tw = narrow ? bandTextW : full;
+        const narrow = dY + 24 <= bandB - 8;
+        if (!narrow && dY < bandB + 34) dY = bandB + 34;  // caption air
+        const tw = narrow ? bandTextW : W - PAD * 2;
         let line = '', i = 0;
         for (; i < words.length; i++) {
           const t = line ? line + ' ' + words[i] : words[i];
@@ -386,22 +385,21 @@
           line = t;
         }
         if (dLines.length >= 40) { truncated = true; break outer; }
-        dLines.push({ t: line, y: dY + 24 });
+        dLines.push({ t: line, y: dY + 24, x: narrow ? textX : PAD });
         words = words.slice(i); dY += 24;
       }
     }
     if (truncated && dLines.length)
       dLines[dLines.length - 1].t =
         dLines[dLines.length - 1].t.replace(/[,.;:\s]+$/, '') + '\u2026';
-    if (dY < bandB) dY = bandB;           // resume below the band
-    const digestH = dY - yDigest;
     const when = new Date(a.ts).toLocaleString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit' });      // sharer's timezone
     const meta = [(a.feed_title || '').trim(), when]
                    .filter(Boolean).join('  \u00b7  ');
-    const contentBottom = Math.max(bandB + 10, yDigest + digestH);
-    const H = Math.round(contentBottom) + 20 + PAD;  // via line + margin
+    const contentBottom = Math.max(bandB + (qr ? 52 : 10), bandTop, dY)
+                          + 10;
+    const H = Math.round(contentBottom) + 20 + PAD;
     const cv = document.createElement('canvas');
     cv.width = W * DPR; cv.height = H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
@@ -413,8 +411,10 @@
       x.restore();
     }
     if (qr) {
-      x.fillStyle = '#ffffff'; x.fillRect(imgX - GAP - QS, qrY, QS, QS);
-      x.drawImage(qr, imgX - GAP - QS, qrY, QS, QS);
+      x.fillStyle = '#ffffff'; x.fillRect(qrX, qrY, QS, QS);
+      x.drawImage(qr, qrX, qrY, QS, QS);
+      x.fillStyle = col('--muted', '#71717a'); x.font = `12px ${fam}`;
+      x.fillText('Link to full article', qrX, bandB + 18);
     }
     let y = PAD;
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
@@ -424,7 +424,7 @@
     x.fillText(meta, PAD, yMeta + 12);
     x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
     x.font = `16px ${fam}`;
-    for (const l of dLines) x.fillText(l.t, PAD, l.y);
+    for (const l of dLines) x.fillText(l.t, l.x, l.y);
     x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
     x.textAlign = 'right';
     x.fillText('via RSSgate', W - PAD, contentBottom + 20);
