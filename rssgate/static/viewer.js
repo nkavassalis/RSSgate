@@ -334,7 +334,7 @@
     // masthead row: copy left | QR | hero right (gallery ratio 110:84)
     const TW = hero ? Math.round(W * 0.40) : 0;
     const TH = hero ? Math.round(TW * 84 / 110) : 0;
-    const QS = qr ? 76 : 0;
+    const QS = qr ? 100 : 0;
     const thumbX = W - PAD - TW;
     const qrX = thumbX - GAP - QS;
     const textW = (qr ? qrX - GAP : thumbX) - PAD;

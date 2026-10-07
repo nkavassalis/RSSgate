@@ -749,3 +749,17 @@ def test_share_qr_nests_under_the_date(ui_server, browser):
     assert px["dark"] > 400, f"no QR modules under the date: {px}"
     assert pg.errors == []
     pg.close()
+
+
+def test_feed_thumb_uses_gallery_ratio(ui_server, browser):
+    """Reader hero thumbs share the gallery's 110:84 box (±0.1):
+    one image language across feed, gallery, and shares."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    ars = pg.evaluate("""() => [...document.querySelectorAll('img.card-thumb')]
+        .map(i => { const r = i.getBoundingClientRect();
+          return +(r.width / r.height).toFixed(2); })""")
+    assert ars, "no thumbs on the stream"
+    assert all(abs(a - 110/84) < 0.1 for a in ars), f"mixed ratios: {ars}"
+    assert pg.errors == []
+    pg.close()
