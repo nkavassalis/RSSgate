@@ -333,8 +333,8 @@
     const url = (a.link || '').replace(/^https?:\/\//, '').slice(0, 72);
     /* masthead v4: photo small, flush right, bottom-flush with the QR;
        QR rides the date line; digest starts under the lower edge. */
-    const IW = Math.round(W * 0.24);                 // photo width cap
-    const IH = 150;                                  // photo height cap
+    const IW = Math.round(W * 0.30);                 // photo width cap
+    const IH = 175;                                  // photo height cap
     let iw = 0, ih = 0;
     if (hero) {
       const sc0 = Math.min(IW / hero.width, IH / hero.height);

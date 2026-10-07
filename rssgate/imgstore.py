@@ -116,17 +116,27 @@ def safe_path(name: str) -> Path | None:
     return p if p.is_file() else None
 
 
-def ahash(name: str, bits: int = 16) -> int | None:
-    """Average perceptual hash (grayscale, mean-threshold): survives
-    resize variants that byte hashing cannot. Returns bits*bits bitmask."""
+def ahash(name: str, bits: int = 8) -> int | None:
+    """Average perceptual hash (grayscale, mean-threshold, 8x8): robust
+    to resize AND crop variants. Flat images return None (nothing to
+    distinguish them)."""
     if not _dir:
         return None
     try:
         from PIL import Image
         with Image.open(_dir / name) as im:
-            im = im.convert("L").resize((bits, bits), Image.BILINEAR)
+            im = im.convert("L")
+            # centre crop: og variants differ mostly at the edges
+            w, h = im.size
+            cw, ch = int(w * 0.6), int(h * 0.6)
+            im = im.crop(((w - cw) // 2, (h - ch) // 2,
+                          (w + cw) // 2, (h + ch) // 2))
+            im = im.resize((bits, bits), Image.BILINEAR)
             px = list(im.tobytes())
         avg = sum(px) / len(px)
+        var = sum((p - avg) ** 2 for p in px) / len(px)
+        if var < 64:          # near-flat: mean-threshold is meaningless
+            return None
         mask = 0
         for p in px:
             mask = (mask << 1) | (1 if p > avg else 0)

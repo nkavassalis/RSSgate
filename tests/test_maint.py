@@ -130,8 +130,11 @@ def test_dedupe_galleries_repairs_resized_twins(conn, tmp_path):
     db.set_article(conn, aid, image=hero,
                    images=",".join([hero, twin, other]))
     assert maint.dedupe_galleries(conn) == 1
-    row = conn.execute("SELECT images FROM articles WHERE id=?",
+    row = conn.execute("SELECT image, images FROM articles WHERE id=?",
                        (aid,)).fetchone()
-    imgs = [x for x in row["images"].split(",") if x and x != "-"]
-    assert imgs == [other] or imgs == []           # twin gone, distinct kept
-    assert (d / other).exists() and not (d / twin).exists()
+    imgs = [x for x in row["image"].split(",") if x and x != "-"] if False else []
+    assert row["image"] == twin                    # twin promoted to hero
+    gal = [x for x in row["images"].split(",") if x and x != "-"]
+    assert gal == [other]                          # distinct stays in gallery
+    assert (d / other).exists() and (d / twin).exists()
+    assert not (d / hero).exists()                 # og draft reclaimed

@@ -242,6 +242,7 @@ def _cache_image(conn, art, page_html: str):
         d = imgstore.directory()
         import hashlib
         seen, sigs, keep = set(), [], []
+        orphan_extra = []
 
         def ham(a, b):
             return bin(a ^ b).count("1")
@@ -254,8 +255,19 @@ def _cache_image(conn, art, page_html: str):
             if h and h in seen:
                 continue
             ph = imgstore.ahash(n)
-            if ph is not None and any(ham(ph, o) <= 20 for o in sigs):
-                continue                       # same photo, variant URL
+            if ph is not None and sigs:
+                d0 = [(ham(ph, o), k) for k, o in enumerate(sigs)]
+                best, k = min(d0)
+                if best <= 10:
+                    if k == 0:
+                        # gallery twin is usually the fuller copy:
+                        # it becomes the hero, the og draft is dropped
+                        og_n = keep[0][1]
+                        keep[0] = (u, n)
+                        sigs[0] = ph
+                        orphan_extra.append(og_n)
+                    continue
+            # (first kept image holds the hero slot at index 0)
             if h:
                 seen.add(h)
             if ph is not None:
@@ -271,7 +283,8 @@ def _cache_image(conn, art, page_html: str):
                 old.add(n)
         db.set_article(conn, art["id"], image=names[0], image_url=urls[0],
                        images=",".join(names))
-        db.release_files(conn, old - set(names))   # proactive orphan reclaim
+        db.release_files(conn, (old - set(names))
+                           | set(orphan_extra))  # reclaim
         return names
     except Exception:  # noqa: BLE001 - images are decorative
         return None

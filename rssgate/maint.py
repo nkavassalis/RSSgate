@@ -51,11 +51,11 @@ def dedupe_galleries(conn) -> int:
     n = 0
     rows = list(conn.execute(
         "SELECT id, image, images FROM articles"
-        " WHERE images IS NOT NULL AND images LIKE '%,%'"))
+        " WHERE images IS NOT NULL AND images != '-'"))
     for r in rows:
         names = [x for x in (r["images"] or "").split(",")
                  if x and x != "-"]
-        if len(names) < 2 or not r["image"]:
+        if not names or not r["image"]:
             continue
         hero = imgstore.ahash(r["image"])
         if hero is None:
@@ -64,20 +64,27 @@ def dedupe_galleries(conn) -> int:
         def ham(a, b):
             return bin(a ^ b).count("1")
 
-        keep, sigs = [], [hero]
+        keep, sigs = [], []
+        new_hero = None
         for nm in names:
             if nm == r["image"]:
                 continue
             ph = imgstore.ahash(nm)
-            if ph is not None and any(ham(ph, o) <= 20 for o in sigs):
+            if ph is not None and ham(ph, hero) <= 10:
+                new_hero = nm          # gallery copy is fuller: promote
                 continue
+            if ph is not None and any(ham(ph, o) <= 10 for o in sigs):
+                continue               # twin of a kept gallery image
             if ph is not None:
                 sigs.append(ph)
             keep.append(nm)
-        if len(keep) != len(names):
+        if new_hero or len(keep) != len(names):
             db.set_article(conn, r["id"],
+                           image=new_hero or r["image"],
                            images=",".join(keep) if keep else "-")
-            db.release_files(conn, set(names) - set(keep))
+            gone = set(names) - set(keep) - ({new_hero} if new_hero
+                                             else set())
+            db.release_files(conn, gone)
             n += 1
     return n
 
