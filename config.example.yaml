@@ -70,6 +70,7 @@ ui:
   items_per_page: 20
   # Share-snapshot card render width / desktop reading column width (admin-editable):
   snapshot_width: 800    # 360-1440
+  share_style: banner   # banner (photo top, QR footer) | float (magazine wrap)
   stream_width: 1280     # 480-1600
   read_delay: 5          # seconds a post must sit in view before marked read (0 = instant)
   # Stream direction. newest = classic reverse-chronological scroller;

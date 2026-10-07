@@ -261,6 +261,7 @@ async function loadConfig() {
   $('cfg-hidepend').checked = (cfg.ui || {}).hide_untranscribed !== false;
   $('cfg-readdelay').value = (cfg.ui || {}).read_delay ?? 5;
   $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
+  $('cfg-sharestyle').value = (cfg.ui || {}).share_style || 'banner';
   $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 800;
   $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
   renderFailures();
@@ -314,6 +315,8 @@ function cfgUiFlash(input, key, val) {
                     setTimeout(() => label.classList.remove('cfg-bad'), 2500);
                     alert('Save failed: ' + err.message); loadConfig(); });
 }
+$('cfg-sharestyle').addEventListener('change', e =>
+  cfgUiFlash(e.target, 'share_style', e.target.value));
 $('cfg-readdelay').addEventListener('change', e => {
   const v = Math.max(0, Math.min(60, Math.round(+e.target.value || 0)));
   e.target.value = v;

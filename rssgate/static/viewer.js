@@ -235,6 +235,7 @@
   }
 
   let SHARE_W = 800;
+  let SHARE_STYLE = 'banner';   // banner | float (ui.share_style)
   function restart(keepDrawer) {
     stream.innerHTML = ''; cursor = null; exhausted = false;
     seenIds.clear();
@@ -294,22 +295,6 @@
 
   // ---- card snapshot (copy-as-image for sharing) --------------------------
   const snapData = {};
-  function wrapLines(x, text, maxW) {
-    // Paragraph breaks survive: entries may be '' (blank spacer line).
-    const paras = (text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
-    const out = [];
-    paras.forEach((para, pi) => {
-      if (pi) out.push('');
-      let line = '';
-      for (const w of para.split(/\s+/).filter(Boolean)) {
-        const t = line ? line + ' ' + w : w;
-        if (x.measureText(t).width > maxW && line) { out.push(line); line = w; }
-        else line = t;
-      }
-      if (line) out.push(line);
-    });
-    return out;
-  }
   function roundRect(x, X, Y, w, h, r) {
     x.beginPath(); x.moveTo(X + r, Y);
     x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r);
@@ -319,136 +304,245 @@
     const b = await (await fetch(u)).blob();
     return await createImageBitmap(b);
   }
-  async function renderCardPng(a) {
+  // ---- share card ---------------------------------------------------------
+  // Architecture: shareLayout() is PURE geometry - it measures text and
+  // returns { W, H, ops, geo }: a display list of draw ops plus geo.rects /
+  // geo.lines (logical px) that tests assert on. paintShare() is a dumb
+  // interpreter of ops. Add a style = add a layout function; never draw in
+  // layout, never measure in paint.
+  function wordsWrap(m, words, tw) {    // longest prefix of words fitting tw
+    let line = '', i = 0;
+    for (; i < words.length; i++) {
+      const t = line ? line + ' ' + words[i] : words[i];
+      if (m.measureText(t).width > tw && line) break;
+      line = t;
+    }
+    return [line || words[0] || '', Math.max(i, 1)];
+  }
+  function wrapMax(m, text, tw, max) {
+    const out = []; let words = (text || '').split(/\s+/).filter(Boolean);
+    while (words.length && out.length < max) {
+      const [line, n] = wordsWrap(m, words, tw);
+      out.push(line); words = words.slice(n);
+    }
+    if (words.length && out.length)
+      out[out.length - 1] = out[out.length - 1].replace(/[,.;:\s]+$/, '') + '\u2026';
+    return out;
+  }
+  const paragraphs = s => (s || '').split(/\n\s*\n/).map(p => p.trim())
+                                   .filter(Boolean);
+  const textW = (m, font, t) => { m.font = font; return m.measureText(t).width; };
+
+  function shareLayout(a, env) {
+    return env.style === 'float' ? layoutFloat(a, env) : layoutBanner(a, env);
+  }
+
+  // Banner: hero full-bleed on top, title, meta, one comfortable digest
+  // column, hairline, footer row (QR + "Read the full article" + domain |
+  // via RSSgate). No floats -> nothing can collide, any title/image works.
+  function layoutBanner(a, env) {
+    const { W, m, fam, hero, qr } = env;
+    const PAD = Math.round(W * 0.045), ops = [], R = {}, lines = [];
+    let y = 0;
+    if (hero) {
+      const ar = Math.min(2.4, Math.max(16 / 9, hero.w / hero.h));
+      const bh = Math.round(W / ar), T = W / bh;
+      let sx = 0, sy = 0, sw = hero.w, sh = hero.h;
+      if (hero.w / hero.h > T) { sw = hero.h * T; sx = (hero.w - sw) / 2; }
+      else { sh = hero.w / T; sy = (hero.h - sh) / 2; }
+      ops.push({ k: 'img', src: 'hero', sx, sy, sw, sh, x: 0, y: 0, w: W, h: bh });
+      R.hero = [0, 0, W, bh];
+      y = bh;
+    }
+    const meas = W - PAD * 2;
+    y += PAD;
+    const tf = `700 ${Math.round(W * 0.046)}px ${fam}`, tlh = Math.round(W * 0.056);
+    m.font = tf;
+    const tl = wrapMax(m, a.title || '(untitled)', meas, 4);
+    tl.forEach((t, i) => ops.push({ k: 'text', t, font: tf, color: 'text',
+                                    x: PAD, y: y + tlh * i + tlh * 0.78 }));
+    R.title = [PAD, y, Math.max(...tl.map(t => textW(m, tf, t))), tlh * tl.length];
+    y += tlh * tl.length + 8;
+    const mf = `${Math.round(W * 0.02)}px ${fam}`;
+    ops.push({ k: 'text', t: env.meta, font: mf, color: 'muted', x: PAD, y: y + 15 });
+    R.meta = [PAD, y, textW(m, mf, env.meta), 20];
+    y += 20 + Math.round(W * 0.03);
+    const df = `${Math.round(W * 0.0275)}px ${fam}`, dlh = Math.round(W * 0.042);
+    m.font = df;
+    const dTop = y, MAXL = 28;
+    let n = 0, trunc = false;
+    paragraphs(a.summary).forEach((p, pi) => {
+      if (trunc) return;
+      if (pi) y += Math.round(dlh * 0.45);
+      let words = p.split(/\s+/);
+      while (words.length) {
+        if (n >= MAXL) { trunc = true; break; }
+        const [t, k] = wordsWrap(m, words, meas);
+        words = words.slice(k);
+        ops.push({ k: 'text', t, font: df, color: 'text', x: PAD, y: y + dlh * 0.75 });
+        lines.push([PAD, y, textW(m, df, t), dlh]); y += dlh; n++;
+      }
+    });
+    if (trunc) { const o = ops[ops.length - 1];
+                 o.t = o.t.replace(/[,.;:\s]+$/, '') + '\u2026'; }
+    R.digest = [PAD, dTop, meas, y - dTop];
+    y += Math.round(W * 0.03);
+    ops.push({ k: 'fill', x: PAD, y, w: meas, h: 1, color: 'line' });
+    R.rule = [PAD, y, meas, 1];
+    y += Math.round(W * 0.025);
+    const QS = qr ? Math.round(W * 0.12) : 0, FH = Math.max(QS, 24);
+    const vf = `700 ${Math.round(W * 0.019)}px ${fam}`;
+    if (qr) {
+      ops.push({ k: 'fill', x: PAD, y, w: QS, h: QS, color: '#ffffff' });
+      ops.push({ k: 'img', src: 'qr', x: PAD, y, w: QS, h: QS });
+      R.qr = [PAD, y, QS, QS];
+      const lf = `600 ${Math.round(W * 0.021)}px ${fam}`;
+      const sf = `${Math.round(W * 0.018)}px ${fam}`;
+      const lx = PAD + QS + 16, cy = y + QS / 2;
+      ops.push({ k: 'text', t: 'Read the full article', font: lf, color: 'text',
+                 x: lx, y: cy - 4 });
+      ops.push({ k: 'text', t: env.domain, font: sf, color: 'muted', x: lx, y: cy + 18 });
+      R.caption = [lx, cy - 22, Math.max(textW(m, lf, 'Read the full article'),
+                                         textW(m, sf, env.domain)), 46];
+    } else if (env.domain) {
+      const sf = `${Math.round(W * 0.018)}px ${fam}`;
+      ops.push({ k: 'text', t: env.domain, font: sf, color: 'muted', x: PAD, y: y + 17 });
+      R.caption = [PAD, y, textW(m, sf, env.domain), 22];
+    }
+    const vw = textW(m, vf, 'via RSSgate');
+    ops.push({ k: 'text', t: 'via RSSgate', font: vf, color: 'accent',
+               x: W - PAD - vw, y: y + FH / 2 + 5 });
+    R.via = [W - PAD - vw, y + FH / 2 - 10, vw, 18];
+    const H = Math.round(y + FH + PAD);
+    return { W, H, ops, geo: { style: 'banner', rects: R, lines } };
+  }
+
+  // Float ("magazine"): full-width title + meta, hero floats top-right of
+  // the digest, QR (+caption) sinks to the digest's bottom-left corner via a
+  // fixed-point loop, via RSSgate bottom-right.
+  function layoutFloat(a, env) {
+    const { W, m, fam, hero, qr } = env;
+    const PAD = 28, GAP = 16, CAP = 22, ops = [], R = {};
+    let iw = 0, ih = 0;
+    if (hero) {
+      const s = Math.min(W * 0.30 / hero.w, 175 / hero.h);
+      iw = Math.round(hero.w * s); ih = Math.round(hero.h * s);
+    }
+    const imgX = W - PAD - iw;
+    const QS = qr ? Math.round(Math.max(72, Math.min((ih || 100) * 0.8, 120))) : 0;
+    const tf = `700 26px ${fam}`;
+    m.font = tf;
+    const tl = wrapMax(m, a.title || '(untitled)', W - PAD * 2, 4);
+    tl.forEach((t, i) => ops.push({ k: 'text', t, font: tf, color: 'text',
+                                    x: PAD, y: PAD + 26 + 33 * i }));
+    R.title = [PAD, PAD, Math.max(...tl.map(t => textW(m, tf, t))), tl.length * 33 + 6];
+    const yMeta = PAD + tl.length * 33 + 12;
+    const mf = `14px ${fam}`;
+    ops.push({ k: 'text', t: env.meta, font: mf, color: 'muted', x: PAD, y: yMeta + 12 });
+    R.meta = [PAD, yMeta, textW(m, mf, env.meta), 16];
+    const top = yMeta + 26, heroB = top + ih, df = `16px ${fam}`;
+    function flow(qzT) {
+      m.font = df;
+      const out = []; let dY = top, trunc = false;
+      outer: for (const [p, para] of paragraphs(a.summary).entries()) {
+        if (p) dY += 8;
+        let words = para.split(/\s+/);
+        while (words.length) {
+          const inHero = dY < heroB - 6;
+          const inQr = qzT !== null && dY + 24 > qzT - 24 && dY < qzT + QS + CAP;
+          let x0 = PAD, tw = inHero ? imgX - GAP - PAD : W - PAD * 2;
+          if (inQr) { x0 = PAD + QS + GAP; tw = (inHero ? imgX - GAP : W - PAD) - x0; }
+          if (out.length >= 40) { trunc = true; break outer; }
+          const [t, k] = wordsWrap(m, words, tw);
+          words = words.slice(k);
+          out.push({ t, x: x0, y: dY + 24 }); dY += 24;
+        }
+      }
+      if (trunc && out.length)
+        out[out.length - 1].t = out[out.length - 1].t.replace(/[,.;:\s]+$/, '') + '\u2026';
+      return { out, dY };
+    }
+    let qzT = null, fin = flow(null);
+    if (qr) for (let it = 0; it < 6; it++) {
+      const t = Math.max(top, Math.max(fin.dY, heroB) - QS - CAP);
+      if (qzT !== null && Math.abs(t - qzT) < 2) { qzT = t; break; }
+      qzT = t; fin = flow(qzT);
+    }
+    if (hero) {
+      ops.push({ k: 'img', src: 'hero', x: imgX, y: top, w: iw, h: ih, r: 10 });
+      R.hero = [imgX, top, iw, ih];
+    }
+    if (qr) {
+      ops.push({ k: 'fill', x: PAD, y: qzT, w: QS, h: QS, color: '#ffffff' });
+      ops.push({ k: 'img', src: 'qr', x: PAD, y: qzT, w: QS, h: QS });
+      R.qr = [PAD, qzT, QS, QS];
+      const cf = `12px ${fam}`;
+      ops.push({ k: 'text', t: 'Link to full article', font: cf, color: 'muted',
+                 x: PAD, y: qzT + QS + 15 });
+      R.caption = [PAD, qzT + QS + 3, textW(m, cf, 'Link to full article'), 14];
+    }
+    const lines = fin.out.map(l => [l.x, l.y - 17, textW(m, df, l.t), 22]);
+    fin.out.forEach(l => ops.push({ k: 'text', t: l.t, font: df, color: 'text',
+                                    x: l.x, y: l.y }));
+    const cb = Math.max(fin.dY, heroB, qr ? qzT + QS + CAP : 0) + 12;
+    const vf = `700 13px ${fam}`, vw = textW(m, vf, 'via RSSgate');
+    ops.push({ k: 'text', t: 'via RSSgate', font: vf, color: 'accent',
+               x: W - PAD - vw, y: cb + 20 });
+    R.via = [W - PAD - vw, cb + 9, vw, 14];
+    return { W, H: Math.round(cb + 20 + PAD), ops,
+             geo: { style: 'float', rects: R, lines, qzT, qs: QS, dY: fin.dY } };
+  }
+
+  function paintShare(x, L, assets, pal) {
+    x.fillStyle = pal.card; x.fillRect(0, 0, L.W, L.H);
+    for (const o of L.ops) {
+      if (o.k === 'fill') {
+        x.fillStyle = pal[o.color] || o.color; x.fillRect(o.x, o.y, o.w, o.h);
+      } else if (o.k === 'img') {
+        const im = assets[o.src]; if (!im) continue;
+        x.save();
+        if (o.r) { roundRect(x, o.x, o.y, o.w, o.h, o.r); x.clip(); }
+        if (o.sw) x.drawImage(im, o.sx, o.sy, o.sw, o.sh, o.x, o.y, o.w, o.h);
+        else x.drawImage(im, o.x, o.y, o.w, o.h);
+        x.restore();
+      } else if (o.k === 'text') {
+        x.font = o.font; x.fillStyle = pal[o.color] || o.color;
+        x.fillText(o.t, o.x, o.y);
+      }
+    }
+  }
+
+  async function renderCardPng(a, opts = {}) {
     const cs = getComputedStyle(document.documentElement);
     const col = (n, fb) => (cs.getPropertyValue(n) || '').trim() || fb;
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-    const W = SHARE_W, PAD = 28, DPR = 2, GAP = 16;
-    const fam = getComputedStyle(document.body).fontFamily;
-    const m = document.createElement('canvas').getContext('2d');
-    const hero = a.image ? await loadBitmap('/image/' + a.image)
-                             .catch(() => null) : null;
+    const pal = { card: col('--card', dark ? '#1b1c1e' : '#ffffff'),
+                  text: col('--text', dark ? '#e8e8ea' : '#17181a'),
+                  muted: col('--muted', '#71717a'),
+                  accent: col('--accent', '#7c5cff'),
+                  line: col('--line', dark ? '#2c2d31' : '#e4e4e7') };
+    const hero = a.image ? await loadBitmap('/image/' + a.image).catch(() => null) : null;
     const qr = a.link ? await loadBitmap('/api/qr.png?u=' +
                           encodeURIComponent(a.link)).catch(() => null) : null;
-    /* Layout: full-width title + meta; hero floats top-right of the
-       digest; QR floats bottom-LEFT of the digest with a caption,
-       text wrapping around both. Two passes locate the QR zone. */
-    const IW = Math.round(W * 0.30), IH = 175;
-    let iw = 0, ih = 0;
-    if (hero) {
-      const s = Math.min(IW / hero.width, IH / hero.height);
-      iw = Math.round(hero.width * s);
-      ih = Math.round(hero.height * s);
-    }
-    const imgX = W - PAD - iw;
-    const QS = qr ? Math.max(72, Math.min((ih || 100) * 0.8, 120)) : 0;
-    const CAP = 22;                          // caption line under QR
-    m.font = `700 26px ${fam}`;
-    function wrapAt(text, tw, max) {
-      const out = []; let line = '';
-      for (const w of (text || '(untitled)').split(/\s+/).filter(Boolean)) {
-        const t = line ? line + ' ' + w : w;
-        if (m.measureText(t).width > tw && line) {
-          out.push(line); line = w;
-          if (out.length === max) break;
-        } else line = t;
-      }
-      if (line && out.length < max) out.push(line);
-      if (out.length === max)
-        out[max - 1] = out[max - 1].replace(/[,.;:\s]+$/, '') + '\u2026';
-      return out;
-    }
-    const tLines = wrapAt(a.title, W - PAD * 2, 4);
-    const titleH = tLines.length * 33 + 6;
-    const yMeta = PAD + titleH + 6;
-    const bandTop = yMeta + 26;                  // digest starts here
-    const heroB = bandTop + ih;                  // hero bottom (right)
-    const paras = (a.summary || '').split(/\n\s*\n/).filter(p => p.trim());
-    function flow(qzT) {                       // qzT=null → hero only
-      m.font = `16px ${fam}`;
-      const out = [];
-      let dY = bandTop, trunc = false;
-      outer: for (let p = 0; p < paras.length; p++) {
-        if (p) dY += 8;
-        let words = paras[p].split(/\s+/);
-        while (words.length) {
-          const y = dY + 24;
-          const inHero = y + 24 > bandTop && dY < heroB - 6;
-          const inQr = qzT !== null && dY + 24 > qzT - 24 && dY < qzT + QS + CAP;
-          let x0 = PAD;
-          let tw = W - PAD * 2;
-          if (inHero) tw = imgX - GAP - PAD;
-          if (inQr) { x0 = PAD + QS + GAP;
-                      tw = (inHero ? imgX - GAP : W - PAD) - x0; }
-          if (tw < 120) { dY += 24; out.push({ t: '', y, x: x0 });
-                          words = words; break; }
-          let line = '', i = 0;
-          for (; i < words.length; i++) {
-            const t = line ? line + ' ' + words[i] : words[i];
-            if (m.measureText(t).width > tw && line) break;
-            line = t;
-          }
-          if (out.length >= 40) { trunc = true; break outer; }
-          if (line) out.push({ t: line, y, x: x0 });
-          else out.push({ t: words[0] || '', y, x: x0 });
-          words = words.slice(Math.max(i, 1));
-          dY += 24;
-        }
-      }
-      return { out, dY, trunc };
-    }
-    // fixed point: place QR at the text's foot, re-wrap, repeat until
-    // the QR bottom and the text bottom meet (QR is the last row)
-    let qzT = null, final = flow(null);
-    if (qr) {
-      for (let it = 0; it < 6; it++) {
-        const t = Math.max(bandTop,
-                           Math.max(final.dY, heroB) - QS - CAP);
-        if (qzT !== null && Math.abs(t - qzT) < 2) { qzT = t; break; }
-        qzT = t;
-        final = flow(qzT);
-      }
-    }
-    if (final.trunc && final.out.length)
-      final.out[final.out.length - 1].t =
-        (final.out[final.out.length - 1].t || '')
-          .replace(/[,.;:\s]+$/, '') + '\u2026';
-    const qrBottom = qr ? qzT + QS + CAP : 0;
-    window.__lastShareGeo = { qzT, qs: QS, dY: final.dY };  // test seam
-    const contentBottom = Math.max(final.dY, heroB, qrBottom) + 12;
-    const H = Math.round(contentBottom) + 20 + PAD;
+    const when = a.ts ? new Date(a.ts).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit' }) : '';       // sharer's timezone
+    let domain = '';
+    try { domain = a.link ? new URL(a.link).hostname.replace(/^www\./, '') : ''; }
+    catch (e) { /* bad link: no domain */ }
+    const DPR = 2;
+    const L = shareLayout(a, {
+      W: opts.width || SHARE_W, style: opts.style || SHARE_STYLE,
+      m: document.createElement('canvas').getContext('2d'),
+      fam: getComputedStyle(document.body).fontFamily,
+      hero: hero ? { w: hero.width, h: hero.height } : null, qr: !!qr,
+      meta: [(a.feed_title || '').trim(), when].filter(Boolean).join('  \u00b7  '),
+      domain });
+    window.__lastShareGeo = { ...L.geo, W: L.W, H: L.H, dpr: DPR };  // test seam
     const cv = document.createElement('canvas');
-    cv.width = W * DPR; cv.height = H * DPR;
+    cv.width = L.W * DPR; cv.height = L.H * DPR;
     const x = cv.getContext('2d'); x.scale(DPR, DPR);
-    x.fillStyle = col('--card', dark ? '#1b1c1e' : '#ffffff');
-    x.fillRect(0, 0, W, H);
-    if (hero) {
-      x.save(); roundRect(x, imgX, bandTop, iw, ih, 10); x.clip();
-      x.drawImage(hero, imgX, bandTop, iw, ih);
-      x.restore();
-    }
-    if (qr) {
-      x.fillStyle = '#ffffff'; x.fillRect(PAD, qzT, QS, QS);
-      x.drawImage(qr, PAD, qzT, QS, QS);
-      x.fillStyle = col('--muted', '#71717a'); x.font = `12px ${fam}`;
-      x.fillText('Link to full article', PAD, qzT + QS + 15);
-    }
-    let y = PAD;
-    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
-    x.font = `700 26px ${fam}`;
-    tLines.forEach(l => { y += 26; x.fillText(l, PAD, y); });
-    x.fillStyle = col('--muted', '#71717a'); x.font = `14px ${fam}`;
-    x.fillText(meta = [(a.feed_title || '').trim(),
-      new Date(a.ts).toLocaleString(undefined, {
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit' })]      // sharer's timezone
-      .filter(Boolean).join('  \u00b7  '), PAD, yMeta + 12);
-    x.fillStyle = col('--text', dark ? '#e8e8ea' : '#17181a');
-    x.font = `16px ${fam}`;
-    for (const l of final.out) if (l.t) x.fillText(l.t, l.x, l.y);
-    x.fillStyle = col('--accent', '#7c5cff'); x.font = `700 13px ${fam}`;
-    x.textAlign = 'right';
-    x.fillText('via RSSgate', W - PAD, contentBottom + 20);
+    paintShare(x, L, { hero, qr }, pal);
     return await new Promise(res => cv.toBlob(res, 'image/png'));
   }
 
@@ -759,6 +853,8 @@
     order = s.order === 'oldest' ? 'oldest' : 'newest';
     if (s.snapshot_width >= 360 && s.snapshot_width <= 1440)
       SHARE_W = Math.round(s.snapshot_width);
+    if (s.share_style === 'float' || s.share_style === 'banner')
+      SHARE_STYLE = s.share_style;
     if (typeof s.read_delay === 'number' && s.read_delay >= 0 && s.read_delay <= 60)
       READ_DELAY_MS = s.read_delay * 1000;
     if (s.stream_width >= 480 && s.stream_width <= 1600)

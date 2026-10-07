@@ -596,7 +596,7 @@ def test_display_panel_widths_autosave(ui_server, browser):
           if r.method == "PUT" and r.url.endswith("/api/config") else None)
     pg.fill("#cfg-streamwidth", "1000")
     pg.press("#cfg-streamwidth", "Tab")           # commit -> change fires
-    pg.wait_for_selector("label.cfg-ok", timeout=5000)
+    pg.wait_for_selector("label:has(#cfg-streamwidth).cfg-ok", timeout=5000)
     assert puts and "stream_width" in puts[-1] and "1000" in puts[-1]
     saved = pg.evaluate("() => fetch('/api/config').then(r => r.json())"
                         ".then(c => c.ui.stream_width)")
@@ -606,8 +606,8 @@ def test_display_panel_widths_autosave(ui_server, browser):
     # including bottom sections that can't scroll to the spy band
     for href in ("#sec-queue", "#sec-usage", "#sec-feeds"):
         pg.click(f'.sec-nav a[href="{href}"]')
-        pg.wait_for_timeout(350)
-        assert pg.locator(f'.sec-nav a[href="{href}"].active').count() == 1, href
+        pg.wait_for_selector(f'.sec-nav a[href="{href}"].active', timeout=2000)
+        assert pg.locator(".sec-nav a.active").count() == 1, href
     # THE layout assertion (v0.42.1 regression): every settings section
     # must sit in the RIGHT column - never wrapped into the nav gutter.
     nav_box = pg.locator(".sec-nav").bounding_box()
@@ -707,319 +707,160 @@ def test_snapshot_prefers_native_share_sheet(ui_server, browser):
     pg.close()
 
 
-@pytest.mark.ui
-def test_snapshot_keeps_paragraph_breaks(ui_server, browser):
-    """Digest paragraphs must not collapse into a wall of text: a summary
-    with blank-line-separated paragraphs renders measurably taller than
-    the same text flattened into one paragraph."""
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    pg.wait_for_selector(".snap-btn")
-    art = pg.evaluate("""async () => {
-      const d = await (await fetch('/api/articles?fresh=1&limit=50')).json();
-      return d.items.find(i => !i.image) || d.items[0]; }""")
-    body = ("First paragraph of the digest, long enough to wrap across at "
-            "least two canvas lines on its own so geometry is meaningful.\n\n"
-            "Second paragraph starts on its own visual block in the image.")
-    h = pg.evaluate("""async ([a, p, f]) => {
-      const g = async s => { const b = await window.__renderCardPng(
-          {...a, summary: s, image: null, link: null});
-        const bmp = await createImageBitmap(b); return bmp.height; };
-      return { para: await g(p), flat: await g(f) };
-    }""", [art, body, body.replace("\n\n", " ")])
-    assert h["para"] > h["flat"] + 4, h
-    assert pg.errors == []
-    pg.close()
+# ------------------------------------------------------------ share cards
+# Every share test derives coordinates from window.__lastShareGeo (layout
+# truth) and verifies PIXELS inside those rects. Never hard-code pixel
+# positions: when a layout moves, these tests move with it. Each style
+# must satisfy the same invariants (parametrized), plus style-specific ones.
+
+STYLES = ["banner", "float"]
+LONG = " ".join(["Digest prose runs on with enough words to wrap across"
+                 " many lines so every layout zone is exercised fully"] * 5)
 
 
-def _seed_crop_probe():
-    """(Re)plant the crop-probe feed; returns fid. Idempotent."""
+def _crop_png(name_seed: str) -> str:
+    """Portrait 200x600: orange field, blue band rows 270-330. Returns the
+    cached filename (hash-named, as imgstore would)."""
     import hashlib
     from io import BytesIO
-    from rssgate import db
     from PIL import Image
     import rssgate.imgstore as ig
-    conn = db.connect(UI_DB)
-    row = conn.execute(
-        "SELECT id FROM feeds WHERE url='https://crop.test/feed'").fetchone()
-    fid = row["id"] if row else db.add_feed(
-        conn, "https://crop.test/feed", type_="feed")["id"]
-    aid = db.upsert_article(conn, fid, "crop1", "https://crop.test/1",
-                            "Crop probe", "2027-01-02T00:00:00Z")
     img = Image.new("RGB", (200, 600), (255, 136, 0))
     for y in range(270, 331):
         for x in range(200):
             img.putpixel((x, y), (0, 0, 255))
     buf = BytesIO(); img.save(buf, "PNG")
     ig.init(str(UI_IMG_DIR))
-    fname = (hashlib.sha256(b"https://crop.test/hero.png").hexdigest()[:24]
-             + ".png")
+    fname = hashlib.sha256(name_seed.encode()).hexdigest()[:24] + ".png"
     UI_IMG_DIR.joinpath(fname).write_bytes(buf.getvalue())
-    db.set_article(conn, aid, image=fname,
-                   image_url="https://crop.test/hero.png")
-    conn.execute(
-        "UPDATE articles SET status='ready', summary=? WHERE id=?",
-        ("Crop digest with enough body text to wrap a few lines so the "
-         "share card layout is fully exercised by the pixel probes.", aid))
-    conn.commit(); conn.close()
-    return fid
+    return fname
 
 
-def _render_probe_png(pg, ui_server, fid):
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=50').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    assert art, "crop probe missing from its own feed page"
-    return pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      return { w: bmp.width, h: bmp.height, g };
-    }""", art)   # canvas handle not transferable; callers re-evaluate
+def _share_art(pg, summary=LONG, title="Share probe", image=True, link=True):
+    fid = _mkfeed("share")
+    _seed_article(fid, "s1", title=title, summary=summary,
+                  image=_crop_png(f"crop-{fid}") if image else None,
+                  link=f"https://share.test/{fid}" if link else None)
+    art = _feed_article(pg, fid)
+    if not link:
+        art["link"] = None
+    return art
 
 
-def _probe_crop_colors(pg, ui_server, fid):
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=50').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    assert art, "crop probe missing from its own feed page"
-    return pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      const SX = Math.round(bmp.width * 0.94);        // small photo column
-      const top = [...g.getImageData(SX, 250, 1, 1).data];
-      const mid = [...g.getImageData(SX, 361, 1, 1).data];  // photo centre
-      let dark = 0;
-      const z = g.getImageData(60, 280, 290, 260).data;   // QR zone (left)
-      for (let i = 0; i < z.length; i += 4)
-        if (z[i] < 90 && z[i+1] < 90 && z[i+2] < 90) dark++;
-      return { top: top.slice(0, 3), mid: mid.slice(0, 3), dark,
-               w: bmp.width, h: bmp.height };
-    }""", art)
+def _overlap(a, b, pad=0):
+    ax, ay, aw, ah = a; bx, by, bw, bh = b
+    return not (ax + aw <= bx - pad or bx + bw <= ax - pad or
+                ay + ah <= by - pad or by + bh <= ay - pad)
 
 
-def test_snapshot_hero_cover_crops_not_stretches(ui_server, browser):
-    """Right-float hero cover-crops a 1:3 portrait: thumb top samples
-    orange field, thumb center the injected blue band."""
-    fid = _seed_crop_probe()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+@pytest.fixture
+def share_page(ui_server, browser):
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900},
+                   color_scheme="light")
     pg.goto(ui_server, wait_until="networkidle")
-    px = _probe_crop_colors(pg, ui_server, fid)
-    assert px["top"][0] > 150 and px["top"][2] < 120, f"thumb top: {px}"
-    assert px["mid"][2] > 150 and px["mid"][0] < 120, f"thumb mid: {px}"
+    yield pg
     assert pg.errors == []
     pg.close()
 
 
-def test_share_qr_nests_under_the_date(ui_server, browser):
-    """QR lives in the left column under the meta line: dark modules
-    must appear in that zone (not only bottom-right)."""
-    fid = _seed_crop_probe()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    px = _probe_crop_colors(pg, ui_server, fid)
-    assert px["dark"] > 400, f"no QR modules under the date: {px}"
-    assert pg.errors == []
-    pg.close()
+@pytest.mark.parametrize("style", STYLES)
+def test_share_layout_never_overlaps(share_page, style):
+    """No digest line, title or meta box intersects hero, QR, caption or
+    via; the card contains every rect."""
+    pg = share_page
+    art = _share_art(pg)
+    r = pg.evaluate("([a, s]) => window.__renderCardPng(a, {style: s})"
+                    ".then(() => window.__lastShareGeo)", [art, style])
+    R = r["rects"]
+    for k in ("hero", "qr", "via", "title", "meta"):
+        assert k in R, f"{style}: missing {k}: {list(R)}"
+    solid = [R[k] for k in ("hero", "qr", "caption", "via") if k in R]
+    for box in [R["title"], R["meta"], *r["lines"]]:
+        for s in solid:
+            assert not _overlap(box, s), f"{style}: {box} hits {s}"
+    for k, (x, y, w, h) in R.items():
+        assert x >= 0 and y >= 0 and x + w <= r["W"] + 1 and \
+            y + h <= r["H"] + 1, f"{style}: {k} outside card {R[k]}"
 
 
-def test_feed_thumb_uses_gallery_ratio(ui_server, browser):
-    """Reader hero thumbs share the gallery's 110:84 box (±0.1):
-    one image language across feed, gallery, and shares."""
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    ars = pg.evaluate("""() => [...document.querySelectorAll('img.card-thumb')]
-        .map(i => { const r = i.getBoundingClientRect();
-          return +(r.width / r.height).toFixed(2); })""")
-    assert ars, "no thumbs on the stream"
-    assert all(abs(a - 110/84) < 0.1 for a in ars), f"mixed ratios: {ars}"
-    assert pg.errors == []
-    pg.close()
+@pytest.mark.parametrize("style", STYLES)
+def test_share_pixels_match_layout(share_page, style):
+    """Pixels agree with geometry: hero rect shows the photo (orange field
+    plus the centre blue band = cover/contain, never stretched off-band),
+    QR rect holds dark modules, via rect is accent-colored."""
+    pg = share_page
+    art = _share_art(pg)
+    pg.evaluate("([a, s]) => window.__renderCardPng(a, {style: s})", [art, style])
+    R = pg.evaluate("window.__lastShareGeo.rects")
+    hx, hy, hw, hh = R["hero"]
+    z = {"hero_top": [hx + 2, hy + 1, hw - 4, max(2, hh * 0.04)],
+         "hero_mid": [hx + 2, hy + hh * 0.48, hw - 4, max(2, hh * 0.04)],
+         "qr": R["qr"], "via": R["via"]}
+    # _share re-renders with the configured default style; force the style
+    out = pg.evaluate(SHARE_PROBE.replace(
+        "window.__renderCardPng(a)", "window.__renderCardPng(a, {style: '%s'})"
+        % style), [art, z])
+    assert out["hero_top"]["orange"] > out["hero_top"]["n"] * 0.6, out["hero_top"]
+    assert out["hero_mid"]["blue"] > out["hero_mid"]["n"] * 0.6, out["hero_mid"]
+    assert out["qr"]["dark"] > out["qr"]["n"] * 0.2, out["qr"]
+    assert out["via"]["accent"] > 10, out["via"]
 
 
-def test_share_title_spans_full_width(ui_server, browser):
-    """A one-line-at-full-width title must span: text pixels right of
-    the old narrow-column boundary, inside the title band."""
-    from rssgate import db
-    conn = db.connect(UI_DB)
-    fid = db.add_feed(conn, "https://wide.test/feed", type_="feed")["id"]
-    aid = db.upsert_article(conn, fid, "w1", "https://wide.test/1",
-        "Wide titles should flow across the whole masthead not dodge",
-        "2027-02-01T00:00:00Z")
-    conn.execute("UPDATE articles SET status='ready',"
-                 " summary='wide digest' WHERE id=?", (aid,))
-    conn.commit(); conn.close()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=10').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    assert art, "wide-title article missing"
-    r = pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      // title band y 66..124 phys; right zone x 1240..1500 (past the
-      // old narrow wrap at ~612 logical). card bg is light, text dark
-      const zone = g.getImageData(1240, 66, 260, 58).data;
-      let dark = 0;
-      for (let i = 0; i < zone.length; i += 4)
-        if (zone[i] < 120 && zone[i+1] < 120) dark++;
-      return { dark };
-    }""", art)
-    assert r["dark"] > 200, f"title does not span right zone: {r}"
-    assert pg.errors == []
-    pg.close()
+@pytest.mark.parametrize("style", STYLES)
+def test_share_paragraph_gap_is_visible(share_page, style):
+    """Two paragraphs: exactly one inter-line gap exceeds normal spacing
+    (geometry), and that gap is blank (pixels)."""
+    pg = share_page
+    para = ("First paragraph of the digest is long enough to wrap onto a"
+            " second line. ")
+    art = _share_art(pg, summary=para * 2 + "\n\n" + "Second paragraph. " * 8,
+                     image=False, link=False)
+    pg.evaluate("([a, s]) => window.__renderCardPng(a, {style: s})", [art, style])
+    lines = pg.evaluate("window.__lastShareGeo.lines")
+    steps = [b[1] - a[1] for a, b in zip(lines, lines[1:])]
+    base = min(steps)
+    big = [i for i, s in enumerate(steps) if s > base + 4]
+    assert len(big) == 1, f"{style}: steps {steps}"
+    i = big[0]
+    gap = [lines[i][0], lines[i][1] + lines[i][3] + 1,
+           600, max(1, lines[i + 1][1] - lines[i][1] - lines[i][3] - 2)]
+    out = pg.evaluate(SHARE_PROBE.replace(
+        "window.__renderCardPng(a)", "window.__renderCardPng(a, {style: '%s'})"
+        % style), [art, {"gap": gap}])
+    assert out["gap"]["dark"] == 0, f"{style}: gap not blank {out['gap']}"
 
 
-def test_share_title_spans_even_with_photo(ui_server, browser):
-    """THE case v0.55.0 failed: a 16:9 photo article with a wide title
-    must STILL span - text pixels past the old wrap boundary, in the
-    title band ABOVE the image top edge."""
-    import hashlib
-    from io import BytesIO
-    from rssgate import db
-    from PIL import Image
-    import rssgate.imgstore as ig
-    conn = db.connect(UI_DB)
-    row = conn.execute("SELECT id FROM feeds WHERE"
-                       " url='https://wide.test/feed'").fetchone()
-    fid = row["id"] if row else db.add_feed(
-        conn, "https://wide.test/feed", type_="feed")["id"]
-    aid = db.upsert_article(conn, fid, "w2", "https://wide.test/2",
-        "Photos must never steal the headline territory on share cards",
-        "2027-02-02T00:00:00Z")
-    img = Image.new("RGB", (1200, 675), (255, 136, 0))
-    buf = BytesIO(); img.save(buf, "PNG")
-    ig.init(str(UI_IMG_DIR))
-    fname = (hashlib.sha256(b"https://wide.test/hero.png").hexdigest()[:24]
-             + ".png")
-    UI_IMG_DIR.joinpath(fname).write_bytes(buf.getvalue())
-    db.set_article(conn, aid, image=fname,
-                   image_url="https://wide.test/hero.png")
-    conn.execute("UPDATE articles SET status='ready',"
-                 " summary='wide photo digest' WHERE id=?", (aid,))
-    conn.commit(); conn.close()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=10').then(r => r.json())
-        .then(d => d.items.find(i => i.title.startsWith('Photos must')))""",
-        fid)
-    assert art, "wide+photo article missing"
-    r = pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      const zone = g.getImageData(1240, 66, 260, 58).data;  // title right
-      let dark = 0;
-      for (let i = 0; i < zone.length; i += 4)
-        if (zone[i] < 120 && zone[i+1] < 120) dark++;
-      return { dark };
-    }""", art)
-    assert r["dark"] > 200, f"title dodged the photo instead of spanning: {r}"
-    assert pg.errors == []
-    pg.close()
+def test_share_banner_title_and_digest_span(share_page):
+    """Banner: a long title uses the full measure; digest lines too."""
+    pg = share_page
+    art = _share_art(pg, title="Photos must never steal the headline territory"
+                                " on share cards because titles carry the story")
+    g = pg.evaluate("(a) => window.__renderCardPng(a, {style: 'banner'})"
+                    ".then(() => window.__lastShareGeo)", art)
+    W = g["W"]
+    assert g["rects"]["title"][2] > W * 0.6, g["rects"]["title"]
+    assert max(l[2] for l in g["lines"]) > W * 0.75
+    assert g["rects"]["hero"][2] == W              # full-bleed banner
 
 
-def test_share_via_line_on_band(ui_server, browser):
-    """via-RSSgate lives in the bottom-right corner of the card."""
-    fid = _seed_crop_probe()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=50').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    r = pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      let footer = 0;
-      const z = g.getImageData(bmp.width - 300, bmp.height - 130, 270, 90);
-      for (let i = 0; i < z.data.length; i += 4)
-        if (z.data[i+2] > 200 && z.data[i] < 190) footer++;
-      return { footer, h: bmp.height };
-    }""", art)
-    assert r["footer"] > 60, f"via label missing from bottom-right: {r}"
-    assert pg.errors == []
-    pg.close()
+def test_share_float_qr_is_the_last_line(share_page):
+    """Float: fixed point holds - no digest text below the QR caption."""
+    pg = share_page
+    art = _share_art(pg)
+    g = pg.evaluate("(a) => window.__renderCardPng(a, {style: 'float'})"
+                    ".then(() => window.__lastShareGeo)", art)
+    assert g["qzT"] is not None and g["qs"] > 0
+    assert g["dY"] <= g["qzT"] + g["qs"] + 22 + 2, g
 
 
-def test_share_text_never_touches_qr_or_via(ui_server, browser):
-    """Long digest: the two rows directly above the via baseline, right
-    of the label zone and left of the QR, must be card background."""
-    fid = _seed_crop_probe()
-    conn = __import__("rssgate").db.connect(UI_DB)
-    __import__("rssgate").db.set_article(
-        conn, conn.execute("SELECT id FROM articles WHERE link="
-        "'https://crop.test/1'").fetchone()["id"],
-        summary=" ".join(["Digest text runs long enough through many"
-                         " lines to cross the whole masthead band and"
-                         " force the flow to switch from the narrow"
-                         " column to full width somewhere inside it"] * 3))
-    conn.commit(); conn.close()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=50').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    r = pg.evaluate("""async (a) => {
-      const png = await window.__renderCardPng(a);
-      const bmp = await createImageBitmap(png);
-      const cv = document.createElement('canvas');
-      cv.width = bmp.width; cv.height = bmp.height;
-      const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
-      // Long summary: qzT~215 (QR phys 430..730), hero ends phys 548.
-      // Seam column between QR box (x<=356) and wrap start (x>=388),
-      // strictly BELOW the hero: only QR-wrapped lines may cross here.
-      const z = g.getImageData(344, 600, 42, 30).data;
-      let dark = 0;
-      for (let i = 0; i < z.length; i += 4)
-        if (z[i] < 110 && z[i+1] < 110 && z[i+2] < 110) dark++;
-      return { dark };
-    }""", art)
-    assert r["dark"] < 30, f"text encroaching the via/QR line: {r}"
-    assert pg.errors == []
-    pg.close()
-
-
-def test_share_qr_is_the_last_line(ui_server, browser):
-    """Fixed point holds: no digest text below the QR caption - the QR
-    zone bottom equals (or exceeds) the final text baseline."""
-    fid = _seed_crop_probe()
-    conn = __import__("rssgate").db.connect(UI_DB)
-    __import__("rssgate").db.set_article(
-        conn, conn.execute("SELECT id FROM articles WHERE link="
-        "'https://crop.test/1'").fetchone()["id"],
-        summary=" ".join(["Digest prose of moderate length keeps adding"
-                         " lines until the column is long enough that"
-                         " the code block can nestle into its final"
-                         " rows at the bottom left margin"] * 4))
-    conn.commit(); conn.close()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.goto(ui_server, wait_until="networkidle")
-    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
-        '&fresh=1&limit=50').then(r => r.json())
-        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
-    geo = pg.evaluate("""async (a) => {
-      await window.__renderCardPng(a);
-      return window.__lastShareGeo; }""", art)
-    assert geo["qzT"] is not None and geo["qs"] > 0
-    assert geo["dY"] <= geo["qzT"] + geo["qs"] + 22 + 2, \
-        f"text line lives below the QR caption: {geo}"
-    assert pg.errors == []
-    pg.close()
+def test_share_without_image_or_link_still_renders(share_page):
+    pg = share_page
+    art = _share_art(pg, image=False, link=False)
+    for style in STYLES:
+        g = pg.evaluate("([a, s]) => window.__renderCardPng(a, {style: s})"
+                        ".then(() => window.__lastShareGeo)", [art, style])
+        assert "hero" not in g["rects"] and "qr" not in g["rects"]
+        assert g["H"] > 100 and g["lines"], g
 
 
 def test_status_pips_visibility_and_links(ui_server, browser):

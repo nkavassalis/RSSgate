@@ -145,17 +145,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         newest = conn.execute(
             "SELECT COALESCE(published_at, fetched_at) ts FROM articles "
             "ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 1").fetchone()
+        ui = load_config(config_path)["ui"]
         return jsonify({"resume_ts": db.get_state(conn, "resume_ts"),
                         "resume_id": db.get_state(conn, "resume_id", "0"),
                         "newest_ts": newest["ts"] if newest else None,
-                        "order": load_config(config_path)["ui"].get(
-                            "order", "newest"),
-                        "snapshot_width": load_config(config_path)["ui"].get(
-                            "snapshot_width", 800),
-                        "stream_width": load_config(config_path)["ui"].get(
-                            "stream_width", 1280),
-                        "read_delay": load_config(config_path)["ui"].get(
-                            "read_delay", 5)})
+                        "order": ui.get("order", "newest"),
+                        "snapshot_width": ui.get("snapshot_width", 800),
+                        "stream_width": ui.get("stream_width", 1280),
+                        "read_delay": ui.get("read_delay", 5),
+                        "share_style": ui.get("share_style", "banner")})
 
     # ------------------------------------------------------------- feeds
 
@@ -416,6 +414,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 ui_patch["stream_width"] = int(tw)
             if isinstance(ui.get("hide_untranscribed"), bool):
                 ui_patch["hide_untranscribed"] = ui["hide_untranscribed"]
+            if ui.get("share_style") in ("banner", "float"):
+                ui_patch["share_style"] = ui["share_style"]
             rd = ui.get("read_delay")
             if isinstance(rd, (int, float)) and 0 <= rd <= 60:
                 ui_patch["read_delay"] = int(rd)
