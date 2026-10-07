@@ -112,6 +112,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "last_read_ts" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
+    if "feed_text" not in cols:          # the feed's own excerpt/content
+        conn.execute("ALTER TABLE articles ADD COLUMN feed_text TEXT")
+    if "digest_source" not in cols:      # '' = page/LLM, 'excerpt' = feed text
+        conn.execute("ALTER TABLE articles ADD COLUMN digest_source TEXT"
+                     " NOT NULL DEFAULT ''")
     if "categories" not in cols:
         conn.execute("ALTER TABLE articles ADD COLUMN categories TEXT NOT NULL DEFAULT ''")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -500,7 +505,8 @@ def remove_category(conn, name: str) -> int:
 
 def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
                    published_at: str | None, categories: list[str] | None = None,
-                   image_url: str | None = None) -> int | None:
+                   image_url: str | None = None,
+                   feed_text: str | None = None) -> int | None:
     """Insert a new article (with its own category tags and any declared hero
     image URL). Returns its id, or None if already known -- known articles get
     refreshed category tags only."""
@@ -512,12 +518,18 @@ def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
         if cats:
             conn.execute("UPDATE articles SET categories=? WHERE feed_id=? AND guid=?",
                          (cats, feed_id, guid))
-            conn.commit()
+        if feed_text:                     # fill in, never clobber
+            conn.execute("UPDATE articles SET feed_text=? WHERE feed_id=? AND"
+                         " guid=? AND COALESCE(feed_text, '') = ''",
+                         (feed_text, feed_id, guid))
+        conn.commit()
         return None
     cur = conn.execute(
         "INSERT INTO articles(feed_id, guid, link, title, published_at, fetched_at,"
-        " categories, image_url, status) VALUES(?,?,?,?,?,?,?, ?, 'pending')",
-        (feed_id, guid, link, title, published_at, now_iso(), cats, image_url))
+        " categories, image_url, feed_text, status)"
+        " VALUES(?,?,?,?,?,?,?,?,?, 'pending')",
+        (feed_id, guid, link, title, published_at, now_iso(), cats, image_url,
+         feed_text or None))
     conn.commit()
     return cur.lastrowid
 
@@ -593,7 +605,7 @@ def articles_page(conn, before_ts: str | None = None, before_id: int | None = No
                    f.description AS feed_description,
                    f.categories AS categories, f.auto_categories AS auto_categories,
                    a.categories AS post_categories, a.image AS image,
-                   a.images AS gallery,
+                   a.images AS gallery, a.digest_source AS digest_source,
                    f.summarize AS feed_summarize,
                    f.images_mode AS images_mode,
                    {UNREAD_EXPR} AS unread

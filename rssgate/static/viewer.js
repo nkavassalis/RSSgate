@@ -55,8 +55,10 @@
         `<span class="chip" title="${own ? 'post categories' : 'feed categories'}">${esc(c)}</span>`).join(' ')
       + (a.categories || []).map(c =>
           `<span class="chip user" title="your category">${esc(c)}</span>`).join(' ');
-    const raw = a.feed_summarize === false
-      ? ' <span class="chip raw" title="shown as extracted, no LLM used">raw</span>' : '';
+    const raw = a.digest_source === 'excerpt'
+      ? ' <span class="chip raw excerpt" title="the site only serves real browsers, so this is the excerpt the feed itself provides (no LLM used)">feed excerpt</span>'
+      : a.feed_summarize === false
+        ? ' <span class="chip raw" title="shown as extracted, no LLM used">raw</span>' : '';
     const sub = a.feed_description && a.feed_description !== a.feed_title
       ? `<div class="feed-sub">${esc(a.feed_description)}</div>` : '';
     const body = a.status === 'ready' && a.summary

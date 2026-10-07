@@ -137,6 +137,25 @@ def entry_image(e) -> str | None:
     return None
 
 
+def entry_excerpt(e, cap: int = 6000) -> str:
+    """The text the FEED itself carries for an entry (full content when the
+    publisher includes it, else the summary/teaser), as plain text with
+    paragraph breaks. Used when the article page can't be fetched."""
+    raw = ""
+    for c in (e.get("content") or []):
+        if len(c.get("value") or "") > len(raw):
+            raw = c.get("value") or ""
+    if len(e.get("summary") or "") > len(raw):
+        raw = e.get("summary") or ""
+    if not raw:
+        return ""
+    raw = re.sub(r"(?i)<\s*(br|/p|/div|/li|/h[1-6])\s*/?>", "\n\n", raw)
+    txt = htmlmod.unescape(re.sub(r"<[^>]+>", " ", raw))
+    paras = [re.sub(r"[ \t\r\f\v]+", " ", p).strip()
+             for p in re.split(r"\n\s*\n", txt)]
+    return "\n\n".join(p for p in paras if p)[:cap]
+
+
 def fetch_feed(url: str, etag: str | None = None, last_modified: str | None = None) -> dict:
     """Fetch & parse an RSS/Atom feed.
     Returns {ok, changed, not_modified?, meta:{title,description,categories},
@@ -161,6 +180,7 @@ def fetch_feed(url: str, etag: str | None = None, last_modified: str | None = No
             "published_at": _entry_pubdate(e),
             "categories": _entry_categories(e),
             "image": entry_image(e),
+            "excerpt": entry_excerpt(e),
         })
     meta = {
         "title": (parsed.feed.get("title") or "").strip(),

@@ -27,6 +27,23 @@ _next_ok: dict[str, float] = {}  # host -> monotonic time of next allowed hit
 _cfg = {"ua": "", "interval": 0.0}
 
 
+def is_challenge(resp) -> bool:
+    """A JavaScript bot check (Cloudflare "Just a moment..."): only a real
+    browser passes, waiting does not help - so it is NOT a block to back off
+    from. Detected by Cloudflare's explicit header or the interstitial page."""
+    if getattr(resp, "status_code", 200) not in (403, 503):
+        return False
+    h = getattr(resp, "headers", {}) or {}
+    if str(h.get("cf-mitigated", "")).lower() == "challenge":
+        return True
+    try:
+        head = (resp.text or "")[:4000].lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return ("just a moment" in head and "cloudflare" in head) \
+        or "challenge-platform" in head
+
+
 def configure(cfg: dict) -> None:
     f = (cfg or {}).get("fetch", {}) or {}
     _cfg["ua"] = str(f.get("user_agent") or "").strip()

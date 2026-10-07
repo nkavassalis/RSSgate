@@ -90,6 +90,13 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
    fetch or the cog modal's Resume now); paused feeds are skipped by the
    scheduler, refresh_all and claim_pending, and their posts stay `pending`
    instead of failing. Never retry around a block or rotate identities.
+   A bot CHALLENGE (Cloudflare "Just a moment", `net.is_challenge`) is not
+   a block - waiting never helps - so it does not pause the feed: the post
+   is published from the feed's own text (`articles.feed_text`,
+   `digest_source='excerpt'`, zero tokens, labelled "feed excerpt" on the
+   card), or fails with "site requires a browser" if the feed had none.
+   Headless Chromium was tried against guru3d and does not pass; don't
+   add stealth/evasion tooling.
 
 ## Key flows
 - **Add feed:** probe -> POST /api/feeds -> background refresh -> upsert ->
@@ -104,6 +111,10 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
   `images_mode` filters at read time (no re-digest).
 - **Read state:** dwell engine marks the topmost >=55%-visible unread card
   after `ui.read_delay` s -> beacon -> per-feed cursors (+ global in New/all).
+- **Excerpts:** `fetcher.entry_excerpt` stores each entry's feed text at
+  ingest (filled into known posts if missing, never overwritten). Used
+  when the page is a challenge or extracts to <120 chars (`_use_excerpt`,
+  needs >= `EXCERPT_MIN` chars).
 - **Digest queue:** `claim_pending` takes the NEWEST pending post first
   (across feeds, skipping paused feeds), so a new feed's latest posts
   digest first and its backlog drips in at the paced rate.

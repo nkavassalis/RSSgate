@@ -1016,3 +1016,25 @@ def test_fetch_politeness_controls(ui_server, browser):
         .then(c => c.fetch.user_agent === '')""", timeout=5000)
     assert pg.errors == []
     pg.close()
+
+
+def test_excerpt_cards_are_labelled(ui_server, browser):
+    """Posts published from the feed's own excerpt carry a visible
+    'feed excerpt' chip (so a teaser never passes for a digest)."""
+    from rssgate import db
+    fid = _mkfeed("excerpt")
+    aid = _seed_article(fid, "e1", title="Excerpt probe",
+                        ts="2027-05-01T00:00:00Z",
+                        summary="Teaser text the feed itself provided.")
+    conn = db.connect(UI_DB)
+    db.set_article(conn, aid, digest_source="excerpt"); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    card = pg.locator(f".card[data-id='{aid}']")
+    if card.count() == 0:                       # select by title fallback
+        card = pg.locator(".card", has_text="Excerpt probe")
+    chip = card.locator(".chip.excerpt")
+    assert chip.count() == 1 and chip.inner_text() == "feed excerpt"
+    assert chip.evaluate("e => getComputedStyle(e).display") != "none"
+    assert pg.errors == []
+    pg.close()

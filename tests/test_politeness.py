@@ -119,3 +119,87 @@ def test_config_put_validates_fetch_keys(client):
     assert f["user_agent"] == "Mozilla/5.0 Test"     # rejected, unchanged
     assert f["per_host_interval"] == 5 and f["block_backoff_minutes"] == 30
     assert net.user_agent() == "Mozilla/5.0 Test"    # applied live
+
+
+# ---- browser challenges (Cloudflare "Just a moment...") vs bans -----------
+
+CF_PAGE = ("<html><head><title>Just a moment...</title></head><body>"
+           "Checking your browser. Cloudflare <script src='/cdn-cgi/"
+           "challenge-platform/x.js'></script></body></html>")
+
+
+class CF(R):
+    def __init__(self):
+        super().__init__(403, CF_PAGE)
+        self.headers = {"content-type": "text/html", "cf-mitigated": "challenge",
+                        "server": "cloudflare"}
+
+
+class NoLLM:
+    calls = 0
+
+    def chat(self, *a, **k):
+        NoLLM.calls += 1
+        raise AssertionError("excerpt path must not call the LLM")
+
+
+def test_challenge_detection_is_not_a_ban():
+    assert net.is_challenge(CF())
+    assert not net.is_challenge(R(403, "<h1>403 - Access Denied</h1>"))  # a ban
+    assert not net.is_challenge(R(200))
+
+
+def test_challenge_uses_feed_excerpt_zero_tokens_no_pause(conn, cfg, monkeypatch):
+    monkeypatch.setattr("requests.get", lambda url, **kw: CF())
+    fid = db.add_feed(conn, "https://cf.test/feed", type_="feed")["id"]
+    text = "NVIDIA's platform gives the laptop native CUDA support. " * 4
+    aid = db.upsert_article(conn, fid, "c1", "https://cf.test/1", "t",
+                            "2026-10-07T00:00:00Z", feed_text=text)
+    assert refresh.summarize_pending(conn, load_config(cfg), NoLLM(), limit=1) == 1
+    a = conn.execute("SELECT status, summary, digest_source FROM articles"
+                     " WHERE id=?", (aid,)).fetchone()
+    assert a["status"] == "ready" and a["digest_source"] == "excerpt"
+    assert a["summary"] == text.strip() or a["summary"] == text
+    f = db.get_feed(conn, fid)
+    assert f["backoff_level"] == 0 and not db.feed_paused(f)
+
+
+def test_challenge_without_excerpt_fails_with_plain_reason(conn, cfg, monkeypatch):
+    monkeypatch.setattr("requests.get", lambda url, **kw: CF())
+    fid = db.add_feed(conn, "https://cf2.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "c1", "https://cf2.test/1", "t", None)
+    c = load_config(cfg)
+    c.setdefault("troubleshooting", {})["log_llm_failures"] = True
+    refresh.summarize_pending(conn, c, NoLLM(), limit=1)
+    a = conn.execute("SELECT status, error_msg FROM articles WHERE id=?",
+                     (aid,)).fetchone()
+    assert a["status"] in ("error", "pending")   # retry policy may re-queue
+    if a["error_msg"]:
+        assert "requires a browser" in a["error_msg"]
+    assert not db.feed_paused(db.get_feed(conn, fid))
+
+
+def test_too_short_page_falls_back_to_excerpt(conn, cfg, monkeypatch):
+    monkeypatch.setattr("requests.get",
+                        lambda url, **kw: R(200, "<html><body>tiny</body></html>"))
+    fid = db.add_feed(conn, "https://thin.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "t1", "https://thin.test/1", "t", None,
+                            feed_text="A real teaser paragraph from the feed. " * 3)
+    refresh.summarize_pending(conn, load_config(cfg), NoLLM(), limit=1)
+    assert conn.execute("SELECT digest_source FROM articles WHERE id=?",
+                        (aid,)).fetchone()[0] == "excerpt"
+
+
+def test_entry_excerpt_parses_and_backfills_known_posts(conn):
+    from rssgate.fetcher import entry_excerpt
+    e = {"summary": "<p>First &amp; best.</p><p>Second<br>line</p>",
+         "content": [{"value": "<p>short</p>"}]}
+    assert entry_excerpt(e) == "First & best.\n\nSecond\n\nline"
+    fid = db.add_feed(conn, "https://bf.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "g", "https://bf.test/g", "t", None)
+    db.upsert_article(conn, fid, "g", "https://bf.test/g", "t", None,
+                      feed_text="filled later")            # known post
+    db.upsert_article(conn, fid, "g", "https://bf.test/g", "t", None,
+                      feed_text="never clobbers")
+    assert conn.execute("SELECT feed_text FROM articles WHERE id=?",
+                        (aid,)).fetchone()[0] == "filled later"

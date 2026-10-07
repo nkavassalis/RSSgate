@@ -119,7 +119,7 @@ def refresh_feed(conn, feed, cfg, llm=None) -> str:
         for e in res["entries"]:
             if db.upsert_article(conn, feed_id, e["guid"], e["link"], e["title"],
                                  e["published_at"], e.get("categories"),
-                                 e.get("image")):
+                                 e.get("image"), feed_text=e.get("excerpt")):
                 added += 1
         if "category_block" in feed.keys() and feed["category_block"]:
             hidden = db.hide_blocked_categories(conn, feed_id)
@@ -333,6 +333,21 @@ def backfill_images(conn, cfg, limit: int = 150, page_fetches: int = 40,
     return stored
 
 
+EXCERPT_MIN = 80     # shorter feed text isn't worth a card on its own
+
+
+def _use_excerpt(conn, art) -> bool:
+    """Publish the feed-provided text as the post (zero tokens) when the
+    article page is unusable. Returns False if the feed carried too little."""
+    ft = (art["feed_text"] if "feed_text" in art.keys() else "") or ""
+    if len(ft) < EXCERPT_MIN:
+        return False
+    db.set_article(conn, art["id"], summary=ft, status="ready",
+                   digest_source="excerpt", summarized_at=db.now_iso(),
+                   body_hash=hashlib.sha256(ft.encode()).hexdigest(), llm_ms=0)
+    return True
+
+
 def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
     """Run claimed articles through the LLM exactly once, unless their content
     hash shows we already have a digest for identical text (cache hit = 0 tokens).
@@ -355,6 +370,14 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                 continue
             from . import net
             resp = net.get(art["link"], timeout=30)
+            if net.is_challenge(resp):
+                # browser-only page: the feed's own text is all we can get
+                if _use_excerpt(conn, art):
+                    done += 1
+                else:
+                    fail(conn, cfg, art["id"], "site requires a browser"
+                         " (bot challenge) and the feed has no text")
+                continue
             if resp.status_code in net.BLOCK_STATUSES:
                 # the SITE refuses us: pause the whole feed, keep the post
                 # queued (not failed) - burning the backlog deepens bans
@@ -374,6 +397,9 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                 cap = min(cap, feed["max_input_chars"])   # per-feed tighter cap
             text = extract_article_text(resp.text, cap)
             if len(text) < 120:
+                if _use_excerpt(conn, art):       # page empty, feed has text
+                    done += 1
+                    continue
                 fail(conn, cfg, art["id"], f"extracted text too short ({len(text)} ch)")
                 continue
             _cache_image(conn, art, resp.text)

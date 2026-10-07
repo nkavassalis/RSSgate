@@ -104,6 +104,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 "gallery": [g for g in (r["gallery"] or "").split(",")
                          if g and g != "-"],
                 "unread": bool(r["unread"]),
+                "digest_source": r["digest_source"] or "",
             }
             mode = r["images_mode"]
             if mode == "off":
