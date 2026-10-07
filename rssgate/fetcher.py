@@ -5,7 +5,6 @@ import hashlib
 import html as htmlmod
 import json
 import re
-from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -169,7 +168,6 @@ def fetch_feed(url: str, etag: str | None = None, last_modified: str | None = No
     }
     fingerprint = hashlib.sha256(
         "|".join(e["guid"] for e in entries).encode()).hexdigest()
-    changed = fingerprint != (etag or "")  # caller may override with content_hash compare
     return {"ok": True, "changed": True, "meta": meta, "entries": entries,
             "etag": res["etag"], "last_modified": res["last_modified"],
             "fingerprint": fingerprint}

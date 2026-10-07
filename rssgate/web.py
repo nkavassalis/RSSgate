@@ -9,7 +9,7 @@ from flask import (
     request, send_file)
 
 from . import db
-from .config import load_config, save_config, masked_config, DEFAULTS, _merge
+from .config import load_config, save_config, masked_config, _merge
 from .llm import LLMClient, LLMError, TEST_PROMPT
 import time as _time_mod
 from .refresh import refresh_all, refresh_feed
@@ -493,7 +493,6 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 p = imgstore.safe_path(name)
             if p is None:
                 abort(404)
-        from flask import make_response
         resp = make_response(send_file(p))
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp

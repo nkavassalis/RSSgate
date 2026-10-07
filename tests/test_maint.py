@@ -88,8 +88,7 @@ def test_api_maintenance(client, monkeypatch):
 
 
 def test_status_cache_mb_is_live(conn, tmp_path):
-    from rssgate import imgstore, db
-    import json, re
+    from rssgate import imgstore
     d = tmp_path / "images"; d.mkdir()
     (d / "a" * 1).write_bytes(b"x" * 3_000_000) if False else \
         (d / "a").write_bytes(b"x" * 3_000_000)
@@ -132,9 +131,10 @@ def test_dedupe_galleries_repairs_resized_twins(conn, tmp_path):
     assert maint.dedupe_galleries(conn) == 1
     row = conn.execute("SELECT image, images FROM articles WHERE id=?",
                        (aid,)).fetchone()
-    imgs = [x for x in row["image"].split(",") if x and x != "-"] if False else []
     assert row["image"] == twin                    # twin promoted to hero
-    gal = [x for x in row["images"].split(",") if x and x != "-"]
+    gal = [x for x in row["images"].split(",")
+           if x and x != "-" and x != row["image"]]
     assert gal == [other]                          # distinct stays in gallery
+    assert maint.dedupe_galleries(conn) == 0       # idempotent: no churn
     assert (d / other).exists() and (d / twin).exists()
     assert not (d / hero).exists()                 # og draft reclaimed

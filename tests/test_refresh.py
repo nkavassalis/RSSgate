@@ -1,8 +1,6 @@
-import hashlib
 import rssgate.refresh as refresh
 import rssgate.fetcher as fetcher
 from rssgate import db
-from rssgate.config import load_config
 
 ARTICLE_HTML = ("<html><body><article>" +
     "".join(f"<p>Sentence number {i} about the quarterly earnings report, fact {i}.</p>"
@@ -41,7 +39,6 @@ def test_summarize_once_and_log_usage(conn, cfg, monkeypatch):
     fid = db.add_feed(conn, "https://ex.com/feed", type_="feed")["id"]
     aid = db.upsert_article(conn, fid, "g", "https://ex.com/post", "T", None)
     from rssgate.config import load_config
-    import os
     n = refresh.summarize_pending(conn, load_config(cfg), FakeLLM())
     assert n == 1
     art = conn.execute("SELECT * FROM articles WHERE id=?", (aid,)).fetchone()

@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS articles (
     UNIQUE(feed_id, guid)
 );
 CREATE INDEX IF NOT EXISTS idx_articles_ts ON articles(published_at, id);
+CREATE INDEX IF NOT EXISTS idx_articles_sort
+    ON articles(COALESCE(published_at, fetched_at), id);
 CREATE TABLE IF NOT EXISTS token_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     day TEXT NOT NULL,
@@ -454,7 +456,7 @@ def all_categories(conn) -> list[dict]:
 def rename_category(conn, old: str, new: str) -> int:
     """Rename (or create-and-reassign) a category across all feeds.
     Case-insensitive on both ends: every stored variant of `old` is replaced."""
-    old_cf, new_cf = old.casefold(), new.casefold()
+    old_cf = old.casefold()
     touched = 0
     for row in conn.execute("SELECT id, categories FROM feeds"):
         cats = parse_categories(row["categories"])

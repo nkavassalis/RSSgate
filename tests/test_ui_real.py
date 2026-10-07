@@ -12,7 +12,6 @@ Run explicitly:  .venv/bin/python -m pytest -m ui
 Auto-skips when playwright/chromium is not installed.
 """
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -132,6 +131,92 @@ def _new_page(browser, **ctx_kw):
     ctx.on("pageerror", lambda e: ctx.errors.append(str(e)))
     ctx.errors = []
     return ctx
+
+
+# ---------------------------------------------------------------- helpers
+# The browser tier shares ONE server + DB per session. Tests that need data
+# must create their OWN feed via _mkfeed() (unique URL per call) and query by
+# feed_id - never rely on global counts or another test's seed.
+
+RAIL_RECORDER = """
+  window.__rail = [];
+  new MutationObserver(rs => { for (const r of rs)
+    if (r.type === 'attributes' && r.target.id === 'stream-progress')
+      window.__rail.push([r.target.className, performance.now()]);
+  }).observe(document, { childList: true, subtree: true,
+                         attributes: true, attributeFilter: ['class'] });
+"""   # attach at document-start: DOMContentLoaded races the boot fetch
+
+_feed_seq = [0]
+
+
+def _mkfeed(prefix: str = "t") -> int:
+    """Fresh, uniquely-addressed feed in the session DB; returns its id."""
+    from rssgate import db
+    _feed_seq[0] += 1
+    conn = db.connect(UI_DB)
+    fid = db.add_feed(conn, f"https://{prefix}-{_feed_seq[0]}-"
+                      f"{time.time_ns()}.test/feed", type_="feed")["id"]
+    conn.commit(); conn.close()
+    return fid
+
+
+def _seed_article(fid: int, guid: str, title: str = "probe",
+                  ts: str = "2027-01-01T00:00:00Z", status: str = "ready",
+                  summary: str = "probe digest", image: str | None = None,
+                  link: str | None = None) -> int:
+    from rssgate import db
+    conn = db.connect(UI_DB)
+    aid = db.upsert_article(conn, fid, guid,
+                            link or f"https://x.test/{fid}/{guid}", title, ts)
+    conn.execute("UPDATE articles SET status=?, summary=? WHERE id=?",
+                 (status, summary, aid))
+    if image:
+        db.set_article(conn, aid, image=image)
+    conn.commit(); conn.close()
+    return aid
+
+
+def _feed_article(pg, fid: int) -> dict:
+    """The (first) API card for a feed, fetched in-page."""
+    art = pg.evaluate("""(fid) => fetch('/api/articles?feed_id=' + fid +
+        '&fresh=1&limit=50').then(r => r.json())
+        .then(d => d.items.find(i => i.feed_id === fid))""", fid)
+    assert art, f"feed {fid} has no visible article"
+    return art
+
+
+# In-page share renderer: returns layout geometry (window.__lastShareGeo)
+# plus pixel stats for named zones. zones = {name: [x, y, w, h]} in LOGICAL
+# card px (DPR handled here); each zone reports dark/accent/orange/blue counts.
+SHARE_PROBE = """async ([a, zones]) => {
+  const png = await window.__renderCardPng(a);
+  const geo = window.__lastShareGeo || {};
+  const bmp = await createImageBitmap(png);
+  const cv = document.createElement('canvas');
+  cv.width = bmp.width; cv.height = bmp.height;
+  const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+  const D = geo.dpr || 2, out = { geo, w: bmp.width / D, h: bmp.height / D };
+  for (const [k, [x, y, w, h]] of Object.entries(zones || {})) {
+    const z = g.getImageData(Math.round(x * D), Math.round(y * D),
+                             Math.max(1, Math.round(w * D)),
+                             Math.max(1, Math.round(h * D))).data;
+    const s = { dark: 0, accent: 0, orange: 0, blue: 0, n: z.length / 4 };
+    for (let i = 0; i < z.length; i += 4) {
+      const r = z[i], gg = z[i+1], b = z[i+2];
+      if (r < 110 && gg < 110 && b < 110) s.dark++;
+      if (b > 200 && r < 190 && gg < 160) s.accent++;
+      if (r > 200 && gg > 100 && gg < 170 && b < 60) s.orange++;
+      if (b > 200 && r < 60 && gg < 60) s.blue++;
+    }
+    out[k] = s;
+  }
+  return out;
+}"""
+
+
+def _share(pg, art: dict, zones: dict | None = None) -> dict:
+    return pg.evaluate(SHARE_PROBE, [art, zones or {}])
 
 
 def test_desktop_renders_with_real_ink(ui_server, browser):
@@ -488,7 +573,7 @@ def test_main_feed_requests_priority_mode(ui_server, browser):
     pg.goto(ui_server, wait_until="networkidle")
     assert any("prio=1" in u for u in urls), urls
     # scoped views (single feed) must NOT use priority mode
-    pg.click(f"#feed-filter li[data-feed='1']") if pg.locator("#feed-filter li[data-feed='1']").count() else None
+    pg.click("#feed-filter li[data-feed='1']") if pg.locator("#feed-filter li[data-feed='1']").count() else None
     pg.wait_for_timeout(800)
     assert all("prio=1" not in u for u in urls[-1:]), urls[-1:]
     assert pg.errors == []
@@ -576,25 +661,16 @@ def test_refresh_button_drives_the_rail(ui_server, browser):
         time.sleep(0.8)
         route.continue_()
     pg.route("**/api/poll", slow_poll)
-    pg.add_init_script("""
-      addEventListener('DOMContentLoaded', () => {
-        const el = document.getElementById('stream-progress');
-        window.__rail = [];
-        new MutationObserver(() => window.__rail.push([el.className,
-          performance.now()]))
-          .observe(el, { attributes: true, attributeFilter: ['class'] });
-      });
-    """)
+    pg.add_init_script(RAIL_RECORDER + "window.__SETTLE_MS = 300;")
     pg.goto(ui_server + "/", wait_until="networkidle")
-    pg.wait_for_timeout(800)                       # boot rail settles
+    pg.wait_for_function("""() => !document.getElementById('stream-progress')
+        .classList.contains('on')""", timeout=3000)   # boot rail settled
     base = len(pg.evaluate("window.__rail"))
     pg.click("#refresh-btn")
     pg.wait_for_selector("#refresh-btn.spinning", timeout=2000)
-    pg.wait_for_function("""() => { const e =
-        document.getElementById('stream-progress');
-        return e.classList.contains('on'); }""", timeout=2000)
-    pg.wait_for_timeout(3600)                      # past poll+settle+restart
-    assert pg.locator("#refresh-btn.spinning").count() == 0
+    pg.wait_for_selector("#refresh-btn:not(.spinning)", timeout=5000)
+    pg.wait_for_function("""() => !document.getElementById('stream-progress')
+        .classList.contains('on')""", timeout=3000)
     spans = pg.evaluate("""(base) => {
       const spans = []; let on = null;
       for (const [c, t] of (window.__rail || []).slice(base)) {
@@ -602,7 +678,7 @@ def test_refresh_button_drives_the_rail(ui_server, browser):
         if (!c.includes('on') && on !== null) { spans.push(t - on); on = null; }
       }
       return spans; }""", base)
-    assert max(spans) >= 1500, f"rail did not cover the poll: {spans}"
+    assert max(spans) >= 800, f"rail did not cover the 0.8s poll: {spans}"
     assert pg.errors == []
     pg.close()
 

@@ -548,12 +548,15 @@
   }
   window.refreshPips = refreshPips;
 
+  // poll settle wait; tests shrink it via window.__SETTLE_MS (seam)
+  const SETTLE_MS = typeof window.__SETTLE_MS === 'number'
+                  ? window.__SETTLE_MS : 2500;
   async function doRefreshWork() {       // shared by button + pull-to-refresh
     try {
       const r = await fetch('/api/poll', { method: 'POST' });
       const j = await r.json().catch(() => ({}));
       if (!j.throttled)                  // real poll: let the fetchers land
-        await new Promise(rz => setTimeout(rz, 2500));
+        await new Promise(rz => setTimeout(rz, SETTLE_MS));
     } catch { /* offline: restart anyway */ }
     restart();
     refreshPips();

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
+import threading
 
 from . import db, imgstore
 
@@ -45,47 +45,26 @@ def prune_orphans(conn) -> tuple[int, int]:
 
 
 def dedupe_galleries(conn) -> int:
-    """Drop gallery entries perceptually identical to the hero or an
-    earlier kept image (resized twins slip past byte hashes). Repairs
-    rows written before perceptual dedupe existed. Returns count."""
+    """Repair pass: apply imgstore.dedupe to stored articles (rows written
+    before the current rules). Idempotent - a clean row is never rewritten.
+    Returns the number of rows changed."""
     n = 0
     rows = list(conn.execute(
         "SELECT id, image, images FROM articles"
-        " WHERE images IS NOT NULL AND images != '-'"))
+        " WHERE image IS NOT NULL AND images IS NOT NULL AND images != '-'"))
     for r in rows:
-        names = [x for x in (r["images"] or "").split(",")
-                 if x and x != "-"]
-        if not names or not r["image"]:
+        raw = [x for x in (r["images"] or "").split(",") if x]
+        marker = raw and raw[-1] == "-"
+        gal = [x for x in raw if x != "-" and x != r["image"]]
+        if not gal:
             continue
-        hero = imgstore.ahash(r["image"])
-        if hero is None:
+        kept, dropped = imgstore.dedupe([r["image"], *gal])
+        if kept[0] == r["image"] and kept[1:] == gal:
             continue
-
-        def ham(a, b):
-            return bin(a ^ b).count("1")
-
-        keep, sigs = [], []
-        new_hero = None
-        for nm in names:
-            if nm == r["image"]:
-                continue
-            ph = imgstore.ahash(nm)
-            if ph is not None and ham(ph, hero) <= 10:
-                new_hero = nm          # gallery copy is fuller: promote
-                continue
-            if ph is not None and any(ham(ph, o) <= 10 for o in sigs):
-                continue               # twin of a kept gallery image
-            if ph is not None:
-                sigs.append(ph)
-            keep.append(nm)
-        if new_hero or len(keep) != len(names):
-            db.set_article(conn, r["id"],
-                           image=new_hero or r["image"],
-                           images=",".join(keep) if keep else "-")
-            gone = set(names) - set(keep) - ({new_hero} if new_hero
-                                             else set())
-            db.release_files(conn, gone)
-            n += 1
+        images = ",".join(kept) + (",-" if marker and len(kept) == 1 else "")
+        db.set_article(conn, r["id"], image=kept[0], images=images)
+        db.release_files(conn, dropped)
+        n += 1
     return n
 
 
@@ -170,7 +149,6 @@ def loop(conn_factory, config_path, stop: "threading.Event | None" = None,
          every_s: int = 6 * 3600) -> None:
     """Background loop: maintenance every `every_s` (default 6h)."""
     import contextlib
-    import threading
     from .config import load_config
     stop = stop or threading.Event()
     while not stop.wait(every_s):

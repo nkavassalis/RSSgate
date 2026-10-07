@@ -1,5 +1,4 @@
 from urllib.parse import quote
-import json
 
 
 def seed(client, n=5, cats="tech"):
@@ -161,7 +160,7 @@ def test_hide_untranscribed_default_and_toggle(client):
 
 def test_trimmed_hero_revives_lazily(client, tmp_path, monkeypatch):
     import hashlib
-    from rssgate import db, imgstore
+    from rssgate import db
     conn = client.conn
     fid = db.add_feed(conn, "https://rv.test/f", type_="feed")["id"]
     url = "https://rv.test/hero.png"

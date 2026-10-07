@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import html  # noqa: F401  (kept for symmetry; unescape used in fetcher)
 import logging
 import re
 import time
@@ -237,42 +236,10 @@ def _cache_image(conn, art, page_html: str):
         pairs = [(u, n) for u in urls if (n := imgstore.store(u))]
         if not pairs:
             return None
-        # Content-level dedupe: the same photo under variant URLs (og
-        # size vs body size) must not eat a gallery slot next to itself.
-        d = imgstore.directory()
-        import hashlib
-        seen, sigs, keep = set(), [], []
-        orphan_extra = []
-
-        def ham(a, b):
-            return bin(a ^ b).count("1")
-
-        for u, n in pairs:
-            try:
-                h = hashlib.sha256((d / n).read_bytes()).hexdigest()
-            except OSError:
-                h = None
-            if h and h in seen:
-                continue
-            ph = imgstore.ahash(n)
-            if ph is not None and sigs:
-                d0 = [(ham(ph, o), k) for k, o in enumerate(sigs)]
-                best, k = min(d0)
-                if best <= 10:
-                    if k == 0:
-                        # gallery twin is usually the fuller copy:
-                        # it becomes the hero, the og draft is dropped
-                        og_n = keep[0][1]
-                        keep[0] = (u, n)
-                        sigs[0] = ph
-                        orphan_extra.append(og_n)
-                    continue
-            # (first kept image holds the hero slot at index 0)
-            if h:
-                seen.add(h)
-            if ph is not None:
-                sigs.append(ph)
-            keep.append((u, n))
+        # hero/gallery dedupe: one rule set, shared with maintenance
+        url_of = {n: u for u, n in pairs}
+        kept, orphan_extra = imgstore.dedupe([n for _, n in pairs])
+        keep = [(url_of[n], n) for n in kept]
         urls = [u for u, _ in keep]
         names = [n for _, n in keep]
         old = set()

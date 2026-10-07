@@ -1,6 +1,5 @@
 import rssgate.fetcher as fetcher
-from rssgate.fetcher import looks_like_feed, fetch_feed, fetch_page, _collect_categories
-import feedparser
+from rssgate.fetcher import looks_like_feed, fetch_feed, fetch_page
 
 RSS_WITH_CATS = b"""<?xml version="1.0"?>
 <rss version="2.0"><channel><title>Tech Weekly</title>

@@ -145,6 +145,53 @@ def ahash(name: str, bits: int = 8) -> int | None:
         return None
 
 
+TWIN_BITS = 10      # 8x8 centre-crop aHash: twins 2-7, distinct 25+
+
+
+def dedupe(names: list[str]) -> tuple[list[str], set[str]]:
+    """Single source of truth for hero/gallery duplicates.
+
+    names[0] is the hero, the rest gallery candidates (in order). Returns
+    (kept, dropped): kept[0] is the hero - replaced by a later perceptual
+    twin, since gallery copies are usually the fuller original - and
+    kept[1:] are mutually distinct. Byte-identical files always collapse;
+    undecodable/flat images are kept (never judged)."""
+    import hashlib
+    kept: list[str] = []
+    sigs: list[int | None] = []
+    seen: dict[str, int] = {}
+    dropped: set[str] = set()
+    for n in names:
+        if not n or n == "-" or n in kept:
+            continue
+        try:
+            h = hashlib.sha256((_dir / n).read_bytes()).hexdigest()
+        except (OSError, TypeError):
+            h = None
+        if h and h in seen:
+            dropped.add(n)
+            continue
+        ph = ahash(n)
+        twin = None
+        if ph is not None:
+            for k, o in enumerate(sigs):
+                if o is not None and bin(ph ^ o).count("1") <= TWIN_BITS:
+                    twin = k
+                    break
+        if twin is None:
+            kept.append(n); sigs.append(ph)
+            if h:
+                seen[h] = len(kept) - 1
+        elif twin == 0:                       # promote fuller copy to hero
+            dropped.add(kept[0])
+            kept[0], sigs[0] = n, ph
+            if h:
+                seen[h] = 0
+        else:
+            dropped.add(n)
+    return kept, dropped - set(kept)
+
+
 def cache_mb() -> float:
     """Live image-cache size in MB (scandir sum; admin panel truth)."""
     import os
