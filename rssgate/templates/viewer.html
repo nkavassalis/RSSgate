@@ -11,7 +11,7 @@ RSSgate</title>
   <link rel="manifest" href="/static/manifest.webmanifest">
   <meta name="theme-color" content="#2733c6">
 
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{ app_version }}">
 </head>
 <body>
 <header class="topbar">
@@ -77,6 +77,6 @@ RSSgate</title>
 
 <div id="sentinel" style="height:1px"></div>
 <script>window.RSSGATE_PAGE = {{ cfg.ui['items_per_page'] }};</script>
-<script src="/static/viewer.js"></script>
+<script src="/static/viewer.js?v={{ app_version }}"></script>
 </body>
 </html>

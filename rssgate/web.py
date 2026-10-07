@@ -19,6 +19,13 @@ START_TIME = _time_mod.time()
 
 def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     app = Flask(__name__)
+
+    from . import __version__ as _ver
+
+    @app.context_processor
+    def _inject_version():
+        return {"app_version": _ver}
+
     cfg = load_config(config_path)
     data_dir = cfg["server"]["data_dir"]
     os.makedirs(data_dir, exist_ok=True)

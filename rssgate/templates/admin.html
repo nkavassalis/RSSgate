@@ -11,7 +11,7 @@ RSSgate Admin</title>
   <link rel="manifest" href="/static/manifest.webmanifest">
   <meta name="theme-color" content="#2733c6">
 
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{ app_version }}">
 </head>
 <body class="admin">
 <header class="topbar">
@@ -237,7 +237,7 @@ RSSgate Admin</title>
   </div>  <!-- sec-col -->
   </div>  <!-- admin-body -->
 </main>
-<script src="/static/admin.js"></script>
+<script src="/static/admin.js?v={{ app_version }}"></script>
 <div id="cfg-modal" class="modal-veil" hidden>
   <div class="modal cfg-modal">
     <h3 id="cfg-modal-title">Feed settings</h3>
