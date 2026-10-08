@@ -218,11 +218,21 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
 - New-posts pill (viewer.js `pulseTick`): reads `GET /api/pulse` (read-only,
   never `/api/poll`) on `ui.pulse_minutes`; baseline = per-feed unread at boot,
   so "new" means arrived-since-boot, not globally-newest. It NEVER scrolls or
-  inserts; the click does `restart(true)` + `refreshPips()` + `pulseClear()`. The element lives INSIDE `#stream`
+  inserts; the click does `restart(true)` + `refreshPips()` + `pulseClear()`.
+  The element lives INSIDE `#stream`
   and is `position:absolute`: a sibling of the stream is a flex item of
   `.layout` and steals column width (291px observed), and in flow it pushes
   the reader down. Query its node lazily (`pulseBox()`) - it does not exist
   at script-eval time. Tests assert card geometry before/after it appears.
+  Scheduling has ONE owner: `pulseArm()` ticks, then re-arms with
+  `setTimeout(pulseArm, …)` (a NAMED callback, so the suite can shorten just
+  that timer); `pulseTick` must never arm anything - when it called
+  `schedulePulse` and that called the tick back, the interval never applied
+  and `/api/pulse` was requested once per round trip (1,282 hits in 5s), while
+  a cold page armed nothing at all and never polled. `ui.pulse_minutes: 0`
+  means off. A test seam that drives a scheduled function directly is NOT
+  coverage of the schedule: also assert the request rate and that it can fire
+  with no manual tick.
   Browser tests must not assert global counts - the tier shares one DB.
 - Theme: `ui.theme` (auto|light|dark) is admin-editable (`cfg-theme`) and
   server-rendered into `data-theme`. Anything that differs by theme MUST be a
