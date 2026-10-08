@@ -167,3 +167,42 @@ def test_workqueue_explains_what_is_waiting(client):
     assert all(t.startswith(f"post {a}-") for t in nxt)  # paused/off skipped
     claimed = db.claim_pending(conn, 1)[0]
     assert claimed["title"] == nxt[0]                    # same order as workers
+
+
+def _wq_summary(conn):
+    return db.workqueue_snapshot(conn)["summary"]
+
+
+def test_summary_sentence_tells_the_whole_story(conn):
+    """'3 working · 30 queued' was too thin: the panel must also say when a
+    site paused those posts, and when a feed has never produced one."""
+    a = db.add_feed(conn, "https://busy.test/feed")["id"]
+    for i in range(2):
+        db.upsert_article(conn, a, f"b{i}", f"https://b.test/{i}", f"B{i}", None)
+    assert "2 queued ahead" in _wq_summary(conn)
+    assert "paused" not in _wq_summary(conn)
+
+    db.feed_block(conn, a, 60)                      # 403/429 -> paused
+    s = _wq_summary(conn)
+    assert "1 is paused by its site" in s and "resume on their own" in s
+
+    db.update_feed(conn, a, enabled=0)              # off: not a site pause
+    db.feed_unblock(conn, a)
+    s = _wq_summary(conn)
+    assert "paused" not in s and "2 queued ahead" in s
+
+
+def test_summary_counts_feeds_with_nothing_digested(conn):
+    """A freshly-added feed that has produced no ready post is a distinct
+    state from 'queue empty' - it usually means a refresh is still running."""
+    assert _wq_summary(conn).startswith("nothing in the queue")
+    assert db.workqueue_snapshot(conn)["never_summarized"] == 0
+
+    fresh = db.add_feed(conn, "https://fresh.test/feed")["id"]
+    snap = db.workqueue_snapshot(conn)
+    assert snap["never_summarized"] == 1
+    assert "1 enabled feed has no digested posts yet" in snap["summary"]
+
+    aid = db.upsert_article(conn, fresh, "g", "https://f.test/1", "F", None)
+    db.set_article(conn, aid, status="ready", summary="digested")
+    assert db.workqueue_snapshot(conn)["never_summarized"] == 0

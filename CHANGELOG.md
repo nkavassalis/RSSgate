@@ -35,6 +35,19 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.74.0] — 2026-10-08
+
+### Changed
+- Work queue summary is now a sentence you can act on, built server-side
+  (`db.workqueue_snapshot.summary`): what is summarizing, what is queued,
+  how many of those a site has paused (and that they resume on their own),
+  and how many enabled feeds have no digested posts yet - the last case
+  previously read as a plain "0 summarizing · 0 queued", indistinguishable
+  from a feed that is still fetching its first posts. The idle line repeats
+  the never-digested count, and the waiting list now says "waiting their
+  turn (no pause in effect)" to distinguish it from paused feeds.
+  /api/workqueue adds `summary`, `paused_count`, `never_summarized`.
+
 ## [0.73.1] — 2026-10-08
 
 ### Fixed

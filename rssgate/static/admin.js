@@ -587,15 +587,17 @@ function ago(ts) {
 
 async function renderWorkqueue() {
   const wq = await api('/api/workqueue');
-  $('wq-summary').textContent =
-    `${wq.working} summarizing \u00b7 ${wq.queue_ahead} queued ahead`;
+  // server-built sentence: what runs, what waits, what a site paused, and
+  // whether some feed has never produced a digested post at all
+  $('wq-summary').textContent = wq.summary
+    || `${wq.working} summarizing \u00b7 ${wq.queue_ahead} queued ahead`;
   // why each feed's posts are waiting, in plain words
   const now = new Date().toISOString().slice(0, 19) + 'Z';
   const hm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const why = w => !w.enabled ? 'feed is turned off: these wait until you turn it on'
     : w.backoff_until && w.backoff_until > now ? `paused by the site until ${hm(w.backoff_until)}`
     : wq.llm_down_since ? 'AI backend offline: resumes on its own'
-    : 'waiting their turn';
+    : 'waiting their turn (no pause in effect)';
   $('wq-waiting').innerHTML = (wq.waiting || []).map(w =>
     `<li><b>${esc(w.feed_title)}</b> \u00b7 ${w.n} post${w.n === 1 ? '' : 's'}
        <span class="hint">\u2014 ${esc(why(w))}${w.oldest ? `, oldest from ${ago(w.oldest)}` : ''}</span></li>`
@@ -609,7 +611,11 @@ async function renderWorkqueue() {
   $('wq-current').innerHTML = wq.current.length
     ? wq.current.map(c => `<div class="wq-item">\u23f3 <b>${esc(c.title)}</b>
         <span class="hint">${esc(c.feed_title)} \u00b7 running ${ago(c.started_at).replace(' ago', '')}</span></div>`).join('')
-    : '<div class="hint">idle \u2014 nothing being summarized right now</div>';
+    : `<div class="hint">idle \u2014 nothing being summarized right now${
+        wq.never_summarized ? ` \u00b7 ${wq.never_summarized} enabled feed${
+            wq.never_summarized === 1 ? '' : 's'} still ${
+            wq.never_summarized === 1 ? 'has' : 'have'} no digested posts`
+          : ''}</div>`;
   $('wq-table').querySelector('tbody').innerHTML = wq.recent.map(r => `<tr>
       <td title="${r.status}">${WQ_ICON[r.status] || '?'}</td>
       <td>${esc(r.title)}</td><td class="hint">${esc(r.feed_title)}</td>

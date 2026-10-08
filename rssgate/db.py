@@ -833,9 +833,37 @@ def workqueue_snapshot(conn, current_window_min: int = 2, recent_limit: int = 12
         "   AND COALESCE(f.backoff_until, '') <= ?"
         " ORDER BY COALESCE(a.published_at, a.fetched_at) DESC, a.id DESC LIMIT 8",
         (now_iso(),))
+    # one sentence a human can act on: what is running, what waits, what is
+    # paused, and whether any feed has NEVER been summarized (fresh add)
+    paused_now = [w for w in waiting
+                  if (w["backoff_until"] or "") > now_iso()]
+    never = conn.execute(
+        "SELECT COUNT(*) c FROM feeds WHERE enabled=1 AND"
+        " COALESCE(NULLIF(custom_title,''), NULLIF(title,''), url) NOT IN"
+        " (SELECT DISTINCT COALESCE(NULLIF(f2.custom_title,''),"
+        "   NULLIF(f2.title,''), f2.url) FROM articles a"
+        "   JOIN feeds f2 ON f2.id=a.feed_id WHERE a.status='ready')"
+    ).fetchone()["c"]
+    one = lambda n, sing, plur: sing if n == 1 else plur
+    bits = []
+    if working:
+        bits.append(f"{working} summarizing now")
+    if ahead:
+        bits.append(f"{ahead} queued ahead")
+    if paused_now:
+        bits.append(f"{len(paused_now)} "
+                    f"{one(len(paused_now), 'is', 'are')} paused by "
+                    f"{one(len(paused_now), 'its site', 'their sites')}"
+                    f" and will resume on their own")
+    if never:
+        bits.append(f"{never} enabled "
+                    f"{one(never, 'feed has', 'feeds have')} no digested posts "
+                    f"yet (still fetching, or nothing new found)")
     return {"current": current, "recent": recent,
             "working": working, "queue_ahead": ahead,
-            "waiting": waiting, "up_next": up_next}
+            "waiting": waiting, "up_next": up_next,
+            "paused_count": len(paused_now), "never_summarized": never,
+            "summary": "; ".join(bits) if bits else "nothing in the queue"}
 
 
 def find_summary_by_hash(conn, body_hash: str) -> sqlite3.Row | None:

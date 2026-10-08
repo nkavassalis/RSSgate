@@ -1452,3 +1452,44 @@ def test_share_buttons_stay_on_one_line_on_mobile(ui_server, browser, width):
     assert geo["scrollOverflow"] <= 0, "page overflows horizontally"
     assert pg.errors == []
     pg.close()
+
+
+def test_queue_panel_explains_idle_and_paused(ui_server, browser):
+    """The Work queue summary is a sentence a human can act on: it names
+    paused-by-site posts, and says when an enabled feed has produced nothing
+    digested yet (a bare '0 summarizing · 0 queued' hides both)."""
+    from rssgate import db
+    _mkfeed("wqwords")                            # enabled, zero posts
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-queue", wait_until="networkidle")
+    # `never_summarized` is a GLOBAL count and the tier shares one session DB,
+    # so assert the panel mirrors the API rather than a fixed number
+    want = pg.evaluate(
+        "() => fetch('/api/workqueue').then(r => r.json())"
+        ".then(d => d.never_summarized)")
+    if want:
+        pg.wait_for_function(
+            "document.getElementById('wq-summary').textContent"
+            ".includes('no digested posts yet')", timeout=8000)
+        assert f"{want} enabled feed" in pg.locator("#wq-summary").inner_text()
+        assert "no digested posts" in pg.locator("#wq-current").inner_text()
+    else:
+        assert "no digested posts" not in pg.locator("#wq-summary").inner_text()
+
+    # now a feed whose posts a site paused -> the sentence must say so
+    b = _mkfeed("wqpause")
+    _seed_article(b, "q1", title="paused probe", status="pending")
+    conn = db.connect(UI_DB); db.feed_block(conn, b, 60); conn.close()
+    pg.click("#status-refresh")                  # re-render the panel
+    pg.wait_for_function("document.getElementById('wq-summary').textContent"
+                         ".includes('paused by its site')", timeout=8000)
+    txt = pg.locator("#wq-summary").inner_text()
+    assert "1 is paused by its site" in txt and "resume on their own" in txt
+    # total queue depth is shared-tier state; only assert a number this test
+    # owns (the pause) and that the queue itself is reported
+    assert "queued ahead" in txt
+    # per-feed rows are asserted hermetically (shared-tier queue depth makes
+    # row-level counts order-dependent here); check the list still renders
+    assert pg.locator("#wq-waiting li").count() >= 1
+    assert pg.errors == []
+    pg.close()
