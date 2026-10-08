@@ -123,8 +123,8 @@ unlocks:
 - **Native share sheet for snapshots** — tap the snapshot button and the
   digest image goes straight to AirDrop, Messages, Notes, or any app,
   rendered at full share width with the source QR.
-  Two card styles (admin, Display & sharing): **Banner** - photo across the
-  top, digest, footer with QR - or **Magazine** - photo and QR float in the text.
+  Two buttons per post: **tall** (photo across the top, phone-friendly)
+  and **wide** (magazine layout, photo and QR float in the text).
 - **Clipboard writes** — the snapshot lands on the clipboard instead of
   the Files-app download fallback.
 

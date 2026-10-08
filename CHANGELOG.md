@@ -35,6 +35,20 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.68.0] — 2026-10-07
+
+### Changed
+- Two share buttons on every post instead of one style setting: TALL
+  (banner card, fixed 640px - phone-friendly; type scales with it) and
+  WIDE (magazine layout at ui.snapshot_width, relabelled "Wide share card
+  width"). Answers "is share width obeyed?": it always set the PNG size,
+  but the banner scaled everything proportionally, so it looked identical
+  at any width; width now drives the wide card, where it changes layout.
+
+### Removed
+- ui.share_style setting, its admin select and the /api/resume field
+  (an old value in config.yaml is ignored).
+
 ## [0.67.0] — 2026-10-07
 
 ### Fixed

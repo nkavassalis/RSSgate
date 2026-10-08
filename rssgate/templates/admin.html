@@ -71,7 +71,7 @@ RSSgate Admin</title>
   <section class="panel" id="sec-display">
     <h2>Display &amp; sharing</h2>
     <div class="grid2">
-      <label>Snapshot width (px, 360-1440)
+      <label>Wide share card width (px, 360-1440)
         <input id="cfg-sharewidth" type="number" min="360" max="1440" step="20"></label>
       <label>Reading column width (px, 480-1600)
         <input id="cfg-streamwidth" type="number" min="480" max="1600" step="20"></label>
@@ -80,16 +80,12 @@ RSSgate Admin</title>
       <label class="inline-check"><input type="checkbox" id="cfg-hidepend">
         hide awaiting-transcription posts until digested (queue lives in
         Work queue)</label>
-      <label>Share card style
-        <select id="cfg-sharestyle">
-          <option value="banner">Banner - photo across the top, footer with QR</option>
-          <option value="float">Magazine - photo and QR float in the text</option>
-        </select></label>
       <label>Mark as read after (seconds, 0-60, 0 = instantly)
         <input id="cfg-readdelay" type="number" min="0" max="60" step="1"></label>
     </div>
-    <p class="hint">Saved instantly on change. Snapshot width is the share-card
-    render size; reading column width is the desktop reader measure (reloads
+    <p class="hint">Saved instantly on change. Each post has two share
+    buttons: tall (&#9647;, a fixed phone-friendly card) and wide (&#9645;, the
+    magazine layout at the width set here). Reading column width is the desktop reader measure (reloads
     take effect on the reader). Unread pills still count awaiting posts,
     so a feed can look busy while its stream stays quiet.</p>
   </section>

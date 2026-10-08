@@ -78,7 +78,6 @@ DEFAULTS: dict = {
         "order": "newest", "snapshot_width": 800, "stream_width": 1280,
         "read_delay": 5,
         "hide_untranscribed": True,
-        "share_style": "banner",               # banner | float (share card)
     },
 }
 

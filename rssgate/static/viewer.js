@@ -81,7 +81,7 @@
     return `<article class="card${a.unread ? ' unread' : ''}" data-ts="${esc(a.ts)}"
         data-id="${a.id}" data-feed="${a.feed_id}">
       <div class="card-meta">${a.unread ? '<span class="newdot" title="unread"></span>' : ''}<span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
-        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" title="Copy snapshot image to clipboard">\u25a3</button></div>
+        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" data-fmt="tall" title="Share as a tall card (phone-friendly)">\u25af</button><button class="snap-btn" data-fmt="wide" title="Share as a wide card (magazine layout)">\u25ad</button></div>
       ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
@@ -246,7 +246,14 @@
   }
 
   let SHARE_W = 800;
-  let SHARE_STYLE = 'banner';   // banner | float (ui.share_style)
+  let SHARE_STYLE = 'banner';   // default for direct renderCardPng calls
+  // two share buttons per card: TALL = banner at a fixed phone-friendly
+  // width; WIDE = magazine layout at ui.snapshot_width (admin setting)
+  const TALL_W = 640;
+  const SHARE_FORMATS = {
+    tall: { style: 'banner', width: () => TALL_W },
+    wide: { style: 'float', width: () => SHARE_W },
+  };
   function restart(keepDrawer) {
     stream.innerHTML = ''; cursor = null; exhausted = false;
     seenIds.clear();
@@ -556,7 +563,8 @@
     const glyph = btn.textContent;
     btn.textContent = '\u2026';
     try {
-      const png = await renderCardPng(a);
+      const fmt = SHARE_FORMATS[btn.dataset.fmt] || SHARE_FORMATS.tall;
+      const png = await renderCardPng(a, { style: fmt.style, width: fmt.width() });
       let copied = false;
       const file = new File([png], `rssgate-${a.id}.png`,
                             { type: 'image/png' });
@@ -863,8 +871,6 @@
     order = s.order === 'oldest' ? 'oldest' : 'newest';
     if (s.snapshot_width >= 360 && s.snapshot_width <= 1440)
       SHARE_W = Math.round(s.snapshot_width);
-    if (s.share_style === 'float' || s.share_style === 'banner')
-      SHARE_STYLE = s.share_style;
     if (typeof s.read_delay === 'number' && s.read_delay >= 0 && s.read_delay <= 60)
       READ_DELAY_MS = s.read_delay * 1000;
     if (s.stream_width >= 480 && s.stream_width <= 1600)

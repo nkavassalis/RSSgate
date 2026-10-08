@@ -25,7 +25,7 @@ run.py              config -> create_app -> Scheduler -> maint loop -> flask
 rssgate/
   config.py         DEFAULTS + deep-merge load/save, env: secrets, masked_config.
                     ui.*: order, snapshot_width, stream_width, read_delay,
-                    hide_untranscribed, share_style (banner|float).
+                    hide_untranscribed (snapshot_width = WIDE share width).
   db.py             ALL SQL. Schema + additive _migrate(). Keyset paging
                     (articles_page), claim_pending (UPDATE..RETURNING),
                     read cursors, category SQL, delete_* return image names,
@@ -145,7 +145,10 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
 renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   -> shareLayout(a, env)           PURE: measures text, returns
                                    {W, H, ops, geo:{rects, lines, ...}}
-       layoutBanner | layoutFloat  one function per style (ui.share_style)
+       layoutBanner | layoutFloat  one function per style; each card has
+                                   two buttons: tall = banner @ TALL_W 640,
+                                   wide = float @ ui.snapshot_width
+                                   (SHARE_FORMATS in viewer.js)
   -> paintShare(ctx, L, assets)    dumb interpreter of ops (fill/img/text)
   -> window.__lastShareGeo         geometry seam for tests
 ```
@@ -155,7 +158,7 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   when present, and `geo.lines` every digest line box. The browser suite
   checks every style for zero overlaps between text and graphics, pixels
   inside the rects (photo, QR modules, accent), and visible paragraph gaps.
-- **banner** (default): full-bleed hero (natural ratio clamped 16:9..2.4:1,
+- **banner** (the TALL button): full-bleed hero (natural ratio clamped 16:9..2.4:1,
   centre cover crop), title, meta, one digest column, hairline, footer
   (QR + "Read the full article" + domain | via RSSgate). Type scales with
   card width so phone-sized views stay readable.

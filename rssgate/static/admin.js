@@ -281,7 +281,6 @@ async function loadConfig() {
   $('cfg-hidepend').checked = (cfg.ui || {}).hide_untranscribed !== false;
   $('cfg-readdelay').value = (cfg.ui || {}).read_delay ?? 5;
   $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
-  $('cfg-sharestyle').value = (cfg.ui || {}).share_style || 'banner';
   const fc = cfg.fetch || {};
   $('cfg-ua').value = fc.user_agent || '';
   $('cfg-hostgap').value = fc.per_host_interval ?? 3;
@@ -369,8 +368,6 @@ $('cfg-backoff').addEventListener('change', e => {
   const v = Math.max(1, Math.min(1440, Math.round(+e.target.value || 60)));
   e.target.value = v; cfgFetchFlash(e.target, 'block_backoff_minutes', v);
 });
-$('cfg-sharestyle').addEventListener('change', e =>
-  cfgUiFlash(e.target, 'share_style', e.target.value));
 $('cfg-readdelay').addEventListener('change', e => {
   const v = Math.max(0, Math.min(60, Math.round(+e.target.value || 0)));
   e.target.value = v;

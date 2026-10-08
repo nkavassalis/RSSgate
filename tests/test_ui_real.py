@@ -515,7 +515,7 @@ def test_copy_snapshot_puts_png_on_clipboard(ui_server, browser):
     pg.context.grant_permissions(["clipboard-read", "clipboard-write"],
                                  origin=ui_server)
     pg.goto(ui_server, wait_until="networkidle")
-    pg.click(".card .snap-btn")
+    pg.click(".card .snap-btn[data-fmt=wide]")   # wide = snapshot_width
     pg.wait_for_function("() => !!document.querySelector('.snap-btn')")
     pg.wait_for_function(
         """async () => (await navigator.clipboard.read()).some(i =>
@@ -1175,5 +1175,36 @@ def test_read_marking_is_honest(ui_server, browser):
     conn.close()
     assert got[ids[0]] == 1 and got[ids[3]] == 1
     assert got[ids[2]] == 0 and got[ids[4]] == 0   # never seen: still unread
+    assert pg.errors == []
+    pg.close()
+
+
+def test_tall_and_wide_share_buttons(ui_server, browser):
+    """Each card offers two formats: tall = banner at a fixed 640px card,
+    wide = magazine layout at ui.snapshot_width. Verified on the PNG that
+    actually reaches the share sheet."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.add_init_script("""
+      window.__shots = [];
+      navigator.canShare = d => d && d.files && d.files.length > 0;
+      navigator.share = async d => {
+        const bmp = await createImageBitmap(d.files[0]);
+        window.__shots.push({ w: bmp.width, h: bmp.height,
+                              style: (window.__lastShareGeo || {}).style });
+      };
+    """)
+    pg.goto(ui_server, wait_until="networkidle")
+    card = pg.locator(".card").first
+    assert card.locator(".snap-btn[data-fmt=tall]").count() == 1
+    assert card.locator(".snap-btn[data-fmt=wide]").count() == 1
+    sw = pg.evaluate("fetch('/api/resume').then(r => r.json())"
+                     ".then(s => s.snapshot_width)")
+    card.locator(".snap-btn[data-fmt=tall]").click()
+    pg.wait_for_function("() => window.__shots.length === 1", timeout=8000)
+    card.locator(".snap-btn[data-fmt=wide]").click()
+    pg.wait_for_function("() => window.__shots.length === 2", timeout=8000)
+    tall, wide = pg.evaluate("window.__shots")
+    assert tall["style"] == "banner" and tall["w"] == 640 * 2, tall
+    assert wide["style"] == "float" and wide["w"] == sw * 2, wide
     assert pg.errors == []
     pg.close()
