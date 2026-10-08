@@ -1666,3 +1666,89 @@ def test_pulse_pill_never_announces_zero(ui_server, browser):
     assert "+1 more" in txt, txt
     assert pg.errors == []
     pg.close()
+
+
+def test_pulse_pill_does_not_widen_the_stream(ui_server, browser):
+    """The pill must POP over nothing and shift nothing: it lives INSIDE the
+    reading column, and showing it may not change the stream's width, the
+    cards' width or their left edge (once it was a flex sibling of the stream
+    in .layout and pushed every article's text to the right)."""
+    fid = _mkfeed("pulgeo")
+    _seed_article(fid, "g1", title="geometry probe",
+                  summary="body text for width comparison " * 12)
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 9,
+            "unread_total": 3, "every_minutes": 0,
+            "feeds": [{"feed_id": 99, "title": "Stub", "unread": 3,
+                       "ts": "2020-01-01T00:00:00Z"}]}
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    card = pg.locator(".card", has_text="geometry probe")
+    assert card.count() == 1
+    # the stub IS the boot baseline (unread 3): click once to re-baseline,
+    # exactly as the app does, then a second stub makes the same feed 'gain'
+    pg.evaluate("window.__pulseClear()")      # as if the user had clicked
+    pg.evaluate("window.__pulseTick()")       # tick 1 re-baselines (silent)
+    b0 = card.bounding_box()
+    s0 = pg.locator("#stream").bounding_box()
+    stub["feeds"][0]["unread"] = 4          # same feed, one more readable post
+    stub["unread_total"] = 4
+    stub["newest_ts"] = "2020-01-02T00:00:00Z"
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    b1 = card.bounding_box()
+    s1 = pg.locator("#stream").bounding_box()
+    assert abs(b1["x"] - b0["x"]) < 0.5, f"card moved: {b0} -> {b1}"
+    assert abs(b1["width"] - b0["width"]) < 0.5, f"card resized: {b0} -> {b1}"
+    assert abs(s1["width"] - s0["width"]) < 0.5, f"stream resized: {s0} -> {s1}"
+    # the geometry above is the real assertion (a flex ITEM of .layout
+    # squeezed the column by ~291px); these check the structure that prevents
+    # it: the pill is inside #stream and positioned, so it is out of the row
+    assert pg.evaluate("document.getElementById('pulse').parentElement.id") == "stream"
+    assert pg.evaluate("() => getComputedStyle(document.getElementById('pulse'))"
+                       ".position !== 'static'")
+    # width honoured: flex sizing must not shrink a positioned child
+    assert pg.evaluate("() => Math.round(document.getElementById('pulse')"
+                       ".getBoundingClientRect().width)") == 520
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_pill_overlays_without_pushing_text(ui_server, browser):
+    """Second half of "don't disturb": an in-flow pill (inside the column)
+    pushed the reader DOWN when it appeared (observed 456 -> 380 scrollY).
+    It must be an overlay: showing it may not move the cards vertically
+    either, in either direction."""
+    fid = _mkfeed("pulov")
+    _seed_article(fid, "o1", title="overlay probe",
+                  summary="filler body text for vertical geometry " * 20)
+    stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 9,
+            "unread_total": 3, "every_minutes": 0,
+            "feeds": [{"feed_id": 99, "title": "Stub", "unread": 3,
+                       "ts": "2020-01-01T00:00:00Z"}]}
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    card = pg.locator(".card", has_text="overlay probe")
+    pg.evaluate("window.scrollTo(0, 300)")
+    pg.wait_for_timeout(150)
+    y0 = pg.evaluate("scrollY")
+    c0 = card.bounding_box()
+    pg.evaluate("window.__pulseClear()")
+    pg.evaluate("window.__pulseTick()")                 # re-baseline (silent)
+    stub["feeds"][0]["unread"] = 4
+    stub["unread_total"] = 4
+    stub["newest_ts"] = "2020-01-02T00:00:00Z"
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    c1 = card.bounding_box()
+    assert abs(c1["y"] - c0["y"]) < 0.5, f"cards moved vertically: {c0} -> {c1}"
+    assert abs(c1["x"] - c0["x"]) < 0.5, f"cards moved horizontally: {c0} -> {c1}"
+    assert pg.evaluate("scrollY") == y0, "showing the pill scrolled the page"
+    assert pg.evaluate("""() => {
+        const cs = getComputedStyle(document.getElementById('pulse'));
+        return cs.position === 'absolute'; }"""), "pill must overlay, not flow"
+    assert pg.errors == []
+    pg.close()

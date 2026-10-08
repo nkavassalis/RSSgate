@@ -218,7 +218,11 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
 - New-posts pill (viewer.js `pulseTick`): reads `GET /api/pulse` (read-only,
   never `/api/poll`) on `ui.pulse_minutes`; baseline = per-feed unread at boot,
   so "new" means arrived-since-boot, not globally-newest. It NEVER scrolls or
-  inserts; the click does `restart(true)` + `refreshPips()` + `pulseClear()`.
+  inserts; the click does `restart(true)` + `refreshPips()` + `pulseClear()`. The element lives INSIDE `#stream`
+  and is `position:absolute`: a sibling of the stream is a flex item of
+  `.layout` and steals column width (291px observed), and in flow it pushes
+  the reader down. Query its node lazily (`pulseBox()`) - it does not exist
+  at script-eval time. Tests assert card geometry before/after it appears.
   Browser tests must not assert global counts - the tier shares one DB.
 - Theme: `ui.theme` (auto|light|dark) is admin-editable (`cfg-theme`) and
   server-rendered into `data-theme`. Anything that differs by theme MUST be a

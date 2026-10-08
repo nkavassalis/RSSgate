@@ -677,8 +677,12 @@
   // (A "globally newest ts" test instead stayed silent whenever another feed
   // already held a later post, and re-raised the pill after a click.)
   let pulseBaseTs = '', pulseBaseFeeds = null, pulseTimer = 0, pulseEveryMs = 60000;
+  // the pill node lives INSIDE #stream, so it is queried lazily: at script
+  // time the stream is still empty and $('pulse') would be null
+  function pulseBox() { return document.getElementById('pulse'); }
   function pulseClear() {
-    pulseBaseFeeds = null; pulseBaseTs = ''; $('pulse').hidden = true;
+    pulseBaseFeeds = null; pulseBaseTs = '';
+    const box = pulseBox(); if (box) box.hidden = true;
   }
   async function pulseTick() {
     if (document.hidden || ptrBusy) return;
@@ -693,7 +697,7 @@
     if (pulseBaseFeeds === null) {                    // (re)baseline quietly
       pulseBaseFeeds = {}; pulseBaseTs = p.newest_ts || '';
       for (const f of feeds) pulseBaseFeeds[f.feed_id] = f.unread;
-      $('pulse').hidden = true;
+      const box = pulseBox(); if (box) box.hidden = true;
       return;
     }
     // ONE definition drives both 'new?' and the printed number: a feed's
@@ -706,6 +710,8 @@
       if (d > gainerDelta) { gainer = f; gainerDelta = d; }
     }
     const total = p.unread_total || 0;
+    const box = pulseBox();
+    if (!box) return;
     if (gain > 0 && total > 0) {
       // name the feed that GAINED (largest gain), not the biggest pile or the
       // newest ts: with several feeds in the library those are rarely yours
@@ -715,9 +721,9 @@
       $('pulse-btn').textContent =
         `\u2191 ${total} newer post${total === 1 ? '' : 's'} \u2014 tap to load`
         + top + more;
-      $('pulse').hidden = false;
+      box.hidden = false;
     } else {
-      $('pulse').hidden = true;
+      box.hidden = true;
     }
   }
   function schedulePulse() {
@@ -732,12 +738,13 @@
     else { pulseTick(); schedulePulse(); }
   });
   $('pulse-btn').addEventListener('click', () => {
-    $('pulse').hidden = true;
+    const box = pulseBox(); if (box) box.hidden = true;
     restart(true);          // stream restarts at newest; no feed fetching
     refreshPips();
     pulseClear();           // else the next tick re-raises the pill forever
   });
   window.__pulseTick = pulseTick;      // test seam: run one check now
+  window.__pulseClear = pulseClear;    // test seam: re-baseline (as a click)
   // Offline at boot: keep a quiet re-check going, and retry on demand. If the
   // server is back, a reload brings the reader up with the saved position.
   function retryPulse() {           // defined once, re-armed on failure
