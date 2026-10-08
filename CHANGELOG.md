@@ -35,6 +35,24 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.72.0] — 2026-10-08
+
+### Added
+- Work queue explains itself: "Waiting, by feed" lists each feed with posts
+  queued, how many, how old, and why (waiting its turn, paused by the site
+  until HH:MM, feed turned off, AI backend offline); "Up next" shows the
+  next 8 posts in the exact order workers take them. /api/workqueue adds
+  waiting, up_next, llm_down_since, llm_next_try.
+
+### Fixed
+- The "terse" digest length dictated CONTENT ("stating only what
+  happened"), overriding feed prompts: a feed asking for model capabilities
+  got "X emerged as a trending Hugging Face release". Length directives now
+  set length only; the prompt decides what to say. Re-process a feed to
+  regenerate its existing digests.
+- Taking a feed out of Auto hides its excerpt-count and bot-check badges in
+  admin (the posts keep their "feed excerpt" label).
+
 ## [0.71.0] — 2026-10-08
 
 ### Added

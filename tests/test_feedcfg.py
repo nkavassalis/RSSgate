@@ -296,3 +296,14 @@ def test_images_mode_read_time_filter(client):
     assert item()["image"] is None                                   # stays off
     client.put(f"/api/feeds/{fid}", json={"images_mode": "auto"})
     assert item()["gallery"] == ["a.png", "b.png"]
+
+
+def test_length_directives_never_dictate_content():
+    """Digest length settings set LENGTH only. The old terse text added
+    'stating only what happened', overriding a feed prompt that asked for
+    model capabilities ('X emerged as a trending release')."""
+    from rssgate.refresh import DIGEST_DIRECTIVES
+    for name, text in DIGEST_DIRECTIVES.items():
+        low = text.lower()
+        assert "what happened" not in low and "no context" not in low, name
+    assert "20 words" in DIGEST_DIRECTIVES["terse"]

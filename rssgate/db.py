@@ -816,8 +816,26 @@ def workqueue_snapshot(conn, current_window_min: int = 2, recent_limit: int = 12
         "SELECT COUNT(*) c FROM articles WHERE status='pending'").fetchone()["c"]
     working = conn.execute(
         "SELECT COUNT(*) c FROM articles WHERE status='processing'").fetchone()["c"]
+    # what is waiting, per feed, with the state that explains it
+    waiting = rows(
+        "SELECT f.id AS feed_id,"
+        " COALESCE(NULLIF(f.custom_title, ''), NULLIF(f.title, ''), f.url) AS feed_title,"
+        " COUNT(*) AS n, f.enabled, f.backoff_until, MIN(a.fetched_at) AS oldest"
+        " FROM articles a JOIN feeds f ON f.id=a.feed_id WHERE a.status='pending'"
+        " GROUP BY f.id ORDER BY n DESC")
+    # the next posts a worker will claim - SAME order and filters as
+    # claim_pending (keep the two in step)
+    up_next = rows(
+        "SELECT a.id, a.title, a.link,"
+        " COALESCE(NULLIF(f.custom_title, ''), NULLIF(f.title, ''), f.url) AS feed_title"
+        " FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        " WHERE a.status='pending' AND f.enabled=1"
+        "   AND COALESCE(f.backoff_until, '') <= ?"
+        " ORDER BY COALESCE(a.published_at, a.fetched_at) DESC, a.id DESC LIMIT 8",
+        (now_iso(),))
     return {"current": current, "recent": recent,
-            "working": working, "queue_ahead": ahead}
+            "working": working, "queue_ahead": ahead,
+            "waiting": waiting, "up_next": up_next}
 
 
 def find_summary_by_hash(conn, body_hash: str) -> sqlite3.Row | None:

@@ -203,9 +203,14 @@ def refresh_all(conn, cfg, llm=None) -> list[str]:
     return results
 
 
+# Length directives control LENGTH only; WHAT to include belongs to the
+# prompt (global or the feed's custom one). The old terse text also said
+# "stating only what happened", which beat a feed prompt asking for model
+# capabilities and produced "X emerged as a trending release".
 DIGEST_DIRECTIVES = {
-    "terse": " OVERRIDE: the digest must be ONE sentence of at most 20 words"
-             " stating only what happened. No context, no nuance.",
+    "terse": " LENGTH: the digest must be ONE sentence of at most 20 words."
+             " Spend those words on the content the instructions above ask"
+             " for, not on the fact that the item was published.",
     "normal": " OVERRIDE: write a digest of about 150 words.",
     "detailed": " OVERRIDE: write a thorough digest of 300-500 words with"
                 " concrete facts, numbers and named entities.",

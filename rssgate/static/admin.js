@@ -23,6 +23,9 @@ document.getElementById('admin-close').addEventListener('click', e => {
 const chk = (root, sel, fb) => root.querySelector(sel) || { checked: !!fb };
 const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
 
+// Fallback counts and bot-check warnings are Auto's business: once the user
+// picks a source by hand they're moot in admin (posts keep their card label)
+const isAuto = f => (f.content_source || 'auto') === 'auto';
 // Auto content-source state, in words (mirrors db.STREAK_LIMIT = 3)
 function autoState(f) {
   if ((f.content_source || 'auto') !== 'auto') return null;
@@ -61,11 +64,11 @@ async function renderFeeds() {
           <div class="hint">${esc(f.last_status || '')}</div>
           ${f.content_source && f.content_source !== 'auto'
             ? `<span class="src-pill">${f.content_source === 'feed' ? 'feed text only' : 'article page only'}</span>` : ''}
-          ${f.excerpt_count
+          ${f.excerpt_count && isAuto(f)
             ? `<span class="excerpt-pill" title="the article page couldn't be used, so these posts show the feed's own excerpt; pages are retried after 6h, 24h and 3 days">${f.excerpt_count} from feed excerpt${f.upgrade_pending ? ` \u00b7 ${f.upgrade_pending} awaiting page retry` : ''}</span>` : ''}
           ${autoState(f)
             ? `<span class="challenge-pill" title="the site answers automated requests with a bot check instead of the article">${esc(autoState(f).text)}</span>`
-            : f.challenge_at
+            : f.challenge_at && isAuto(f)
               ? `<span class="challenge-pill" title="the site has answered automated requests with a bot check before">browser-check site</span>` : ''}
           ${f.backoff_until && f.backoff_until > new Date().toISOString().slice(0, 19) + 'Z'
             ? `<span class="paused-pill" title="the site refused our requests (403/429); polling and digests for this feed wait until then">paused by site until ${esc(f.backoff_until.slice(11, 16))} UTC</span>`
@@ -586,6 +589,23 @@ async function renderWorkqueue() {
   const wq = await api('/api/workqueue');
   $('wq-summary').textContent =
     `${wq.working} summarizing \u00b7 ${wq.queue_ahead} queued ahead`;
+  // why each feed's posts are waiting, in plain words
+  const now = new Date().toISOString().slice(0, 19) + 'Z';
+  const hm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const why = w => !w.enabled ? 'feed is turned off: these wait until you turn it on'
+    : w.backoff_until && w.backoff_until > now ? `paused by the site until ${hm(w.backoff_until)}`
+    : wq.llm_down_since ? 'AI backend offline: resumes on its own'
+    : 'waiting their turn';
+  $('wq-waiting').innerHTML = (wq.waiting || []).map(w =>
+    `<li><b>${esc(w.feed_title)}</b> \u00b7 ${w.n} post${w.n === 1 ? '' : 's'}
+       <span class="hint">\u2014 ${esc(why(w))}${w.oldest ? `, oldest from ${ago(w.oldest)}` : ''}</span></li>`
+  ).join('') || '<li class="hint">nothing waiting</li>';
+  $('wq-next').innerHTML = (wq.up_next || []).map(u =>
+    `<li><a href="${esc(u.link)}" target="_blank" rel="noopener">${esc(u.title)}</a>
+       <span class="hint">${esc(u.feed_title)}</span></li>`
+  ).join('') || (wq.queue_ahead
+    ? '<li class="hint">nothing can run right now (see the reasons on the left)</li>'
+    : '<li class="hint">queue is empty</li>');
   $('wq-current').innerHTML = wq.current.length
     ? wq.current.map(c => `<div class="wq-item">\u23f3 <b>${esc(c.title)}</b>
         <span class="hint">${esc(c.feed_title)} \u00b7 running ${ago(c.started_at).replace(' ago', '')}</span></div>`).join('')
@@ -678,7 +698,7 @@ async function openFeedCfg(id) {
     <p class="hint"><span class="type-tag">${esc(feed.type || 'feed')}</span>
        ${feed.article_count || 0} posts \u00b7
        ${feed.ready_count || 0} digested \u00b7
-       ${feed.unread || 0} unread${feed.excerpt_count ?
+       ${feed.unread || 0} unread${feed.excerpt_count && isAuto(feed) ?
         ` \u00b7 <b class="warn">${feed.excerpt_count} fell back to the feed's excerpt</b>` : ''}${feed.hidden_count ?
         ` \u00b7 <b>${feed.hidden_count} hidden by filters</b>` : ''}
        \u00b7 images:${esc(feed.images_mode || 'auto')}</p>
@@ -691,7 +711,7 @@ async function openFeedCfg(id) {
             `<option value="${v}"${(feed.content_source || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}
         </select>
         ${autoState(feed) ? `<b class="warn">${esc(autoState(feed).text)}</b><br>` : ''}
-        <small>${feed.challenge_at
+        <small>${feed.challenge_at && isAuto(feed)
           ? '<b class="warn">\u26a0 This site answers with a browser check (often Cloudflare \u201cJust a moment\u201d): its article pages can\'t be fetched. \u201cFeed text only\u201d is usually the right choice here.</b>'
           : '(feed text only suits sites that block readers or feeds that already carry full articles; long feed text still gets an LLM digest)'}</small></label>
       <label class="snap-pick"><input type="checkbox" data-role="llm"

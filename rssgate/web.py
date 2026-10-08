@@ -526,7 +526,12 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/workqueue")
     def api_workqueue():
-        return jsonify(db.workqueue_snapshot(conn))
+        from .refresh import llm_down_state
+        snap = db.workqueue_snapshot(conn)
+        down = llm_down_state(conn)
+        snap["llm_down_since"] = down["since"] or None
+        snap["llm_next_try"] = down["next_try"] or None
+        return jsonify(snap)
 
     @app.route("/image/<name>")
     def image_route(name):

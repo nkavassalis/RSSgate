@@ -1340,3 +1340,52 @@ def test_admin_links_to_project(ui_server, browser):
     assert all(t == "_blank" and "noopener" in r and vis for _, t, r, vis in links)
     assert pg.errors == []
     pg.close()
+
+
+def test_manual_source_hides_auto_badges(ui_server, browser):
+    """Taking a feed out of Auto hides the excerpt count and bot-check
+    badges in admin (the posts themselves keep their excerpt label)."""
+    from rssgate import db
+    fid = _mkfeed("manualsrc")
+    aid = _seed_article(fid, "m1", title="manual source probe")
+    conn = db.connect(UI_DB)
+    db.set_article(conn, aid, digest_source="excerpt")
+    db.feed_challenge(conn, fid)
+    conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    assert row.locator(".excerpt-pill").count() == 1        # auto: shown
+    assert row.locator(".challenge-pill").count() == 1
+    row.locator("button[data-act=cfg]").click()
+    pg.select_option(".cfg-panel [data-role=csrc]", "feed")
+    pg.wait_for_selector(".cfg-panel label:has([data-role=csrc]).cfg-ok", timeout=5000)
+    pg.click(".cfg-panel button[data-act=cfg-done]")
+    pg.wait_for_selector(f"tr[data-id='{fid}'] .src-pill", timeout=5000)
+    assert row.locator(".excerpt-pill").count() == 0
+    assert row.locator(".challenge-pill").count() == 0
+    # the post keeps its label in the reader
+    items = pg.evaluate(f"fetch('/api/articles?feed_id={fid}&fresh=1')"
+                        ".then(r => r.json()).then(d => d.items)")
+    assert items[0]["digest_source"] == "excerpt"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_work_queue_names_feeds_and_reasons(ui_server, browser):
+    from rssgate import db
+    fid = _mkfeed("wqreason")
+    for i in range(2):
+        _seed_article(fid, f"w{i}", title=f"queued probe {i}", status="pending",
+                      ts=f"2027-07-0{i + 1}T00:00:00Z")
+    conn = db.connect(UI_DB); db.feed_block(conn, fid, 60)
+    name = db.get_feed(conn, fid)["url"]; conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-queue", wait_until="networkidle")
+    pg.wait_for_function("document.getElementById('wq-waiting').textContent"
+                         ".includes('paused by the site')", timeout=8000)
+    li = pg.locator("#wq-waiting li", has_text=name)
+    assert li.count() == 1 and "2 posts" in li.inner_text()
+    assert pg.locator("#wq-next li", has_text="queued probe").count() == 0
+    assert pg.errors == []
+    pg.close()

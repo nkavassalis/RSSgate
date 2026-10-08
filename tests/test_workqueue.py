@@ -142,3 +142,28 @@ def test_scheduler_picks_up_config_edits_without_restart(conn, cfg, monkeypatch)
     sch.poll_due()
     assert sch.cfg["summarizer"]["system_prompt"].startswith("EDITED PROMPT")
     assert sch.cfg["polling"]["feed_interval_minutes"] == 77
+
+
+def test_workqueue_explains_what_is_waiting(client):
+    """'30 queued' -> which feeds, why, and what runs next (same order and
+    filters as claim_pending)."""
+    from rssgate import db
+    conn = client.conn
+    a = db.add_feed(conn, "https://wa.test/feed", type_="feed")["id"]
+    p = db.add_feed(conn, "https://wp.test/feed", type_="feed")["id"]
+    off = db.add_feed(conn, "https://wo.test/feed", type_="feed")["id"]
+    for fid, n in ((a, 3), (p, 2), (off, 1)):
+        for i in range(n):
+            db.upsert_article(conn, fid, f"g{i}", f"https://x.test/{fid}/{i}",
+                              f"post {fid}-{i}", f"2026-10-0{i + 1}T00:00:00Z")
+    db.feed_block(conn, p, 60)
+    db.update_feed(conn, off, enabled=0)
+    wq = client.get("/api/workqueue").get_json()
+    by = {w["feed_id"]: w for w in wq["waiting"]}
+    assert by[a]["n"] == 3 and by[p]["n"] == 2 and by[off]["n"] == 1
+    assert by[p]["backoff_until"] and by[off]["enabled"] == 0
+    nxt = [u["title"] for u in wq["up_next"]]
+    assert nxt[0] == f"post {a}-2"                       # newest first
+    assert all(t.startswith(f"post {a}-") for t in nxt)  # paused/off skipped
+    claimed = db.claim_pending(conn, 1)[0]
+    assert claimed["title"] == nxt[0]                    # same order as workers
