@@ -684,14 +684,24 @@
     pulseBaseFeeds = null; pulseBaseTs = '';
     const box = pulseBox(); if (box) box.hidden = true;
   }
+  let pulseInFlight = false;         // overlapping ticks must stack into a burst
   async function pulseTick() {
-    if (document.hidden || ptrBusy) return;
+    if (document.hidden || ptrBusy || pulseInFlight) return;
+    pulseInFlight = true;
     let p = null;
-    try { p = await (await fetch('/api/pulse')).json(); } catch (e) { return; }
+    try { p = await (await fetch('/api/pulse')).json(); }
+    catch (e) { pulseInFlight = false; return; }        // off: retry on schedule
+    finally { pulseInFlight = false; }
+    // ONE owner of the cadence: this function reads it, pulseStart() arms it.
+    // (It used to call schedulePulse(), which called this back: each pass
+    // clearTimeout-ed the timer it had just set, so the interval never applied
+    // and /api/pulse was asked once per round trip.) 0 = off, honoured now.
     if (typeof p.every_minutes === 'number') {
-      const ms = Math.round(p.every_minutes * 60000);
-      pulseEveryMs = (p.every_minutes >= 1 && ms <= 7200000) ? ms : 60000;
-      schedulePulse();
+      if (p.every_minutes === 0) pulseEveryMs = 0;
+      else {
+        const ms = Math.round(p.every_minutes * 60000);
+        pulseEveryMs = Math.min(Math.max(ms, 60000), 7200000);
+      }
     }
     const feeds = p.feeds || [];
     if (pulseBaseFeeds === null) {                    // (re)baseline quietly
@@ -726,22 +736,24 @@
       box.hidden = true;
     }
   }
-  function schedulePulse() {
+  // pulseArm = check once, then re-arm. setTimeout is armed with pulseArm
+  // (named so the browser tests can shorten just this timer).
+  function pulseArm() { Promise.resolve(pulseTick()).then(pulseStart); }
+  function pulseStart() {
     clearTimeout(pulseTimer);
-    if (pulseEveryMs > 0) {
-      pulseTimer = setTimeout(schedulePulse, pulseEveryMs);
-      pulseTick();
-    }
+    if (pulseEveryMs > 0 && !document.hidden)
+      pulseTimer = setTimeout(pulseArm, pulseEveryMs);
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) clearTimeout(pulseTimer);
-    else { pulseTick(); schedulePulse(); }
+    else pulseArm();                 // back in sight: check now, re-arm after
   });
   $('pulse-btn').addEventListener('click', () => {
     const box = pulseBox(); if (box) box.hidden = true;
     restart(true);          // stream restarts at newest; no feed fetching
     refreshPips();
     pulseClear();           // else the next tick re-raises the pill forever
+    pulseArm();             // re-baseline now, keep the cadence
   });
   window.__pulseTick = pulseTick;      // test seam: run one check now
   window.__pulseClear = pulseClear;    // test seam: re-baseline (as a click)
@@ -977,11 +989,7 @@
     const s = res && res[0];            // never destructure a failed boot
     if (!s) return;
     bootResume = s.resume_ts || '';
-    fetch('/api/pulse').then(r => r.json()).then(p => {
-      pulseBaseTs = p.newest_ts || '';
-      pulseBaseFeeds = {};
-      for (const f of (p.feeds || [])) pulseBaseFeeds[f.feed_id] = f.unread;
-    }).catch(() => {});                    // pill stays silent if it fails
+    pulseArm();                            // first tick sets the pill baseline
     order = s.order === 'oldest' ? 'oldest' : 'newest';
     if (s.snapshot_width >= 360 && s.snapshot_width <= 1440)
       SHARE_W = Math.round(s.snapshot_width);

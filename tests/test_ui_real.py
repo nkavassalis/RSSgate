@@ -1752,3 +1752,74 @@ def test_pulse_pill_overlays_without_pushing_text(ui_server, browser):
         return cs.position === 'absolute'; }"""), "pill must overlay, not flow"
     assert pg.errors == []
     pg.close()
+
+
+def _pulse_route(stub, counter):
+    """Stub /api/pulse from a mutable dict and count how often it is asked."""
+    def handler(req):
+        counter.append(1)
+        req.fulfill(json=stub)
+    return handler
+
+
+def _shorten_pulse_timer(pg, ms=300):
+    """Shorten ONLY the pulse timer, so cadence behaviour is observable in
+    seconds. Matches the armed callback by name (/pulse/i), which works both
+    for a tick-first loop and an arm-first one."""
+    pg.add_init_script("""
+      const os = window.setTimeout.bind(window);
+      window.setTimeout = (f, d, ...a) =>
+        os(f, (typeof f === 'function' && /pulse/i.test(f.name || ''))
+                ? %d : d, ...a);
+    """ % ms)
+
+
+def test_pulse_pill_arms_itself_without_any_manual_tick(ui_server, browser):
+    """THE regression this file used to miss: every pill test drove
+    window.__pulseTick() directly, so the timer chain that is supposed to call
+    it went untested - and a normally-loaded page never armed it at all (no
+    pill, ever, until you hid the tab). Here nothing is ticked by hand."""
+    stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 0,
+            "unread_total": 0, "every_minutes": 1, "feeds": []}
+    hits = []
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    _shorten_pulse_timer(pg, 300)
+    pg.route("**/api/pulse", _pulse_route(stub, hits))
+    # domcontentloaded: a deliberately 300ms pulse timer keeps the network
+    # busy forever, so networkidle would never fire (that itself is proof the
+    # loop is running)
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector(".card")
+    assert len(hits) >= 1, "the page never asked /api/pulse at boot"
+    n0 = len(hits)
+    stub.update(unread_total=3, newest_ts="2020-01-02T00:00:00Z",
+                feeds=[{"feed_id": 77, "title": "Gained Feed", "unread": 3,
+                        "ts": "2020-01-02T00:00:00Z"}])
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=6000)
+    assert len(hits) > n0, "the pill appeared without asking again?!"
+    assert "Gained Feed" in pg.locator("#pulse-btn").inner_text()
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_poll_rate_is_the_cadence_not_one_per_round_trip(ui_server, browser):
+    """Second half of the same bug: pulseTick called schedulePulse, which
+    called pulseTick, each clearTimeout-ing the timer it just set - so once a
+    tab-return armed it, /api/pulse was asked once per network round trip
+    forever (self-DoS, battery burn). At every_minutes=1, a few seconds of a
+    loaded page must cost ONE request."""
+    stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 0,
+            "unread_total": 0, "every_minutes": 1, "feeds": []}
+    hits = []
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", _pulse_route(stub, hits))
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector(".card")
+    pg.wait_for_timeout(5000)
+    assert len(hits) <= 2, (f"polled {len(hits)}x in ~5s at a 60s cadence: the "
+                            "tick and the scheduler are calling each other")
+    # and it really does keep going (the chain survives a tick), just slowly
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_timeout(200)
+    assert len(hits) >= 2
+    pg.close()
