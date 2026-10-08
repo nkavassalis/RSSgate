@@ -199,6 +199,10 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   rule keeps digests reporting content, not the document. A feed's custom
   `system_prompt` REPLACES the global prompt (only digest_length is always
   appended), so don't "restore" the voice rule there.
+- Unread pill == stream visibility. `db.feed_unread(..., hide_statuses)` must
+  receive the SAME tuple `/api/articles` withholds (web.py `_hide_statuses(cfg)`,
+  from ui.hide_untranscribed); a queued post has no card, so it must not hold
+  a pill. `error` posts DO render, so they count.
 - Status panel cells: add new items to the single `cells` list in
   `loadStatus` (reading order); it splits into two balanced rows itself.
   Manual refresh buttons use `withSpin(btn, work, dimEl)`.

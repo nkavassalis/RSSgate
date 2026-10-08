@@ -1047,16 +1047,23 @@ def mark_feed_read(conn, feed_id: int, ts: str) -> None:
     conn.commit()
 
 
-def feed_unread(conn, feed_id: int, last_read_ts: str | None) -> int:
+def feed_unread(conn, feed_id: int, last_read_ts: str | None,
+                hide_statuses: tuple = ()) -> int:
     """Articles newer than the feed's read cursor (never-read feeds: all).
-    Mirrors articles_page's visibility filter EXACTLY - anything invisible
-    (hidden, dropped) must never hold a pill hostage, since no card exists
-    to dwell-mark it away."""
-    return conn.execute(
-        "SELECT COUNT(*) c FROM articles WHERE feed_id=?"
-        " AND status NOT IN ('hidden','dropped') AND read_at IS NULL"
-        " AND " + _TS_EXPR + " > COALESCE(?, '')",
-        (feed_id, last_read_ts)).fetchone()["c"]
+    Mirrors articles_page's visibility filter EXACTLY - anything without a
+    card must never hold a pill hostage: hidden/dropped always, plus
+    pending/processing when ui.hide_untranscribed is on (callers pass the
+    same tuple api_articles computes). A queued post with no card is not
+    unread: during a large re-run the pill counted 144 posts the stream
+    never showed."""
+    sql = ("SELECT COUNT(*) c FROM articles WHERE feed_id=?"
+           " AND status NOT IN ('hidden','dropped') AND read_at IS NULL"
+           " AND " + _TS_EXPR + " > COALESCE(?, '')")
+    params: list = [feed_id, last_read_ts]
+    if hide_statuses:
+        sql += f" AND status NOT IN ({','.join('?' * len(hide_statuses))})"
+        params.extend(hide_statuses)
+    return conn.execute(sql, params).fetchone()["c"]
 
 
 def bump_state_max(conn, key: str, value: int) -> int:

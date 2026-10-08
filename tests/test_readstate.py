@@ -255,3 +255,36 @@ def test_bookmark_for_vanished_post_is_ignored(client):
     conn.commit()
     assert client.post("/api/position", json={"id": gone,
                        "ts": "2027-01-01T00:00:00Z"}).status_code == 200
+
+
+def test_queued_posts_do_not_hold_the_pill(client):
+    """The pill must count only posts the stream will actually show: with
+    ui.hide_untranscribed on (default), pending/processing posts have no
+    card to dwell-mark, so counting them means 'N unread' with nothing to
+    read (a 144-post re-run showed exactly that)."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://pillqueue.test/feed", type_="feed")["id"]
+
+    def art(guid, ts, status):
+        a = db.upsert_article(conn, fid, guid, f"https://x.test/{guid}",
+                              f"q {guid}", ts)
+        db.set_article(conn, a, status=status,
+                       summary="digest" if status == "ready" else None)
+        return a
+
+    art("p1", "2026-10-05T00:00:00Z", "pending")
+    art("p2", "2026-10-04T00:00:00Z", "processing")
+    art("e1", "2026-10-03T00:00:00Z", "error")      # error posts DO get a card
+    art("r1", "2026-10-02T00:00:00Z", "ready")
+
+    pill = next(f["unread"] for f in client.get("/api/feeds").get_json()
+                if f["id"] == fid)
+    items = client.get(f"/api/articles?feed_id={fid}&limit=50").get_json()["items"]
+    assert pill == 2                                    # ready + error, not queued
+    assert {i["status"] for i in items} == {"ready", "error"}
+    assert pill == len([i for i in items if not i.get("read_at")])
+
+    # same filter applied explicitly, i.e. the stream's toggle honoured
+    assert db.feed_unread(conn, fid, None, ()) == 4                      # toggle off
+    assert db.feed_unread(conn, fid, None, ("pending", "processing")) == 2

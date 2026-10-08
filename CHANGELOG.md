@@ -35,6 +35,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.73.1] — 2026-10-08
+
+### Fixed
+- Sidebar unread pills counted posts the stream never shows. `ui.hide_untranscribed`
+  (default: on) withholds pending/processing posts from the stream, but
+  `db.feed_unread` excluded only hidden/dropped - so while posts are queued
+  (a re-process run, or a restart re-queueing stale work) the pill read "N
+  unread" over an empty stream. The pill now applies the same exclusion as
+  the stream itself (web.py `_hide_statuses`); failed posts still count,
+  because they do render a card.
+
 ## [0.73.0] — 2026-10-08
 
 ### Changed

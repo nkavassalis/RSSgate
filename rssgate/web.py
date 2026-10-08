@@ -114,6 +114,12 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 before_ts, before_id = ts, aid
         return before_ts, before_id
 
+    def _hide_statuses(cfg) -> tuple:
+        """Statuses the stream withholds; the unread pill must use the SAME
+        value or queued posts show a pill with no card to clear it."""
+        return (("pending", "processing")
+                if cfg["ui"].get("hide_untranscribed", True) else ())
+
     @app.route("/api/articles")
     def api_articles():
         cfg = load_config(config_path)
@@ -124,8 +130,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             order = "newest"
         before_ts, before_id = _cursor_from_request()
         bu = request.args.get("before_u")
-        hide_st = (("pending", "processing")
-                   if cfg["ui"].get("hide_untranscribed", True) else ())
+        hide_st = _hide_statuses(cfg)
         rows = db.articles_page(
             conn, before_ts, before_id, limit + 1,
             feed_id=request.args.get("feed_id", type=int),
@@ -224,11 +229,13 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/feeds", methods=["GET"])
     def api_feeds():
         out = []
+        hide_st = _hide_statuses(load_config(config_path))
         for f in db.list_feeds(conn):
             out.append({k: f[k] for k in f.keys() if k not in ("etag", "last_modified")}
                        | db.feed_counts(conn, f["id"])
                        | {"display_title": (f["custom_title"] or f["title"] or f["url"]),
-                          "unread": db.feed_unread(conn, f["id"], f["last_read_ts"]),
+                          "unread": db.feed_unread(conn, f["id"], f["last_read_ts"],
+                                                   hide_st),
                           "categories": db.parse_categories(f["categories"]),
                           "auto_categories": db.parse_categories(f["auto_categories"])})
         return jsonify(out)
