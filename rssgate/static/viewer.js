@@ -680,7 +680,8 @@
   // (A "globally newest ts" test instead stayed silent whenever another feed
   // already held a later post, and re-raised the pill after a click.)
   let pulseTimer = 0, pulseEveryMs = 60000;
-  let pulseAcked = 0, pulseShown = 0;   // see pulseTick for the semantics
+  let pulseAcked = 0, pulseShown = 0, pulseBooted = false;
+  // see pulseTick for what these mean
   // The pill node lives INSIDE #stream (a flex sibling of the stream steals
   // column width), and restart() does stream.innerHTML='' - which detaches
   // it. Capture the nodes now (the template puts them in #stream at parse
@@ -692,8 +693,8 @@
     if (pulseEl.parentNode !== stream) stream.prepend(pulseEl);
     return pulseEl;
   }
-  function pulseClear() {                // forget the acknowledgement
-    pulseAcked = 0; pulseShown = 0;
+  function pulseClear() {                // behave like a freshly loaded page
+    pulseAcked = 0; pulseShown = 0; pulseBooted = false;
     const box = pulseBox(); if (box) box.hidden = true;
   }
   let pulseInFlight = false;         // overlapping ticks must stack into a burst
@@ -715,18 +716,27 @@
         pulseEveryMs = Math.min(Math.max(ms, 60000), 7200000);
       }
     }
-    // The trigger is the SERVER's number: readable-unread posts newer than
-    // the last thing you actually read (resume_ts, or the feed's own cursor
-    // when that is later). It used to be "what grew since this page loaded",
-    // which meant a reload swallowed the batch it just showed you and the
-    // pill went silent exactly when you had the most to see.
-    // pulseAcked is a watermark, not a claim that you read them: a tap stops
-    // the nag until the number GROWS again (or you reload, and it tells the
-    // truth again). n > pulseAcked also means the pill can never show 0.
+    // The number is the SERVER's: readable-unread posts newer than the last
+    // thing you actually read (resume_ts, or the feed cursor when later).
+    // The FIRST answer of each page load is only a baseline, never an
+    // announcement: unread-first already put those posts at the top of your
+    // stream, so a banner about them restates the screen and the tap does
+    // nothing - and a reload must not repeat what the reload just showed.
+    // After that, the pill speaks when the number GROWS, i.e. for posts that
+    // landed after you loaded and are therefore not in front of you.
+    // pulseAcked is a watermark, not a claim you read anything: boot raises it
+    // to what the page loaded with, a tap raises it to what it printed. It is
+    // NOT re-baselined by a stream restart or a tab return, only by a load.
     const feeds = (p.feeds || []).filter(f => (f.unread_since || 0) > 0);
     const n = p.unread_since_total || 0;
     const box = pulseBox();
     if (!box) return;
+    if (!pulseBooted) {                  // first answer of this page load
+      pulseBooted = true;
+      pulseAcked = Math.max(pulseAcked, n);
+      box.hidden = true;
+      return;
+    }
     if (n > pulseAcked) {
       pulseShown = n;
       // feeds arrive sorted by 'since' count, so [0] is the feed with most to

@@ -229,10 +229,13 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   never `/api/poll`) on `ui.pulse_minutes` (0 = off). The SERVER owns the
   number: `unread_since_total` = readable-unread posts newer than the reader's
   last-read marker (`resume_ts`, or the feed's own cursor when later); the
-  client only compares it to a click watermark (`pulseAcked`) - show when
-  `n > pulseAcked`, click sets `pulseAcked = pulseShown` and restarts the
-  stream. Do NOT reintroduce a page-load baseline: the pill then swallows the
-  batch you reloaded into and a reader who reloads often never hears from it.
+  client only compares it to one watermark (`pulseAcked`): the FIRST answer of
+  each page load raises the watermark to itself and stays silent (those posts
+  are already at the top of the stream thanks to unread-first, so announcing
+  them restates the screen and the tap does nothing); after that it shows when
+  `n > pulseAcked`, and a tap raises it to `pulseShown`. A stream restart or a
+  tab return must NOT re-baseline - only a load does (`pulseBooted`). Net rule:
+  the pill only ever speaks about posts that are not in front of you.
   `unread_total` (all pip-equal unread) stays in the response for parity;
   the pill must never print it. It NEVER scrolls or inserts.
   The node lives INSIDE `#stream` (a sibling of the stream is a flex item of

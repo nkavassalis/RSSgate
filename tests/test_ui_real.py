@@ -1566,6 +1566,11 @@ def test_pulse_pill_informs_without_disturbing(ui_server, browser):
     pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
+    pg.wait_for_timeout(400)
+    assert pg.is_hidden("#pulse"), (
+        "the pill announced posts the load had already put on screen")
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 2
+    pg.evaluate("window.__pulseTick()")            # grew AFTER the load
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     txt = pg.locator("#pulse-btn").inner_text()
     assert "newer since your last read" in txt and "tap to jump" in txt, txt
@@ -1579,11 +1584,11 @@ def test_pulse_pill_informs_without_disturbing(ui_server, browser):
 
     # a second readable post becomes waiting while the page sits open
     _seed_article(fid, "fresh", title="the new one", ts="2027-06-01T00:00:00Z")
-    stub["unread_total"] = stub["feeds"][0]["unread"] = 2
-    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 2
+    stub["unread_total"] = stub["feeds"][0]["unread"] = 3
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 3
     pg.evaluate("window.__pulseTick()")
     txt = pg.locator("#pulse-btn").inner_text()
-    assert "2 newer since your last read" in txt, txt
+    assert "3 newer since your last read" in txt, txt
     assert pg.evaluate("scrollY") == y_before, "pill moved the reader's place"
     assert mine.count() == 1, "pill inserted content by itself"
     assert all("/api/poll" not in u for u in pg.evaluate(
@@ -1596,10 +1601,10 @@ def test_pulse_pill_informs_without_disturbing(ui_server, browser):
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_timeout(300)
     assert pg.is_hidden("#pulse"), "the pill repeated itself after a tap"
-    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 3
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 4
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
-    assert "3 newer" in pg.locator("#pulse-btn").inner_text()
+    assert "4 newer" in pg.locator("#pulse-btn").inner_text()
     assert pg.errors == []
     pg.close()
 
@@ -1966,6 +1971,8 @@ def test_pulse_pill_survives_a_stream_restart(ui_server, browser):
     pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 2
+    pg.evaluate("window.__pulseTick()")                   # grew after the load
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     assert pg.locator("#pulse").count() == 1, "the pill node vanished"
 
@@ -1978,5 +1985,41 @@ def test_pulse_pill_survives_a_stream_restart(ui_server, browser):
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     txt = pg.locator("#pulse-btn").inner_text()
     assert "2 newer since your last read" in txt, txt
+    assert pg.errors == []
+    pg.close()
+
+
+def test_reload_does_not_repeat_what_the_reload_showed(ui_server, browser):
+    """A reload used to re-announce posts the reload had already put on screen
+    (unread-first puts them at the top), so the pill nagged and its tap did
+    nothing. The first answer of each load is a baseline now: silent. It speaks
+    again only when the number grows past that baseline."""
+    fid, link = _mkfeed("pulreload", url=True)
+    _seed_article(fid, "r1", title="reload probe", ts="2027-03-01T00:00:00Z")
+    token = link.split("//")[1].split(".")[0]
+    stub = {"newest_ts": "2027-03-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 3, "unread_since_total": 3,
+            "since_ts": "2027-02-01T00:00:00Z", "every_minutes": 1,
+            "feeds": [{"feed_id": fid, "title": token, "unread": 3,
+                       "unread_since": 3, "ts": "2027-03-01T00:00:00Z"}]}
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    pg.wait_for_timeout(400)
+    assert pg.is_hidden("#pulse"), "the pill announced what the load showed"
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 4
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    assert "4 newer" in pg.locator("#pulse-btn").inner_text()
+
+    pg.reload(wait_until="networkidle")                  # same 4, now visible
+    pg.wait_for_selector(".card")
+    pg.wait_for_timeout(400)
+    assert pg.is_hidden("#pulse"), "reload repeated an announcement it satisfied"
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 5
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    assert "5 newer" in pg.locator("#pulse-btn").inner_text()
     assert pg.errors == []
     pg.close()
