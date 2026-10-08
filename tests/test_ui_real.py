@@ -1284,3 +1284,59 @@ def test_auto_state_is_spelled_out(ui_server, browser):
     assert "using feed text" in pg.inner_text(".cfg-panel label:has([data-role=csrc])")
     assert pg.errors == []
     pg.close()
+
+
+def test_status_rows_balanced(ui_server, browser):
+    """Status cells split into two balanced rows (4+4 today) - by on-screen
+    position, not markup alone."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.wait_for_selector("#status-grid .status-cell")
+    tops = pg.eval_on_selector_all("#status-grid .status-cell",
+        "cs => cs.map(c => Math.round(c.getBoundingClientRect().top))")
+    rows = sorted(set(tops))
+    assert len(rows) == 2, f"expected two visual rows: {tops}"
+    a, b = tops.count(rows[0]), tops.count(rows[1])
+    assert a - b in (0, 1), f"unbalanced rows {a}+{b}"
+    assert (a, b) == (4, 4), (a, b)
+    assert pg.errors == []
+    pg.close()
+
+
+def test_admin_manual_refresh_spins(ui_server, browser):
+    """Status Refresh spins its glyph (ptrspin) and dims the grid long
+    enough to see (>=300ms wall clock), then settles."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    pg.add_script_tag(content="""
+      window.__spin = [];
+      new MutationObserver(() => window.__spin.push([
+        document.getElementById('status-refresh').classList.contains('spinning'),
+        performance.now()])).observe(document.getElementById('status-refresh'),
+        { attributes: true, attributeFilter: ['class'] });""")
+    pg.click("#status-refresh")
+    anim = pg.eval_on_selector("#status-refresh .rf-glyph",
+                               "e => getComputedStyle(e).animationName")
+    assert anim == "ptrspin", anim
+    assert "loading" in pg.get_attribute("#status-grid", "class")
+    pg.wait_for_selector("#status-refresh:not(.spinning)", timeout=3000)
+    marks = pg.evaluate("window.__spin")
+    on = next(t for s, t in marks if s)
+    off = next(t for s, t in marks if not s and t > on)
+    assert off - on >= 300, f"spin too brief to see: {off - on:.0f}ms"
+    assert "loading" not in (pg.get_attribute("#status-grid", "class") or "")
+    assert pg.errors == []
+    pg.close()
+
+
+def test_admin_links_to_project(ui_server, browser):
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    links = pg.eval_on_selector_all("#sec-status .about-links a",
+        "as => as.map(a => [a.href, a.target, a.rel, a.offsetWidth > 0])")
+    hrefs = [l[0] for l in links]
+    assert "https://rssgate.org/" in hrefs
+    assert "https://github.com/nkavassalis/RSSgate" in hrefs
+    assert all(t == "_blank" and "noopener" in r and vis for _, t, r, vis in links)
+    assert pg.errors == []
+    pg.close()

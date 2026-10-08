@@ -398,4 +398,14 @@ b.warn { color:#b26a00; }
 
 .pip-warn { background:color-mix(in srgb, #f5a623 22%, transparent); color:#b26a00; }
 @media (prefers-color-scheme: dark) { .pip-warn { color:#ffc56b; } }
-.status-grid.llm-down .status-cell:nth-child(5) b { color:#b26a00; }
+.status-grid.llm-down .status-cell[data-role=llm] b { color:#b26a00; }
+
+/* manual refresh feedback (admin): spinning glyph + dimmed content */
+.rf-glyph { display:inline-block; }
+.btn.spinning .rf-glyph { animation:ptrspin 1s linear infinite; }
+#status-grid.loading, #failure-list.loading { opacity:.5; transition:opacity .15s; }
+
+.about-links { margin:.6rem 0 0; }
+.about-links a { color:var(--muted); text-decoration:underline;
+  text-underline-offset:2px; }
+.about-links a:hover { color:var(--text); }

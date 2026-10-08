@@ -191,6 +191,9 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   The nav spy is visual only; it never scrolls the page.
 - Deep links `/admin#sec-*` are re-applied after the initial async renders
   (page height changes); viewer pips link to `#sec-queue` / `#sec-failures`.
+- Status panel cells: add new items to the single `cells` list in
+  `loadStatus` (reading order); it splits into two balanced rows itself.
+  Manual refresh buttons use `withSpin(btn, work, dimEl)`.
 - Destructive actions go in a `.danger-zone` with a plain-language note and
   a confirm().
 - Feed rows are slim; per-feed settings live in the cog modal (`#cfg-modal`),

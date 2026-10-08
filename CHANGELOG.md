@@ -35,6 +35,20 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.71.0] — 2026-10-08
+
+### Added
+- Admin Status panel links to the project: rssgate.org, source on GitHub,
+  changelog, issue tracker (new tab).
+- Manual refreshes in admin (Status "Refresh", Failures "Refresh list")
+  spin their glyph and dim the content for at least 400ms, matching the
+  viewer's refresh feedback.
+
+### Changed
+- Status cells are one ordered list split into two balanced rows (now 4+4,
+  was 5+3); adding an item keeps the rows balanced automatically
+  (comment in admin.js loadStatus, test_status_rows_balanced).
+
 ## [0.70.0] — 2026-10-08
 
 ### Added

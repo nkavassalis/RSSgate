@@ -406,29 +406,48 @@ async function loadStatus() {
     const hhmm = t => t ? new Date(t).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
     const q = s.llm_down_since ? `${s.pending} held`
       : s.processing ? `${s.processing} working` : (s.pending ? `${s.pending} queued` : 'idle');
-    const rowA = [
+    // ONE ordered list, split into two BALANCED rows automatically (4+4
+    // today; an odd count puts the extra cell in the top row). When adding a
+    // status item, add it here in reading order - never hand-build rows, or
+    // they drift lopsided again (they were 5+3). test_status_rows_balanced.
+    const cells = [
       ['RSSgate', `v${s.version}`],
       ['Uptime', s.uptime_min < 60 ? `${s.uptime_min}m` : `${Math.floor(s.uptime_min/60)}h ${s.uptime_min%60}m`],
       ['Feeds', `${s.feeds_enabled}/${s.feeds} enabled`],
       ['Queue', q],
-      ['AI backend', s.llm_down_since ? `offline since ${hhmm(s.llm_down_since)}` : 'online'],
-    ];
-    const rowB = [
+      ['AI backend', s.llm_down_since ? `offline since ${hhmm(s.llm_down_since)}` : 'online', 'llm'],
       ['Digest errors', String(s.errors || 0)],
       ['Database', `${s.db_mb} MB`],
       ['Image cache', `${s.cache_mb} MB`],
     ];
-    const cell = ([k, v]) =>
-      `<div class="status-cell"><b>${esc(v)}</b><span>${k}</span></div>`;
-    box.innerHTML = rowA.map(cell).join('')
-      + '<div class="grid-break"></div>' + rowB.map(cell).join('');
+    const half = Math.ceil(cells.length / 2);
+    const cell = ([k, v, role]) =>
+      `<div class="status-cell"${role ? ` data-role="${role}"` : ''}><b>${esc(v)}</b><span>${k}</span></div>`;
+    box.innerHTML = cells.slice(0, half).map(cell).join('')
+      + '<div class="grid-break"></div>' + cells.slice(half).map(cell).join('');
     $('status-note').textContent = s.llm_down_since
       ? `AI backend unreachable since ${hhmm(s.llm_down_since)}; posts are held, not failed. Next check ${hhmm(s.llm_next_try)}. (${s.llm_down_reason || ''})`
       : 'updated ' + new Date().toLocaleTimeString();
     box.classList.toggle('llm-down', !!s.llm_down_since);
   } catch { /* server busy; keep last */ }
 }
-$('status-refresh').addEventListener('click', loadStatus);
+// manual refreshes spin their glyph (same language as the viewer's refresh
+// button) for at least 400ms so a fast LAN reply is still visibly "done"
+async function withSpin(btn, work, dim) {
+  btn.classList.add('spinning');
+  if (dim) dim.classList.add('loading');
+  const t0 = performance.now();
+  try { await work(); }
+  finally {
+    const left = Math.max(0, 400 - (performance.now() - t0));
+    setTimeout(() => {
+      btn.classList.remove('spinning');
+      if (dim) dim.classList.remove('loading');
+    }, left);
+  }
+}
+$('status-refresh').addEventListener('click', e =>
+  withSpin(e.currentTarget, loadStatus, $('status-grid')));
 setInterval(loadStatus, 30000);
 loadStatus();
 setTimeout(loadStatus, 2000);
@@ -885,7 +904,8 @@ async function renderFailures() {
       renderFailures();
     }));
 }
-$('fail-refresh').addEventListener('click', renderFailures);
+$('fail-refresh').addEventListener('click', e =>
+  withSpin(e.currentTarget, renderFailures, $('failure-list')));
 $('fail-retry-btn').addEventListener('click', async () => {
   const r = await (await fetch('/api/articles/retry-failed',
     { method: 'POST' })).json();
