@@ -191,8 +191,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 except (TypeError, ValueError):
                     continue
         if data.get("global", not data.get("feeds") and not reads):  # legacy {ts,id} = global
-            db.set_state(conn, "resume_ts", ts)
-            db.set_state(conn, "resume_id", str(aid))
+            # The bookmark may name a since-deleted post (redigest and
+            # sync_deletes remove rows under an open reader tab). Validate it
+            # exists before storing: a stale pointer must not become the
+            # reader's resume point. Other feeds' cursors and per-article
+            # reads above are still valid, so the beacon stays a 200.
+            if db.article_exists(conn, aid):
+                db.set_state(conn, "resume_ts", ts)
+                db.set_state(conn, "resume_id", str(aid))
         return jsonify({"ok": True})
 
     @app.route("/api/resume")

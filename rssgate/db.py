@@ -1031,6 +1031,12 @@ def mark_articles_read(conn, ids) -> int:
     return n
 
 
+def article_exists(conn, aid: int) -> bool:
+    """Does this article row exist? Guards resume pointers against naming a
+    since-deleted post (redigest / sync_deletes remove rows under an open tab)."""
+    return conn.execute("SELECT 1 FROM articles WHERE id=?", (aid,)).fetchone() is not None
+
+
 def mark_feed_read(conn, feed_id: int, ts: str) -> None:
     """Advance one feed's read cursor (canonical UTC strings); forward only."""
     ts = norm_ts(ts)

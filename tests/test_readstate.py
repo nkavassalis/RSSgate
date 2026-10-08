@@ -61,7 +61,11 @@ def test_position_feeds_cursor_and_counts(client):
 
 def test_position_legacy_payload_still_saves_global(client):
     fid = seed_api(client)
-    client.post("/api/position", json={"ts": "2026-10-01T00:00:00Z", "id": 9})
+    # id must be a real seeded article: a resume pointer may not name a
+    # vanished post (see test_bookmark_for_vanished_post_is_ignored)
+    aid = client.conn.execute(
+        "SELECT MIN(id) m FROM articles").fetchone()["m"]
+    client.post("/api/position", json={"ts": "2026-10-01T00:00:00Z", "id": aid})
     assert client.get("/api/resume").get_json()["resume_ts"] == "2026-10-01T00:00:00Z"
 
 
@@ -226,3 +230,28 @@ def test_per_article_read_marks_do_not_read_the_backlog(client):
     # legacy cursor history still counts as read
     db.mark_feed_read(conn, fid, "2026-10-02T00:00:00Z")
     assert db.feed_unread(conn, fid, db.get_feed(conn, fid)["last_read_ts"]) == 0
+
+
+def test_bookmark_for_vanished_post_is_ignored(client):
+    """A beacon naming a since-deleted post (redigest/sync_deletes race an
+    open reader tab) must not 500 the beacon or lose the rest of its payload."""
+    conn = client.conn
+    fid = seed_api(client)                     # articles A0..A2, status ready
+    gone, keep = conn.execute(
+        "SELECT MIN(id) g, MAX(id) k FROM articles").fetchone()
+    r = client.post("/api/position", json={
+        "id": gone, "ts": "2027-01-01T00:00:00Z",
+        "reads": {str(fid): "2027-01-01T00:00:00Z"}, "read_ids": [keep]})
+    assert r.status_code == 200, r.get_json()
+    assert conn.execute("SELECT value FROM state WHERE key='resume_id'").fetchone() is None
+    # ...and a beacon for a LIVE post does set it (the guard isn't blanket)
+    assert client.post("/api/position", json={"id": keep,
+                       "ts": "2027-01-01T00:00:00Z", "global": True}).status_code == 200
+    assert conn.execute("SELECT value FROM state WHERE key='resume_id'").fetchone()[0] == str(keep)
+    assert conn.execute("SELECT read_at IS NOT NULL FROM articles WHERE id=?",
+                        (keep,)).fetchone()[0] == 1
+    # and the beacon is not rejected outright even once the row is gone
+    conn.execute("DELETE FROM articles WHERE id=?", (gone,))
+    conn.commit()
+    assert client.post("/api/position", json={"id": gone,
+                       "ts": "2027-01-01T00:00:00Z"}).status_code == 200

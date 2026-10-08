@@ -47,7 +47,7 @@ def test_oldest_mode_respects_resume_as_floor(client):
     """Boot in oldest mode with no cursor: continue at resume (server default)."""
     seed(client.conn)
     client.post("/api/position", json={"ts": "2026-10-01T00:00:00Z", "id": 1,
-                                       "global": True})
+                                       "global": True})   # id 1 = first seeded row
     titles = [i["title"] for i in
               client.get("/api/articles?limit=10&order=oldest").get_json()["items"]]
     assert titles == ["A1", "A2"]          # strictly newer than resume

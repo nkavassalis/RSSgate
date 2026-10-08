@@ -35,6 +35,16 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.72.2] — 2026-10-08
+
+### Fixed
+- The reader's position beacon could store a resume pointer naming a
+  since-deleted post (re-process and prune remove rows under an open reader
+  tab), which /api/resume then served as the reader's "continue reading"
+  point - potentially a timestamp years in the past. Beacons now save the
+  global cursor only when the named post still exists; the beacon itself
+  still succeeds, so other feeds' cursors and read marks are not lost.
+
 ## [0.72.1] — 2026-10-08
 
 ### Added
