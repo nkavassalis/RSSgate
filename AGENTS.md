@@ -191,6 +191,10 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   The nav spy is visual only; it never scrolls the page.
 - Deep links `/admin#sec-*` are re-applied after the initial async renders
   (page height changes); viewer pips link to `#sec-queue` / `#sec-failures`.
+- Card meta row: `.card-meta` is a wrapping flex row; the timestamp and both
+  share buttons live in `.meta-actions` (one group, `order:1`, `flex:none`).
+  Anything new on that row goes inside the group or before it - never
+  between, or it splits the group again (test_share_buttons_stay_on_one_line_on_mobile).
 - Status panel cells: add new items to the single `cells` list in
   `loadStatus` (reading order); it splits into two balanced rows itself.
   Manual refresh buttons use `withSpin(btn, work, dimEl)`.

@@ -81,7 +81,7 @@
     return `<article class="card${a.unread ? ' unread' : ''}" data-ts="${esc(a.ts)}"
         data-id="${a.id}" data-feed="${a.feed_id}">
       <div class="card-meta">${a.unread ? '<span class="newdot" title="unread"></span>' : ''}<span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
-        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" data-fmt="tall" title="Share as a tall card (phone-friendly)" aria-label="Share as a tall card">${ICON_TALL}</button><button class="snap-btn" data-fmt="wide" title="Share as a wide card (magazine layout)" aria-label="Share as a wide card">${ICON_WIDE}</button></div>
+        ${cats}<span class="meta-actions"><time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" data-fmt="tall" title="Share as a tall card (phone-friendly)" aria-label="Share as a tall card">${ICON_TALL}</button><button class="snap-btn" data-fmt="wide" title="Share as a wide card (magazine layout)" aria-label="Share as a wide card">${ICON_WIDE}</button></span></div>
       ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>

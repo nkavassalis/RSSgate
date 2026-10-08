@@ -1389,3 +1389,66 @@ def test_work_queue_names_feeds_and_reasons(ui_server, browser):
     assert pg.locator("#wq-next li", has_text="queued probe").count() == 0
     assert pg.errors == []
     pg.close()
+
+
+def _seed_loaded_article(fid: int, guid: str, categories: str | None = None,
+                         **fields) -> int:
+    """ready + marked read (no unread dot shifting the row) + post tags."""
+    from rssgate import db
+    aid = _seed_article(fid, guid, **fields)
+    conn = db.connect(UI_DB)
+    db.mark_articles_read(conn, [aid])
+    if categories:
+        db.set_article(conn, aid, categories=categories)
+    conn.commit(); conn.close()
+    return aid
+
+
+@pytest.mark.parametrize("width", [320, 390])
+def test_share_buttons_stay_on_one_line_on_mobile(ui_server, browser, width):
+    """The two share buttons must not be shunted onto their own line on a
+    phone: time + both buttons are ONE right-hand group, inside the card,
+    with no page-level horizontal overflow - even with a long feed name and
+    chips competing for the row."""
+    fid = _mkfeed("metashare")
+    _seed_loaded_article(fid, "m1", title="wide group probe",
+                         summary=("The council voted late on Tuesday to fund four "
+                                  "kilometres of protected bike lanes, replacing the "
+                                  "painted lanes installed in 2019, with construction "
+                                  "expected to span two seasons. ") * 7,
+                         categories="ai,hardware,long-category")
+    pg = _new_page(browser, viewport={"width": width, "height": 800})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".snap-btn")
+    geo = pg.evaluate("""() => {
+      const card = document.querySelector('.card');
+      const g = e => e.getBoundingClientRect();
+      const round = r => ({x: Math.round(r.x), y: Math.round(r.y),
+                           width: Math.round(r.width), height: Math.round(r.height),
+                           right: Math.round(r.right)});
+      const btns = [...card.querySelectorAll('.snap-btn')].map(g).map(round);
+      const time = round(g(card.querySelector('time'))), cr = g(card);
+      return {btns, time, crRight: Math.round(cr.right),
+              innerWidth, scrollOverflow: document.documentElement.scrollWidth - innerWidth,
+              metaLeft: Math.round(g(card.querySelector('.meta-actions')).left),
+              cardLeft: Math.round(cr.left), timeRight: Math.round(time.right)};
+    }""")
+    btns, t = geo["btns"], geo["time"]
+    assert len(btns) == 2, geo
+    def same_line(a, b):
+        # vertically OVERLAPPING and side by side = one line (the 30px buttons
+        # sit 5px taller than the time text when centred inside the group)
+        overlap = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
+        return overlap >= min(a["height"], b["height"]) * .6 and abs(a["x"] - b["x"]) > 1
+    assert all(same_line(b, t) for b in btns), f"buttons split from the timestamp: {btns} {t}"
+    assert same_line(btns[0], btns[1]), "the two share buttons split from each other"
+    assert btns[0]["x"] < btns[1]["x"], "tall card should come first"
+    for b in btns:
+        assert b["x"] + b["width"] <= geo["crRight"] + .5, f"button past the card edge: {b}"
+        assert b["width"] >= 30, f"tap target shrunk: {b['width']}"
+    assert t["width"] > 0, "timestamp hidden"
+    assert (geo["metaLeft"] - geo["cardLeft"]) / (geo["crRight"] - geo["cardLeft"]) > .4, \
+        "share group no longer right-aligned"
+    assert geo["scrollOverflow"] <= 0, "page overflows horizontally"
+    assert pg.errors == []
+    pg.close()

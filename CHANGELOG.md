@@ -35,6 +35,16 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.72.3] — 2026-10-08
+
+### Fixed
+- Card meta row on phones: the timestamp carried `margin-left:auto`, so it
+  dragged the two share buttons into a wrapped row of their own. Timestamp
+  and both buttons are now one unbreakable right-aligned group
+  (`.meta-actions`, positioned with flex `order`), packed tighter under
+  640px. Buttons stay 30px tap targets and flush right whether the group
+  shares the first line or wraps.
+
 ## [0.72.2] — 2026-10-08
 
 ### Fixed
