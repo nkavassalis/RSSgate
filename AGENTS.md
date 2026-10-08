@@ -206,6 +206,12 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   receive the SAME tuple `/api/articles` withholds (web.py `_hide_statuses(cfg)`,
   from ui.hide_untranscribed); a queued post has no card, so it must not hold
   a pill. `error` posts DO render, so they count.
+- `/api/pulse` counts MUST mirror `db.feed_unread` (read cursor + the same
+  _TS_EXPR): two unread numbers on one page that disagree is a bug (it read
+  714 where the UI said 1). tests/test_api.py::test_pulse_unread_matches_the_sidebar_pills.
+- Boot failure (backend down/restarting): viewer shows `#boot-error` + retries
+  via `retryPulse`; `bootFailed` suppresses the initial load and PTR. Never
+  leave the reader as a bare logo + empty sidebar.
 - New-posts pill (viewer.js `pulseTick`): reads `GET /api/pulse` (read-only,
   never `/api/poll`) on `ui.pulse_minutes`; baseline = per-feed unread at boot,
   so "new" means arrived-since-boot, not globally-newest. It NEVER scrolls or

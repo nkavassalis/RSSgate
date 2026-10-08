@@ -269,3 +269,24 @@ def test_config_pulse_minutes_is_validated(client):
     for good in (0, 5, 120):
         assert client.put("/api/config", json={"ui": {"pulse_minutes": good}}).status_code == 200
         assert client.get("/api/config").get_json()["ui"]["pulse_minutes"] == good
+
+def test_pulse_unread_matches_the_sidebar_pills(client):
+    """The pill and the sidebar must not disagree: both count unread READY
+    posts NEWER than the feed's read cursor. A pulse that ignored the cursor
+    once read 714 where the UI said 1."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://cursor.test/feed")["id"]
+    for i in range(4):
+        a = db.upsert_article(conn, fid, f"c{i}", f"https://c.test/{i}",
+                              f"C{i}", f"2026-10-0{i+1}T00:00:00Z")
+        db.set_article(conn, a, status="ready", summary="s")
+    assert client.get("/api/pulse").get_json()["unread_total"] == 4
+    db.update_feed(conn, fid, last_read_ts="2026-10-02T12:00:00Z")
+    pill = next(f["unread"] for f in client.get("/api/feeds").get_json()
+                if f["id"] == fid)
+    pl = client.get("/api/pulse").get_json()
+    assert pill == 2, pill                            # two posts past the cursor
+    assert pl["unread_total"] == pill                 # same number, one page
+    assert pl["feeds"][0]["unread"] == pill
+    assert db.feed_unread(conn, fid, "2026-10-02T12:00:00Z") == pill

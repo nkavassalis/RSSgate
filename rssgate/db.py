@@ -893,25 +893,29 @@ def pulse(conn) -> dict:
     """Cheap 'anything new?' facts for the reader's quiet pill. READ-ONLY:
     it never fetches feeds - new posts reach the DB via the scheduler's own
     paced polling, and a background refresh from the browser would turn a
-    polite reader into a crawler (rule 10). newest_ts / counts look ONLY at
-    ready posts: a feed that merely answered with a pending item is not
-    content the reader could read, so it must not advertise a pill."""
-    r = conn.execute(
-        "SELECT MAX(" + _TS_EXPR + ") ts, COUNT(*) c FROM articles"
-        " WHERE status='ready'").fetchone()
-    by_feed = [
-        {"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
-         "ts": x["ts"] or ""}
-        for x in conn.execute(
-            "SELECT f.id fid,"
-            " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url)"
-            " title, COUNT(*) n, MAX(" + _TS_EXPR + ") ts"
-            " FROM articles a JOIN feeds f ON f.id=a.feed_id"
-            " WHERE a.status='ready' AND a.read_at IS NULL"
-            " GROUP BY f.id HAVING n > 0 ORDER BY n DESC")]
-    return {"newest_ts": r["ts"] or "", "ready_total": r["c"] or 0,
-            "unread_total": sum(f["unread"] for f in by_feed),
-            "feeds": by_feed}
+    polite reader into a crawler (rule 10).
+
+    Counts mirror feed_unread EXACTLY (same read-cursor semantics, same
+    _TS_EXPR): an unread figure that disagrees with the sidebar pills on the
+    same page is worse than none (it once read 714 where the UI said 1).
+    Only READY posts count - a pending post has no card to read."""
+    rows = conn.execute(
+        "SELECT f.id fid,"
+        " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url) title,"
+        " COUNT(*) n, MAX(" + _TS_EXPR + ") ts"
+        " FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        " WHERE a.status='ready' AND a.read_at IS NULL"
+        " AND " + _TS_EXPR + " > COALESCE(f.last_read_ts, '')"
+        " GROUP BY f.id ORDER BY n DESC")
+    by_feed = [{"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
+                "ts": x["ts"] or ""} for x in rows]
+    newest = conn.execute(
+        "SELECT MAX(" + _TS_EXPR + ") ts FROM articles WHERE status='ready'"
+    ).fetchone()["ts"] or ""
+    return {"newest_ts": newest, "ready_total": conn.execute(
+        "SELECT COUNT(*) c FROM articles WHERE status='ready'").fetchone()["c"],
+        "unread_total": sum(f["unread"] for f in by_feed),
+        "feeds": by_feed}
 
 
 def status_counts(conn) -> dict:

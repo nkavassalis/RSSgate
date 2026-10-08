@@ -1593,3 +1593,42 @@ def test_pulse_stays_quiet_for_unreadable_posts(ui_server, browser):
     assert pg.is_hidden("#pulse"), "pill advertised a post with no card"
     assert pg.errors == []
     pg.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_offline_boot_shows_a_plain_error(ui_server, browser, scheme):
+    """A refresh while the backend is restarting used to leave a logo, an
+    empty sidebar and nothing else. It must say what happened, in the
+    current theme, and offer a retry."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900},
+                   color_scheme=scheme)
+    pg.route("**/api/**", lambda r: r.abort())     # server unreachable
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector("#boot-error:not([hidden])", timeout=6000)
+    txt = pg.locator("#boot-error").inner_text().lower()
+    assert "not answering" in txt and "try again" in txt
+    assert pg.locator("#boot-retry").is_visible()
+    assert pg.locator("#stream").inner_text() == ""   # no half-rendered UI
+    assert pg.is_hidden("#empty-hint")               # not "no articles yet"
+    # theming: the panel uses the variable set, so it is readable in both
+    ink = pg.evaluate("getComputedStyle("
+                      "document.querySelector('#boot-error h2')).color")
+    body = pg.evaluate("getComputedStyle(document.body).color")
+    assert ink == body, "offline heading does not follow the theme"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_counts_equal_the_sidebar_pills_in_ui(ui_server, browser):
+    """Guard the whole tier's data: the reader's unread figure and the feed
+    pills are computed the same way, whatever other tests left behind."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    pill, pulse = pg.evaluate("""() => Promise.all([
+        fetch('/api/feeds').then(r => r.json()),
+        fetch('/api/pulse').then(r => r.json())])
+        .then(([f, p]) => [f.reduce((s, x) => s + (x.unread || 0), 0), p])""")
+    assert pulse["unread_total"] == pill, (pill, pulse["unread_total"])
+    assert pulse["newest_ts"], "no ready post to compare against"
+    assert pg.errors == []
+    pg.close()

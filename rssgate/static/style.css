@@ -107,6 +107,13 @@ body { margin:0; background:var(--bg); color:var(--text);
 #pulse { text-align:center; margin:10px auto 0; max-width:520px; }
 #pulse[hidden] { display:none !important; }
 #pulse .btn { width:100%; font:inherit; }
+/* server unreachable at boot (restart in progress, backend down): say so with
+   theme variables, never a bare logo + empty sidebar */
+.boot-error { max-width:460px; margin:16vh auto 0; padding:0 16px; text-align:center;
+  color:var(--muted); }
+.boot-error[hidden] { display:none !important; }
+.boot-error h2 { color:var(--text); margin:0 0 .5rem; }
+.boot-error p { margin:0 0 .9rem; }
 .new-above { text-align:center; margin:10px auto 0; max-width:520px; }
 .new-above[hidden] { display:none; }
 .new-above .btn { width:100%; }

@@ -198,9 +198,12 @@
     try {
       const res = await fetch('/api/articles?' + params);
       data = await res.json();
+    } catch (e) {                        // backend down/restarting: keep the
+      return;                            // cards already on screen, say why
     } finally {
       loading = false; setBusy(false);   // failed fetches must not spin
     }
+    if (!data || !Array.isArray(data.items)) return;
     if (!started) {
       started = true;
       if (!data.items.length) $('empty-hint').hidden = false;
@@ -732,11 +735,26 @@
     pulseClear();           // else the next tick re-raises the pill forever
   });
   window.__pulseTick = pulseTick;      // test seam: run one check now
+  // Offline at boot: keep a quiet re-check going, and retry on demand. If the
+  // server is back, a reload brings the reader up with the saved position.
+  function retryPulse() {           // defined once, re-armed on failure
+    // .catch on the CHAIN (not inside .then) so an unparseable answer counts
+    // as offline instead of surfacing as an uncaught rejection
+    fetch('/api/resume').then(r => r.json())
+      .then(() => location.reload())
+      .catch(() => setTimeout(retryPulse, 20000));
+  }
+  $('boot-retry').addEventListener('click', () => location.reload());
 
   // poll settle wait; tests shrink it via window.__SETTLE_MS (seam)
   const SETTLE_MS = typeof window.__SETTLE_MS === 'number'
                   ? window.__SETTLE_MS : 2500;
   async function doRefreshWork() {       // shared by button + pull-to-refresh
+    if (bootFailed) {                    // offline: no point POSTing /api/poll
+      try { await fetch('/api/resume'); } catch (e) { return; }
+      location.reload();
+      return;
+    }
     try {
       const r = await fetch('/api/poll', { method: 'POST' });
       const j = await r.json().catch(() => ({}));
@@ -935,11 +953,19 @@
     if (entries[0].isIntersecting) loadNext();
   }, { rootMargin: '1200px' }).observe($('sentinel'));
 
-  Promise.all([
+  let bootFailed = false;            // offline: the stream stays muted and
+  Promise.all([                      // the panel below says what happened
     fetch('/api/resume').then(r => r.json()),
     renderFeedFilter(),
     renderChips(),
-  ]).then(([s]) => {
+  ]).catch(() => {                   // server restarting or down: previously
+    bootFailed = true;               // this hung on an empty page + logo
+    $('empty-hint').hidden = true;
+    $('boot-error').hidden = false;
+    setTimeout(retryPulse, 4000);    // ask again shortly; server may be up
+  }).then(res => {                     // .catch above resolves undefined:
+    const s = res && res[0];            // never destructure a failed boot
+    if (!s) return;
     bootResume = s.resume_ts || '';
     fetch('/api/pulse').then(r => r.json()).then(p => {
       pulseBaseTs = p.newest_ts || '';
@@ -966,8 +992,7 @@
       $('new-above-btn').dataset.resume = s.resume_ts;
       $('new-above-btn').dataset.resumeId = s.resume_id || '0';
     }
-    loadNext();
-    refreshPips();
+    if (!bootFailed) { loadNext(); refreshPips(); }
   });
 
   // ---- continue-reading: jump the stream to the saved resume point -------
