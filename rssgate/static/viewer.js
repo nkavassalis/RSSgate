@@ -81,7 +81,7 @@
     return `<article class="card${a.unread ? ' unread' : ''}" data-ts="${esc(a.ts)}"
         data-id="${a.id}" data-feed="${a.feed_id}">
       <div class="card-meta">${a.unread ? '<span class="newdot" title="unread"></span>' : ''}<span class="feed-title">${esc(a.feed_title || '\u2014')}</span>${raw}
-        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" data-fmt="tall" title="Share as a tall card (phone-friendly)">\u25af</button><button class="snap-btn" data-fmt="wide" title="Share as a wide card (magazine layout)">\u25ad</button></div>
+        ${cats}<time datetime="${esc(a.ts)}">${fmt(a.ts)}</time><button class="snap-btn" data-fmt="tall" title="Share as a tall card (phone-friendly)" aria-label="Share as a tall card">${ICON_TALL}</button><button class="snap-btn" data-fmt="wide" title="Share as a wide card (magazine layout)" aria-label="Share as a wide card">${ICON_WIDE}</button></div>
       ${thumb}
       ${sub}
       <h2><a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a></h2>
@@ -250,6 +250,11 @@
   // two share buttons per card: TALL = banner at a fixed phone-friendly
   // width; WIDE = magazine layout at ui.snapshot_width (admin setting)
   const TALL_W = 640;
+  // share icons: same stroke weight, same 30px tap target; the wide one is
+  // only a little wider than tall (13x9), not a letterbox
+  const svgRect = (x, y, w, h) => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>`;
+  const ICON_TALL = svgRect(4, 1.5, 8, 13);
+  const ICON_WIDE = svgRect(1.5, 3.5, 13, 9);
   const SHARE_FORMATS = {
     tall: { style: 'banner', width: () => TALL_W },
     wide: { style: 'float', width: () => SHARE_W },
@@ -560,7 +565,7 @@
     const card = btn.closest('.card');
     const a = card && snapData[card.dataset.id];
     if (!a) return;
-    const glyph = btn.textContent;
+    const glyph = btn.innerHTML;          // svg icon; restored after
     btn.textContent = '\u2026';
     try {
       const fmt = SHARE_FORMATS[btn.dataset.fmt] || SHARE_FORMATS.tall;
@@ -573,11 +578,11 @@
         try {
           await navigator.share({ files: [file], title: a.title });
           btn.textContent = '\u2713';
-          setTimeout(() => { btn.textContent = glyph; }, 1400);
+          setTimeout(() => { btn.innerHTML = glyph; }, 1400);
           return;
         } catch (e) {
           if (e && e.name === 'AbortError') {      // user backed out
-            btn.textContent = glyph;
+            btn.innerHTML = glyph;
             return;
           }                                        // else fall through
         }
@@ -594,7 +599,7 @@
       }
       btn.textContent = copied ? '\u2713' : '\u2913';
     } catch { btn.textContent = '\u2717'; }
-    setTimeout(() => { btn.textContent = glyph; }, 1400);
+    setTimeout(() => { btn.innerHTML = glyph; }, 1400);
   }
   $('stream').addEventListener('click', e => {
     const btn = e.target.closest('.snap-btn');

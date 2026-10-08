@@ -36,7 +36,8 @@ rssgate/
                     (sponsored prefilter | raw mode | hash cache | LLM).
                     _cache_image: extract -> store -> imgstore.dedupe.
   scheduler.py      thread: requeue stale, poll due feeds, N workers, each
-                    with its OWN connection.
+                    with its OWN connection. Re-reads config.yaml every tick
+                    (config_path), so admin edits apply without a restart.
   maint.py          run_all every 6h + at boot: retention, orphan prune,
                     dedupe_galleries (idempotent repair), cache cap.
   imgstore.py       cache dir, store(url) (magic-byte sniff, sha256 name),
@@ -49,7 +50,10 @@ rssgate/
                     host (fetch.per_host_interval). BLOCK_STATUSES = 403/429.
   fetcher.py        conditional GET, feed parsing, page fingerprint, probe.
   llm.py            provider-agnostic client; no DB; raises LLMError.
-  web.py            create_app(config_path, conn=None). Thin routes only.
+  web.py            create_app(config_path, conn=None). Thin routes only, no
+                    SQL. Input hygiene: _body() (JSON object or 400), _int(),
+                    _strs(); /api/* errors are JSON, never an HTML 500
+                    (tests/test_input_hygiene.py fuzzes every endpoint).
   templates/        viewer.html, admin.html (assets stamped ?v={{app_version}})
   static/viewer.js  stream, read tracking, PTR, pips, share renderer
   static/admin.js   panels, autosave, feed table + cog modal, nav spy
@@ -70,7 +74,9 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
    replaces images must hand the old filenames to `db.release_files` (which
    keeps files another article still references); maintenance sweeps orphans.
 6. **One SQLite connection per thread.** Background work (`/api/poll`,
-   scheduler workers, maintenance) opens its own. Sharing the request
+   add-feed refresh, backfill, scheduler workers, maintenance) opens its own
+   via `db.connect(db.path_of(conn))` - never a path rebuilt from config
+   (under tests that pointed at a different database). Sharing the request
    connection with a thread corrupts commit state.
 7. **`hidden` is terminal but reversible** (sponsored/category toggles);
    hidden items never reach `/api/articles` or stats.
@@ -81,9 +87,10 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
 9. **Autosave doctrine.** Editable admin fields save themselves on
    `change` (single-field patch) and flash their label `cfg-saving` ->
    `cfg-ok`/`cfg-bad`; patches carry only the field that changed (a
-   full-form Apply once re-queued every hidden post). Legacy exception: the
-   Language model and Polling & summarizer fields still share one "Save
-   settings" button - convert them when you touch them; add nothing new to it.
+   full-form Apply once re-queued every hidden post). Every global setting
+   goes through admin.js `putConfig`/`autosave(id, toPatch)`; there is no
+   Save button anywhere (the old one sent every field, so a stale tab could
+   revert values saved elsewhere).
 10. **Be polite to sites.** Every request to a feed/article/image host goes
    through `net.get` (UA + per-host pacing). A 403/429 from a site pauses
    the FEED (`db.feed_block`, doubling to 24h, cleared by a successful

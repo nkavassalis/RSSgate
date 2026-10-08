@@ -12,9 +12,6 @@ JUNK_RE = re.compile(
     r"cookie|newsletter|subscribe|signup|sign-up|social|share|sharing|related|"
     r"recommend|paywall|modal|popup|overlay|player|embed|cta)(?![a-z0-9])", re.I)
 
-STRIP_TAGS = ("script", "style", "noscript", "svg", "iframe", "form", "button",
-              "nav", "footer", "header", "aside", "figcaption")
-
 BODY_TAGS = ("p", "li", "blockquote", "h1", "h2", "h3", "h4", "pre", "td")
 
 
@@ -34,10 +31,6 @@ HARD_JUNK_RE = re.compile(
 # Chrome words that frequently appear in classes of elements that WRAP real
 # content (WordPress entry-header, layout__document--sidebar, ...). These may
 # only be removed when the subtree holds little real text; otherwise unwrap.
-SOFT_WORDS = re.compile(
-    r"(?<![a-z0-9])(sidebar|nav|navbar|menu|footer|header|masthead|share|sharing|related|"
-    r"recommend|social|embed|player|cta)(?![a-z0-9])", re.I)
-
 CONTENTISH_RE = re.compile(
     r"(?<![a-z0-9])(article|post|entry|story|content|body|text)(?![a-z0-9])",
     re.I)   # sites label content slots with junk-ish words (advert__autofill

@@ -26,13 +26,60 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def _inject_version():
         return {"app_version": _ver}
 
+    # ---- input hygiene: malformed requests get a JSON 400, never a 500 ----
+    def _body() -> dict:
+        """The JSON request body, which must be an object."""
+        data = request.get_json(force=True, silent=True)
+        if data is None and not request.data:
+            return {}
+        if not isinstance(data, dict):
+            abort(400, description="request body must be a JSON object")
+        return data
+
+    def _int(v, default=0, lo=None, hi=None):
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return default
+        if lo is not None:
+            n = max(lo, n)
+        if hi is not None:
+            n = min(hi, n)
+        return n
+
+    def _strs(v) -> list[str]:
+        """A list of strings (anything else -> [])."""
+        if not isinstance(v, list):
+            return []
+        return [s for s in v if isinstance(s, str)]
+
+    @app.errorhandler(400)
+    @app.errorhandler(404)
+    @app.errorhandler(405)
+    def _http_err(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": getattr(e, "description", str(e))}), e.code
+        return e
+
+    @app.errorhandler(Exception)
+    def _crash(e):
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return _http_err(e)
+        import logging
+        logging.getLogger("rssgate.web").exception("unhandled error on %s",
+                                                   request.path)
+        if request.path.startswith("/api/"):
+            return jsonify({"error": f"internal error: {type(e).__name__}"}), 500
+        raise e
+
     cfg = load_config(config_path)
     data_dir = cfg["server"]["data_dir"]
     os.makedirs(data_dir, exist_ok=True)
     from . import imgstore
     imgstore.init(os.path.abspath(os.path.join(data_dir, "images")))
     if conn is None:
-        conn = db.connect(os.path.join(data_dir, "rssgate.sqlite"))
+        conn = db.connect(db.path_of(conn))
         db.init_db(conn)
 
     def llm() -> LLMClient:
@@ -56,7 +103,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         """Keyset upper bound. The stored resume cursor ONLY bounds the plain
         New/all-feeds first page — filters and Since mode start at newest."""
         before_ts = request.args.get("before_ts")
-        before_id = int(request.args.get("before_id", 0) or 0)
+        before_id = _int(request.args.get("before_id"), 0, lo=0)
         unfiltered = (not request.args.get("feed_id")
                       and not request.args.get("category")
                       and not request.args.get("since_ts"))
@@ -70,7 +117,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/articles")
     def api_articles():
         cfg = load_config(config_path)
-        limit = min(int(request.args.get("limit", cfg["ui"]["items_per_page"])), 100)
+        limit = _int(request.args.get("limit"), cfg["ui"]["items_per_page"],
+                     lo=1, hi=100)
         order = request.args.get("order") or cfg["ui"].get("order", "newest")
         if order not in ("newest", "oldest"):
             order = "newest"
@@ -118,8 +166,10 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/position", methods=["POST"])
     def api_position():
-        data = request.get_json(force=True)
-        ts, aid = data.get("ts"), int(data.get("id", 0) or 0)
+        data = _body()
+        ts, aid = data.get("ts"), _int(data.get("id"), 0)
+        if not isinstance(ts, str):
+            ts = None
         rid = data.get("read_ids")
         marked = db.mark_articles_read(conn, rid) if isinstance(rid, list) else 0
         if not (ts and aid):
@@ -147,13 +197,11 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/resume")
     def api_resume():
-        newest = conn.execute(
-            "SELECT COALESCE(published_at, fetched_at) ts FROM articles "
-            "ORDER BY COALESCE(published_at, fetched_at) DESC LIMIT 1").fetchone()
+        newest = db.newest_ts(conn)
         ui = load_config(config_path)["ui"]
         return jsonify({"resume_ts": db.get_state(conn, "resume_ts"),
                         "resume_id": db.get_state(conn, "resume_id", "0"),
-                        "newest_ts": newest["ts"] if newest else None,
+                        "newest_ts": newest,
                         "order": ui.get("order", "newest"),
                         "snapshot_width": ui.get("snapshot_width", 800),
                         "stream_width": ui.get("stream_width", 1280),
@@ -181,20 +229,25 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/feeds", methods=["POST"])
     def api_add_feed():
-        data = request.get_json(force=True)
-        url = (data.get("url") or "").strip()
+        data = _body()
+        url = str(data.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return jsonify({"error": "url must start with http(s)://"}), 400
-        cats = [c.strip().lower() for c in (data.get("categories") or []) if c.strip()]
+        cats = [c.strip().lower() for c in _strs(data.get("categories")) if c.strip()]
         try:
             feed_row = db.add_feed(conn, url, data.get("type", "auto"), "", cats)
         except Exception as exc:  # unique constraint etc.
             return jsonify({"error": f"feed already exists or invalid: {exc}"}), 409
         fid = feed_row["id"]
         if data.get("refresh", True):
+            dbfile = db.path_of(conn)
+
             def _bg():
-                try:
-                    refresh_feed(conn, db.get_feed(conn, fid), load_config(config_path), llm())
+                import contextlib
+                try:      # own connection: threads never share the request's
+                    with contextlib.closing(db.connect(dbfile)) as bconn:
+                        refresh_feed(bconn, db.get_feed(bconn, fid),
+                                     load_config(config_path), llm())
                 except Exception:  # noqa: BLE001
                     pass
             threading.Thread(target=_bg, daemon=True).start()
@@ -203,7 +256,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/feeds/probe", methods=["POST"])
     def api_probe_feed():
         from .fetcher import find_feeds
-        url = (request.get_json(force=True).get("url") or "").strip()
+        url = str(_body().get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             return jsonify({"error": "url must start with http(s)://"}), 400
         return jsonify(find_feeds(url))
@@ -213,11 +266,11 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         feed = db.get_feed(conn, fid)
         if not feed:
             return jsonify({"error": "not found"}), 404
-        data = request.get_json(force=True)
+        data = _body()
         fields = {}
         if "categories" in data:
             fields["categories"] = ",".join(
-                c.strip().lower() for c in data["categories"] if c.strip())
+                c.strip().lower() for c in _strs(data["categories"]) if c.strip())
         if "enabled" in data:
             fields["enabled"] = 1 if data["enabled"] else 0
         if "summarize" in data:
@@ -230,7 +283,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             fields["images_mode"] = data["images_mode"]
         if "max_input_chars" in data:
             try:
-                fields["max_input_chars"] = max(0, min(200000, int(data["max_input_chars"])))
+                fields["max_input_chars"] = _int(data["max_input_chars"], 0, 0, 200000)
             except (TypeError, ValueError):
                 fields["max_input_chars"] = 0
         if "custom_title" in data:
@@ -247,7 +300,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                                        ("default", "terse", "normal",
                                         "detailed") else "default")
         if "category_block" in data:
-            names = [c.strip().lower() for c in data["category_block"]
+            names = [c.strip().lower() for c in _strs(data["category_block"])
                      if c.strip()]
             fields["category_block"] = ",".join(names)
         if data.get("content_source") in ("auto", "feed", "page"):
@@ -257,17 +310,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         if "hide_sponsored" in data:
             fields["hide_sponsored"] = 1 if data["hide_sponsored"] else 0
             if not data["hide_sponsored"]:  # un-hide everything when flag goes off
-                conn.execute("UPDATE articles SET status='pending'"
-                             " WHERE feed_id=? AND status='hidden'", (fid,))
+                db.unhide_feed(conn, fid)
             else:  # sweep existing items too (free: titles + stored digests)
                 from .refresh import is_sponsored, SPONSORED_DIGEST_RE
-                for a in conn.execute("SELECT id, title, link, summary FROM articles"
-                                      " WHERE feed_id=? AND status='ready'", (fid,)):
-                    if (is_sponsored(a["title"], a["link"]) or
-                            SPONSORED_DIGEST_RE.search((a["summary"] or "")[:400])):
-                        conn.execute("UPDATE articles SET status='hidden' WHERE id=?",
-                                     (a["id"],))
-                conn.commit()
+                db.set_status(conn, [
+                    a["id"] for a in db.feed_ready_articles(conn, fid)
+                    if is_sponsored(a["title"], a["link"])
+                    or SPONSORED_DIGEST_RE.search((a["summary"] or "")[:400])],
+                    "hidden")
         if "type" in data and data["type"] in ("auto", "feed", "page"):
             fields["type"] = data["type"]
         db.update_feed(conn, fid, **fields)
@@ -300,23 +350,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/articles/<int:aid>/retry", methods=["POST"])
     def api_article_retry(aid):
-        row = conn.execute("SELECT id, status FROM articles WHERE id=?",
-                           (aid,)).fetchone()
-        if not row:
+        if not db.retry_article(conn, aid):
             return jsonify({"error": "not found"}), 404
-        conn.execute("UPDATE articles SET status='pending', attempts=0,"
-                     " error_msg='' WHERE id=?", (aid,))
-        conn.commit()
         return jsonify({"ok": True})
 
     @app.route("/api/articles/<int:aid>/drop", methods=["POST"])
     def api_article_drop(aid):
-        row = conn.execute("SELECT id FROM articles WHERE id=?",
-                           (aid,)).fetchone()
-        if not row:
+        if not db.drop_article(conn, aid):
             return jsonify({"error": "not found"}), 404
-        conn.execute("UPDATE articles SET status='dropped' WHERE id=?", (aid,))
-        conn.commit()
         return jsonify({"ok": True})
 
     @app.route("/api/poll", methods=["POST"])
@@ -335,7 +376,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         def _go():
             import rssgate.refresh as R
             with contextlib.closing(db.connect(
-                    os.path.join(data_dir, "rssgate.sqlite"))) as pconn:
+                    db.path_of(conn))) as pconn:
                 for feed in db.list_feeds(pconn):
                     if feed["enabled"]:
                         try:
@@ -365,7 +406,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/feed-errors")
     def api_feed_errors():
-        rows = db.recent_errors(conn, min(int(request.args.get("limit", 20)), 100))
+        rows = db.recent_errors(conn, _int(request.args.get("limit"), 20, 1, 100))
         return jsonify([dict(r) for r in rows])
 
     @app.route("/api/feeds/<int:fid>/redigest", methods=["POST"])
@@ -381,7 +422,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/categories/rename", methods=["POST"])
     def api_rename_category():
-        data = request.get_json(force=True)
+        data = _body()
         old = (data.get("from") or "").strip()
         new = (data.get("to") or "").strip().lower()
         if not old or not new:
@@ -402,7 +443,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
 
     @app.route("/api/config", methods=["PUT"])
     def api_put_config():
-        patch = request.get_json(force=True)
+        patch = _body()
         patch.pop("server", None)   # host/port changes via file only
         ui = patch.pop("ui", None)
         ui_patch = {}
@@ -509,14 +550,14 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     def api_image_backfill():
         import contextlib
         import threading
-        data = request.get_json(silent=True) or {}
+        data = _body()
         force = bool(data.get("force"))
-        limit = int(data.get("limit", 150))
-        page_fetches = int(data.get("page_fetches", 40))
+        limit = _int(data.get("limit"), 150, 1, 5000)
+        page_fetches = _int(data.get("page_fetches"), 40, 0, 1000)
 
         def _go():
             with contextlib.closing(db.connect(
-                    os.path.join(data_dir, "rssgate.sqlite"))) as bconn:
+                    db.path_of(conn))) as bconn:
                 from .refresh import backfill_images
                 backfill_images(bconn, load_config(config_path),
                                 limit=limit, page_fetches=page_fetches,
@@ -550,13 +591,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         import os, time as _t
         from . import __version__
         cfg = load_config(config_path)
-        n_feeds = conn.execute("SELECT COUNT(*) c FROM feeds").fetchone()["c"]
-        n_on = conn.execute(
-            "SELECT COUNT(*) c FROM feeds WHERE enabled=1").fetchone()["c"]
-        q = {r["status"]: r["c"] for r in conn.execute(
-            "SELECT status, COUNT(*) c FROM articles"
-            " WHERE status IN ('pending','processing','ready','error')"
-            " GROUP BY status")}
+        sc = db.status_counts(conn)
+        n_feeds, n_on, q = sc["feeds"], sc["feeds_enabled"], sc["by_status"]
         db_mb = 0.0
         try:
             db_mb = round(sum(

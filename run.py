@@ -33,7 +33,7 @@ def main():
     db.init_db(conn)
     app = create_app(args.config, conn=conn)
     sched = Scheduler(conn, cfg, lambda: LLMClient(load_config(args.config)),
-                      db_path=db_path)
+                      db_path=db_path, config_path=args.config)
     if cfg["polling"]["fetch_on_start"]:
         from rssgate.refresh import refresh_all
         import threading

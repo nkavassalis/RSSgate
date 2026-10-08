@@ -13,11 +13,13 @@ log = logging.getLogger("rssgate.scheduler")
 
 
 class Scheduler(threading.Thread):
-    def __init__(self, conn, cfg, llm_factory, tick_seconds: int = 30, db_path: str = ""):
+    def __init__(self, conn, cfg, llm_factory, tick_seconds: int = 30, db_path: str = "",
+                 config_path: str = ""):
         super().__init__(daemon=True, name="rssgate-scheduler")
         self.conn = conn
         self.db_path = db_path   # workers open per-call connections
         self.cfg = cfg
+        self.config_path = config_path   # re-read every tick: admin edits apply live
         self.llm_factory = llm_factory
         self.tick = tick_seconds
         self._stop = threading.Event()
@@ -44,6 +46,12 @@ class Scheduler(threading.Thread):
             self._stop.wait(self.tick)
 
     def poll_due(self):
+        if self.config_path:              # pick up admin changes (prompt,
+            try:                          # intervals, workers...) without restart
+                from .config import load_config
+                self.cfg = load_config(self.config_path)
+            except Exception:  # noqa: BLE001 - keep the last good config
+                log.warning("config reload failed; keeping previous settings")
         now = time.time()
         llm = None
         db.requeue_stale_processing(self.conn)

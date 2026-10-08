@@ -1208,3 +1208,53 @@ def test_tall_and_wide_share_buttons(ui_server, browser):
     assert wide["style"] == "float" and wide["w"] == sw * 2, wide
     assert pg.errors == []
     pg.close()
+
+
+def test_former_save_button_fields_autosave(ui_server, browser):
+    """Language model / Polling fields save themselves (the global Save
+    button sent EVERY field, so a stale tab could revert autosaved values).
+    Single-field patches only; invalid JSON is refused without a PUT."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    alerts = []
+    pg.on("dialog", lambda d: (alerts.append(d.message), d.accept()))
+    puts = []
+    pg.on("request", lambda r: puts.append(r.post_data)
+          if r.method == "PUT" and r.url.endswith("/api/config") else None)
+    pg.goto(ui_server + "/admin#sec-polling", wait_until="networkidle")
+    assert pg.locator("#save-btn").count() == 0
+    old = pg.input_value("#cfg-feed-min")
+    pg.fill("#cfg-feed-min", "45"); pg.press("#cfg-feed-min", "Tab")
+    pg.wait_for_selector("label:has(#cfg-feed-min).cfg-ok", timeout=5000)
+    assert puts[-1] == '{"polling":{"feed_interval_minutes":45}}', puts[-1]
+    got = pg.evaluate("fetch('/api/config').then(r => r.json())"
+                      ".then(c => c.polling.feed_interval_minutes)")
+    assert got == 45
+    n = len(puts)
+    pg.fill("#cfg-extra-body", "{not json"); pg.press("#cfg-extra-body", "Tab")
+    pg.wait_for_timeout(300)
+    assert len(puts) == n and any("valid JSON" in a for a in alerts)
+    pg.fill("#cfg-feed-min", old or "30"); pg.press("#cfg-feed-min", "Tab")
+    pg.wait_for_selector("label:has(#cfg-feed-min).cfg-ok", timeout=5000)
+    assert pg.errors == []
+    pg.close()
+
+
+def test_share_icons_are_tappable_and_proportioned(ui_server, browser):
+    """Both share buttons are real tap targets (>=28px), the tall icon is
+    upright and the wide one only a little wide (not a letterbox)."""
+    pg = _new_page(browser, viewport={"width": 390, "height": 844},
+                   has_touch=True)
+    pg.goto(ui_server, wait_until="networkidle")
+    card = pg.locator(".card").first
+    m = {}
+    for fmt in ("tall", "wide"):
+        b = card.locator(f".snap-btn[data-fmt={fmt}]")
+        box = b.bounding_box()
+        rect = b.locator("svg rect").bounding_box()
+        m[fmt] = (box, rect)
+        assert box["width"] >= 28 and box["height"] >= 28, (fmt, box)
+    (_, t), (_, w) = m["tall"], m["wide"]
+    assert t["height"] > t["width"] * 1.3, t
+    assert 1.2 <= w["width"] / w["height"] <= 1.7, w
+    assert pg.errors == []
+    pg.close()

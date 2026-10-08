@@ -35,6 +35,37 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.69.0] — 2026-10-07
+
+Rough-edges pass over the whole codebase.
+
+### Fixed
+- Admin setting changes (digest prompt, summary length, poll intervals,
+  workers, input cap, retries, backoff...) did not reach background work
+  until a restart: the scheduler kept its startup config. It now re-reads
+  config.yaml every tick.
+- Adding a feed ran its first refresh in a thread on the request's shared
+  database connection (the invariant whose breach once stranded posts in
+  'processing'). All background jobs now open their own connection to the
+  app's actual database file (db.path_of).
+- 12 malformed-input crashes (list bodies, id "abc", limit=abc, non-list
+  category fields, non-string urls) returned HTML 500 tracebacks; now JSON
+  400s, plus a JSON error handler for all /api routes. A fuzz test covers
+  every endpoint.
+- The "Save settings" button sent EVERY field on the page, so a stale tab
+  could revert values autosaved elsewhere. Language model and Polling
+  fields now autosave like everything else; the button is gone.
+
+### Changed
+- Share buttons are drawn icons (upright card / slightly-wide card) in
+  30px tap targets; the old glyphs were tiny and very wide respectively.
+
+### Internal
+- No SQL left in web.py (status counts, retry/drop, sponsored sweep,
+  newest_ts moved to db.py); dead code removed (feed_ready_count,
+  pending_articles, mark_processing, unused extract constants); the two
+  duplicate autosave flash helpers collapsed onto putConfig.
+
 ## [0.68.0] — 2026-10-07
 
 ### Changed

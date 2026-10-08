@@ -1,3 +1,4 @@
+from rssgate import db
 from urllib.parse import quote
 
 
@@ -114,6 +115,7 @@ def test_models_endpoint(client):
 
 
 def test_poll_now_throttles(client, monkeypatch):
+    db.add_feed(client.conn, "https://poll.test/feed", type_="feed")
     calls = []
     monkeypatch.setattr("rssgate.refresh.refresh_feed",
                         lambda *a, **k: calls.append(1) or "ok")

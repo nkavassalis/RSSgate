@@ -166,6 +166,12 @@ def norm_ts(value):
     return dt.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def path_of(conn) -> str:
+    """The database FILE behind a connection - background threads must open
+    their OWN connection to it (never share a handle across threads)."""
+    return conn.execute("PRAGMA database_list").fetchone()["file"]
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _migrate(conn)
@@ -437,11 +443,6 @@ def feed_counts(conn, feed_id: int) -> dict:
             "ready_count": r["rdy"] or 0, "excerpt_count": r["exc"] or 0}
 
 
-def feed_ready_count(conn, feed_id: int) -> int:
-    return conn.execute("SELECT COUNT(*) c FROM articles WHERE feed_id=?"
-                        " AND status='ready'", (feed_id,)).fetchone()["c"]
-
-
 def category_list(conn) -> dict:
     """Two independent lists for the viewer's two boxes, each with visible
     counts, case-insensitive (modal spelling wins), zero-count omitted:
@@ -648,11 +649,6 @@ def set_article(conn, article_id: int, **fields) -> None:
     conn.commit()
 
 
-def pending_articles(conn, limit: int = 5) -> list[sqlite3.Row]:
-    return list(conn.execute(
-        "SELECT * FROM articles WHERE status='pending' ORDER BY id LIMIT ?", (limit,)))
-
-
 def claim_pending(conn, limit: int = 1) -> list[sqlite3.Row]:
     """Atomically move up to `limit` pending articles to 'processing'.
     Safe with concurrent workers: a row can only be claimed once."""
@@ -704,12 +700,6 @@ def feed_block(conn, feed_id: int, base_minutes: float = 60) -> str:
 def feed_unblock(conn, feed_id: int) -> None:
     conn.execute("UPDATE feeds SET backoff_until=NULL, backoff_level=0"
                  " WHERE id=?", (feed_id,))
-    conn.commit()
-
-
-def mark_processing(conn, article_id: int) -> None:
-    conn.execute("UPDATE articles SET status='processing', started_at=? WHERE id=?",
-                 (now_iso(), article_id))
     conn.commit()
 
 
@@ -765,6 +755,57 @@ def article_needing_image(conn, name: str) -> str | None:
         "SELECT image_url FROM articles WHERE image=? AND image_url IS NOT NULL"
         " AND image_url <> '' LIMIT 1", (name,)).fetchone()
     return row["image_url"] if row else None
+
+
+def newest_ts(conn) -> str | None:
+    r = conn.execute("SELECT COALESCE(published_at, fetched_at) ts FROM articles"
+                     " ORDER BY COALESCE(published_at, fetched_at) DESC"
+                     " LIMIT 1").fetchone()
+    return r["ts"] if r else None
+
+
+def status_counts(conn) -> dict:
+    """Feed totals + article counts by status, for /api/status."""
+    f = conn.execute("SELECT COUNT(*) n, SUM(enabled=1) on_ FROM feeds").fetchone()
+    by = {r["status"]: r["c"] for r in conn.execute(
+        "SELECT status, COUNT(*) c FROM articles"
+        " WHERE status IN ('pending','processing','ready','error')"
+        " GROUP BY status")}
+    return {"feeds": f["n"] or 0, "feeds_enabled": f["on_"] or 0, "by_status": by}
+
+
+def feed_ready_articles(conn, feed_id: int) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT id, title, link, summary FROM articles"
+                             " WHERE feed_id=? AND status='ready'", (feed_id,)))
+
+
+def set_status(conn, ids, status: str) -> int:
+    ids = list(ids)
+    for i in ids:
+        conn.execute("UPDATE articles SET status=? WHERE id=?", (status, i))
+    conn.commit()
+    return len(ids)
+
+
+def unhide_feed(conn, feed_id: int) -> int:
+    n = conn.execute("UPDATE articles SET status='pending'"
+                     " WHERE feed_id=? AND status='hidden'", (feed_id,)).rowcount
+    conn.commit()
+    return n
+
+
+def retry_article(conn, aid: int) -> bool:
+    n = conn.execute("UPDATE articles SET status='pending', attempts=0,"
+                     " error_msg='' WHERE id=?", (aid,)).rowcount
+    conn.commit()
+    return n > 0
+
+
+def drop_article(conn, aid: int) -> bool:
+    n = conn.execute("UPDATE articles SET status='dropped' WHERE id=?",
+                     (aid,)).rowcount
+    conn.commit()
+    return n > 0
 
 
 def retry_failed(conn) -> int:

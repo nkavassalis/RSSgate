@@ -125,3 +125,20 @@ def test_transient_auto_retry_and_drop(client, monkeypatch):
     client.post(f"/api/articles/{aid}/drop")
     assert client.get("/api/articles?limit=10").get_json()["items"] == []
     assert client.get("/api/feed-errors").get_json() == []
+
+
+def test_scheduler_picks_up_config_edits_without_restart(conn, cfg, monkeypatch):
+    """Admin edits (prompt, intervals, workers...) used to reach background
+    work only after a restart: the scheduler kept its startup copy."""
+    from rssgate import scheduler as S
+    from rssgate.config import load_config, save_config
+    monkeypatch.setattr(S, "summarize_pending", lambda *a, **k: 0)
+    monkeypatch.setattr(S, "refresh_feed", lambda *a, **k: "ok")
+    sch = S.Scheduler(conn, load_config(cfg), lambda: None, config_path=cfg)
+    c = load_config(cfg)
+    c["summarizer"]["system_prompt"] = "EDITED PROMPT {length}"
+    c["polling"]["feed_interval_minutes"] = 77
+    save_config(c, cfg)
+    sch.poll_due()
+    assert sch.cfg["summarizer"]["system_prompt"].startswith("EDITED PROMPT")
+    assert sch.cfg["polling"]["feed_interval_minutes"] == 77

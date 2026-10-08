@@ -324,32 +324,8 @@ function uiWidthSave(input, key, lo, hi) {
 }
 uiWidthSave($('cfg-sharewidth'), 'snapshot_width', 360, 1440);
 uiWidthSave($('cfg-streamwidth'), 'stream_width', 480, 1600);
-function cfgUiFlash(input, key, val) {
-  const label = input.closest('label');
-  label.classList.add('cfg-saving');
-  api('/api/config', { method: 'PUT',
-    body: JSON.stringify({ ui: { [key]: val } }) })
-    .then(() => { label.classList.remove('cfg-saving');
-                  label.classList.add('cfg-ok');
-                  setTimeout(() => label.classList.remove('cfg-ok'), 1200); })
-    .catch(err => { label.classList.remove('cfg-saving');
-                    label.classList.add('cfg-bad');
-                    setTimeout(() => label.classList.remove('cfg-bad'), 2500);
-                    alert('Save failed: ' + err.message); loadConfig(); });
-}
-function cfgFetchFlash(input, key, val) {
-  const label = input.closest('label');
-  label.classList.add('cfg-saving');
-  api('/api/config', { method: 'PUT',
-    body: JSON.stringify({ fetch: { [key]: val } }) })
-    .then(() => { label.classList.remove('cfg-saving');
-                  label.classList.add('cfg-ok');
-                  setTimeout(() => label.classList.remove('cfg-ok'), 1200); })
-    .catch(err => { label.classList.remove('cfg-saving');
-                    label.classList.add('cfg-bad');
-                    setTimeout(() => label.classList.remove('cfg-bad'), 2500);
-                    alert('Save failed: ' + err.message); loadConfig(); });
-}
+function cfgUiFlash(input, key, val) { putConfig(input, { ui: { [key]: val } }); }
+function cfgFetchFlash(input, key, val) { putConfig(input, { fetch: { [key]: val } }); }
 $('cfg-ua').addEventListener('change', e =>
   cfgFetchFlash(e.target, 'user_agent', e.target.value.trim()));
 $('ua-mine-btn').addEventListener('click', () => {
@@ -491,39 +467,62 @@ setTimeout(loadStatus, 2000);
   spy();
 })();
 
-$('save-btn').addEventListener('click', async () => {
-  const patch = {
-    llm: { provider: $('cfg-provider').value, base_url: $('cfg-base-url').value.trim(),
-           model: $('cfg-model').value,
-           model_discover: $('cfg-model-discover').value.trim() },
-    polling: { feed_interval_minutes: +$('cfg-feed-min').value,
-               page_interval_minutes: +$('cfg-page-min').value },
-    ui: { order: $('cfg-order').value,
-        hide_untranscribed: $('cfg-hidepend').checked,
-        read_delay: Math.max(0, Math.min(60, +$('cfg-readdelay').value || 0)),
-        snapshot_width: Math.max(360, Math.min(1440,
-                            +$('cfg-sharewidth').value || 800)),
-        stream_width: Math.max(480, Math.min(1600,
-                            +$('cfg-streamwidth').value || 1280)) },
-    maintenance: { retention_months: +$('cfg-retention').value,
-                   images_max_mb: +$('cfg-imgcap').value,
-                   images_per_post: Math.max(1, Math.min(8, +$('cfg-imgperpost').value || 4)) },
-    summarizer: { length: $('cfg-length').value,
-                  max_input_chars: +$('cfg-max-chars').value,
-                  concurrency: +$('cfg-concurrency').value,
-                  system_prompt: $('cfg-prompt').value },
-  };
-  const key = $('cfg-api-key').value.trim();
-  if (key) patch.llm.api_key = key;
-  const ebRaw = $('cfg-extra-body').value.trim();
-  if (ebRaw) {
-    try { patch.llm.extra_body = JSON.parse(ebRaw); }
-    catch { alert('Extra request body must be valid JSON'); return; }
+// ---- global settings autosave: ONE path for every config field ----------
+// putConfig sends a single-field patch and flashes the field's label;
+// autosave(id, toPatch) wires a field. toPatch returns the patch, undefined
+// to skip, or throws an Error with a user-facing message.
+async function putConfig(el, patch) {
+  const label = el.closest('label') || el;
+  label.classList.add('cfg-saving');
+  try {
+    await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
+    label.classList.remove('cfg-saving'); label.classList.add('cfg-ok');
+    setTimeout(() => label.classList.remove('cfg-ok'), 1200);
+    return true;
+  } catch (err) {
+    label.classList.remove('cfg-saving'); label.classList.add('cfg-bad');
+    setTimeout(() => label.classList.remove('cfg-bad'), 2500);
+    alert('Save failed: ' + err.message); loadConfig();
+    return false;
   }
-  await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
-  $('save-result').textContent = 'saved ✓';
-  setTimeout(() => $('save-result').textContent = '', 3000);
+}
+function autosave(id, toPatch) {
+  const el = $(id);
+  el.addEventListener('change', () => {
+    let patch;
+    try { patch = toPatch(el); }
+    catch (err) { alert(err.message); loadConfig(); return; }
+    if (patch !== undefined) putConfig(el, patch);
+  });
+}
+const num = (el, lo, hi, dflt) => {
+  const v = Math.max(lo, Math.min(hi, Math.round(+el.value || dflt)));
+  el.value = v; return v;
+};
+autosave('cfg-provider', el => ({ llm: { provider: el.value } }));
+autosave('cfg-base-url', el => ({ llm: { base_url: el.value.trim() } }));
+autosave('cfg-model', el => ({ llm: { model: el.value } }));
+autosave('cfg-model-discover', el => ({ llm: { model_discover: el.value.trim() } }));
+autosave('cfg-api-key', el => {
+  const key = el.value.trim();
+  if (!key) return undefined;                 // empty = keep the stored key
+  el.value = ''; el.placeholder = '(unchanged)';
+  return { llm: { api_key: key } };
 });
+autosave('cfg-extra-body', el => {
+  const raw = el.value.trim() || '{}';
+  try { return { llm: { extra_body: JSON.parse(raw) } }; }
+  catch { throw new Error('Extra request body must be valid JSON'); }
+});
+autosave('cfg-feed-min', el => ({ polling: { feed_interval_minutes: num(el, 5, 10080, 30) } }));
+autosave('cfg-page-min', el => ({ polling: { page_interval_minutes: num(el, 15, 10080, 180) } }));
+autosave('cfg-order', el => ({ ui: { order: el.value } }));
+autosave('cfg-retention', el => ({ maintenance: { retention_months: +el.value } }));
+autosave('cfg-imgcap', el => ({ maintenance: { images_max_mb: num(el, 0, 1000000, 0) } }));
+autosave('cfg-length', el => ({ summarizer: { length: el.value } }));
+autosave('cfg-max-chars', el => ({ summarizer: { max_input_chars: num(el, 2000, 200000, 24000) } }));
+autosave('cfg-concurrency', el => ({ summarizer: { concurrency: +el.value } }));
+autosave('cfg-prompt', el => ({ summarizer: { system_prompt: el.value } }));
 
 $('llm-test-btn').addEventListener('click', async () => {
   $('llm-test-result').textContent = 'testing…';
