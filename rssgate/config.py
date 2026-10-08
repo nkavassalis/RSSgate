@@ -11,6 +11,17 @@ import os
 
 import yaml
 
+# Voice rule: without it the model reports ON the document ("The article
+# explores whether cats love their owners") instead of reporting the content.
+# Affected 3% of a 751-summary corpus, but 9 of ~35 Gizmodo posts.
+_VOICE_RULE = (
+    "Write in the same voice as the article: report what happened, not "
+    "that an article reports it. Never begin a sentence with 'the "
+    "article/post/piece/story/video' or 'the author' - say the thing "
+    "itself. Keep the writer's own first-person anecdotes in the "
+    "writer's voice."
+)
+
 DEFAULTS: dict = {
     "server": {
         # Loopback by default. RSSgate has no authentication, so it must not be
@@ -62,7 +73,7 @@ DEFAULTS: dict = {
             "content, cookie banners, navigation, comment sections, share prompts, "
             "related-article blocks and any other boilerplate. Never invent or add "
             "information that is not present. Write plain flowing prose with no "
-            "markdown headings. Length target: {length}. Respond with the digest text "
+            "markdown headings. " + _VOICE_RULE + " Length target: {length}. Respond with the digest text "
             "only."
         ),
     },

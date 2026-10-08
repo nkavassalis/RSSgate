@@ -1,4 +1,5 @@
 from rssgate.config import load_config, save_config, masked_config, _merge, expand_env
+from rssgate import db
 
 
 def test_defaults_when_no_file(tmp_path):
@@ -68,3 +69,46 @@ def test_snapshot_width_roundtrip_and_clamp(client):
     body["ui"]["read_delay"] = 61                       # out of range: ignored
     client.put("/api/config", json=body)
     assert client.get("/api/config").get_json()["ui"]["read_delay"] == 0
+
+
+def test_default_prompt_carries_voice_rule():
+    """Digests must report the article's CONTENT, not describe the document
+    ('The article explores whether cats love their owners'). Measured on a
+    751-summary corpus: 3% overall, 9 of ~35 Gizmodo posts."""
+    from rssgate.config import DEFAULTS
+    sp = DEFAULTS["summarizer"]["system_prompt"]
+    assert "same voice as the article" in sp
+    assert "the article/post/piece/story/video" in sp
+    assert sp.count("same voice") == 1               # not duplicated
+    assert sp.index("same voice") < sp.index("Length target: {length}")
+    assert "{length}" in sp                          # placeholder intact
+
+
+def test_example_config_prompt_matches_default():
+    """config.example.yaml is what new installs copy: its prompt must carry
+    the same rules as DEFAULTS, so docs don't drift from behaviour."""
+    import yaml
+    from pathlib import Path
+    from rssgate.config import DEFAULTS
+    ex = yaml.safe_load(Path("config.example.yaml").read_text())
+    got, want = ex["summarizer"]["system_prompt"], DEFAULTS["summarizer"]["system_prompt"]
+    assert "same voice as the article" in got
+    assert " ".join(got.split()) == " ".join(want.split()), "example prompt drifted from DEFAULTS"
+
+
+def test_voice_rule_applies_without_custom_prompt(conn):
+    """The voice rule ships with the GLOBAL default prompt only: a feed's
+    custom prompt REPLACES it wholesale (deliberate - see
+    examples/huggingface-trending, which wants different content rules). The
+    digest-length directive, by contrast, always applies."""
+    from rssgate import refresh
+    from rssgate.config import DEFAULTS
+    f = db.add_feed(conn, "https://voice.test/feed", type_="feed")["id"]
+    db.update_feed(conn, f, system_prompt="Summarize the model's capabilities.")
+    got = refresh.system_prompt(DEFAULTS, db.get_feed(conn, f))
+    assert got.startswith("Summarize the model's capabilities.")
+    assert "same voice" not in got                  # custom prompt wins, in full
+    db.update_feed(conn, f, system_prompt="")
+    got = refresh.system_prompt(DEFAULTS, db.get_feed(conn, f))
+    assert "same voice as the article" in got       # no custom -> global + rule
+    assert "{length}" not in got                    # placeholder resolved

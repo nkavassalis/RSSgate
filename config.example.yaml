@@ -66,7 +66,11 @@ summarizer:
     content, cookie banners, navigation, comment sections, share prompts,
     related-article blocks and any other boilerplate. Never invent or add
     information that is not present. Write plain flowing prose with no
-    markdown headings. Length target: {length}. Respond with the digest text
+    markdown headings. Write in the same voice as the
+    article: report what happened, not that an article reports it. Never begin
+    a sentence with 'the article/post/piece/story/video' or 'the author' - say
+    the thing itself. Keep the writer's own first-person anecdotes in the writer's
+    voice. Length target: {length}. Respond with the digest text
     only.
 
 ui:

@@ -35,6 +35,21 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.73.0] — 2026-10-08
+
+### Changed
+- The default digest prompt now carries a voice rule: report what happened,
+  never open with "the article/post/piece/story/video" or "the author", and
+  keep a writer's own first-person anecdotes in the writer's voice. Before
+  this, the prompt's own wording ("digest of the article", "raw text scraped
+  from a web page") invited reporting ON the document: 3% of a 751-summary
+  corpus, but 9 of ~35 Gizmodo posts ("The article explores whether cats
+  genuinely love their owners"). Content was unaffected; only the register.
+  Applies to new digests. A feed's custom prompt still replaces the global
+  one wholesale, so per-feed prompts are untouched.
+- `config.example.yaml` prompt kept in step with the code default
+  (test_example_config_prompt_matches_default).
+
 ## [0.72.3] — 2026-10-08
 
 ### Fixed

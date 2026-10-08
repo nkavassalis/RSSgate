@@ -195,6 +195,10 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   share buttons live in `.meta-actions` (one group, `order:1`, `flex:none`).
   Anything new on that row goes inside the group or before it - never
   between, or it splits the group again (test_share_buttons_stay_on_one_line_on_mobile).
+- Default digest prompt = `_VOICE_RULE` + the rest in config.DEFAULTS; the
+  rule keeps digests reporting content, not the document. A feed's custom
+  `system_prompt` REPLACES the global prompt (only digest_length is always
+  appended), so don't "restore" the voice rule there.
 - Status panel cells: add new items to the single `cells` list in
   `loadStatus` (reading order); it splits into two balanced rows itself.
   Manual refresh buttons use `withSpin(btn, work, dimEl)`.
