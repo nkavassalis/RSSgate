@@ -1,0 +1,11 @@
+{
+  "url": "https://du62m9e5v3var.cloudfront.net/feed.xml",
+  "type": "feed",
+  "categories": ["ai"],
+  "settings": {
+    "system_prompt": "Summarize the models capabilities succinctly.",
+    "digest_length": "terse",
+    "max_input_chars": 6000,
+    "sync_deletes": true
+  }
+}

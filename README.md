@@ -27,6 +27,14 @@ cp config.example.yaml config.yaml     # optional; run.py generates defaults
 .venv/bin/python run.py                # serves on http://127.0.0.1:8088
 ```
 
+## Example feeds
+
+[`examples/`](examples/) holds ready-to-add feeds with tuned settings. Each has
+a `feed.json` and an `add-feed.sh` that sets it up on a running instance:
+
+- [`huggingface-trending`](examples/huggingface-trending/) - newly trending
+  Hugging Face models, digested into one line about what each model does.
+
 ## Feed types
 
 | Type | Examples | Behavior |

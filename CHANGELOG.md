@@ -35,6 +35,15 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.72.1] — 2026-10-08
+
+### Added
+- examples/huggingface-trending: a public feed of newly trending Hugging
+  Face models with its tuned settings (feed.json), an add-feed.sh that
+  applies them through the HTTP API, and a README explaining each setting.
+  tests/test_examples.py applies every example through the real API so
+  examples can't rot when settings change.
+
 ## [0.72.0] — 2026-10-08
 
 ### Added
