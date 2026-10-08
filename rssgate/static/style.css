@@ -102,6 +102,11 @@ body { margin:0; background:var(--bg); color:var(--text);
 .card .unsummarized { color:var(--muted); font-style:italic; }
 .skeleton { color:var(--muted); padding:24px; text-align:center; }
 
+/* quiet "new posts" pill: appears on its own, never auto-acts, never moves
+   the reader's scroll position; click = same restart the Refresh button does */
+#pulse { text-align:center; margin:10px auto 0; max-width:520px; }
+#pulse[hidden] { display:none !important; }
+#pulse .btn { width:100%; font:inherit; }
 .new-above { text-align:center; margin:10px auto 0; max-width:520px; }
 .new-above[hidden] { display:none; }
 .new-above .btn { width:100%; }

@@ -206,6 +206,15 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 db.set_state(conn, "resume_id", str(aid))
         return jsonify({"ok": True})
 
+    @app.route("/api/pulse")
+    def api_pulse():
+        """Read-only 'anything new?' for the reader's quiet pill, plus how
+        often the reader may ask. Never fetches feeds."""
+        cfg = load_config(config_path)
+        out = db.pulse(conn)
+        out["every_minutes"] = cfg["ui"].get("pulse_minutes", 1)
+        return jsonify(out)
+
     @app.route("/api/resume")
     def api_resume():
         newest = db.newest_ts(conn)
@@ -476,6 +485,9 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
                 ui_patch["read_delay"] = int(rd)
             if ui.get("theme") in ("auto", "light", "dark"):
                 ui_patch["theme"] = ui["theme"]
+            pm = ui.get("pulse_minutes")
+            if isinstance(pm, (int, float)) and 0 <= pm <= 120:
+                ui_patch["pulse_minutes"] = int(pm)
         if ui_patch:
             patch["ui"] = ui_patch        # rest of ui: file only
         fetch = patch.pop("fetch", None)

@@ -889,6 +889,31 @@ def newest_ts(conn) -> str | None:
     return r["ts"] if r else None
 
 
+def pulse(conn) -> dict:
+    """Cheap 'anything new?' facts for the reader's quiet pill. READ-ONLY:
+    it never fetches feeds - new posts reach the DB via the scheduler's own
+    paced polling, and a background refresh from the browser would turn a
+    polite reader into a crawler (rule 10). newest_ts / counts look ONLY at
+    ready posts: a feed that merely answered with a pending item is not
+    content the reader could read, so it must not advertise a pill."""
+    r = conn.execute(
+        "SELECT MAX(" + _TS_EXPR + ") ts, COUNT(*) c FROM articles"
+        " WHERE status='ready'").fetchone()
+    by_feed = [
+        {"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
+         "ts": x["ts"] or ""}
+        for x in conn.execute(
+            "SELECT f.id fid,"
+            " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url)"
+            " title, COUNT(*) n, MAX(" + _TS_EXPR + ") ts"
+            " FROM articles a JOIN feeds f ON f.id=a.feed_id"
+            " WHERE a.status='ready' AND a.read_at IS NULL"
+            " GROUP BY f.id HAVING n > 0 ORDER BY n DESC")]
+    return {"newest_ts": r["ts"] or "", "ready_total": r["c"] or 0,
+            "unread_total": sum(f["unread"] for f in by_feed),
+            "feeds": by_feed}
+
+
 def status_counts(conn) -> dict:
     """Feed totals + article counts by status, for /api/status."""
     f = conn.execute("SELECT COUNT(*) n, SUM(enabled=1) on_ FROM feeds").fetchone()

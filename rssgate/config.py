@@ -85,6 +85,7 @@ DEFAULTS: dict = {
     },
     "ui": {
         "theme": "auto",              # auto | light | dark
+        "pulse_minutes": 1,           # reader's "new posts" pill; 0 = off
         "items_per_page": 20,
         "order": "newest", "snapshot_width": 800, "stream_width": 1280,
         "read_delay": 5,

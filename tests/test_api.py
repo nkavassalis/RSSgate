@@ -227,3 +227,45 @@ def test_config_theme_is_validated(client):
     for good in ("light", "dark", "auto"):
         assert client.put("/api/config", json={"ui": {"theme": good}}).status_code == 200
         assert client.get("/api/config").get_json()["ui"]["theme"] == good
+
+
+def test_pulse_is_read_only_and_counts_visible_only(client):
+    """/api/pulse informs the quiet pill and must never fetch feeds; its counts
+    mirror the stream (pending has no card, so it is not 'unread')."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://pulse.test/feed")["id"]
+    for i, st in enumerate(["ready", "ready", "pending", "error"]):
+        a = db.upsert_article(conn, fid, f"p{i}", f"https://p.test/{i}",
+                              f"P{i}", f"2026-10-0{i+1}T00:00:00Z")
+        db.set_article(conn, a, status=st, summary="s" if st == "ready" else None)
+    p = client.get("/api/pulse").get_json()
+    # newest READY post (the later error/pending rows must not count)
+    assert p["newest_ts"] == "2026-10-02T00:00:00Z"
+    assert p["ready_total"] == 2 and p["unread_total"] == 2
+    assert len(p["feeds"]) == 1
+    assert p["feeds"][0]["feed_id"] == fid and p["feeds"][0]["unread"] == 2
+    assert p["feeds"][0]["ts"] == "2026-10-02T00:00:00Z"  # newest unread here
+    assert p["every_minutes"] == 1                      # reader's poll cadence
+    # a NEWER post that is only pending must not change anything: no card yet
+    late = db.upsert_article(conn, fid, "p9", "https://p.test/9", "P9",
+                             "2026-10-20T00:00:00Z")
+    db.set_article(conn, late, status="pending")
+    again = client.get("/api/pulse").get_json()
+    assert again["newest_ts"] == "2026-10-02T00:00:00Z" and again["unread_total"] == 2
+    aid = conn.execute("SELECT MIN(id) m FROM articles WHERE status='ready'"
+                       " AND feed_id=?", (fid,)).fetchone()["m"]
+    db.mark_articles_read(conn, [aid])
+    after = client.get("/api/pulse").get_json()
+    assert after["unread_total"] == 1 and after["feeds"][0]["unread"] == 1
+
+
+def test_config_pulse_minutes_is_validated(client):
+    """ui.pulse_minutes drives the reader's read-only check: clamped range,
+    0 allowed (off), junk dropped."""
+    for bad in ("x", -1, 999, None, "1"):
+        assert client.put("/api/config", json={"ui": {"pulse_minutes": bad}}).status_code == 200
+        assert client.get("/api/config").get_json()["ui"]["pulse_minutes"] == 1
+    for good in (0, 5, 120):
+        assert client.put("/api/config", json={"ui": {"pulse_minutes": good}}).status_code == 200
+        assert client.get("/api/config").get_json()["ui"]["pulse_minutes"] == good

@@ -665,6 +665,74 @@
   }
   window.refreshPips = refreshPips;
 
+  // ---- quiet "new posts" pill ------------------------------------------
+  // Polls a READ-ONLY endpoint of the app's own database; it never asks the
+  // server to fetch feeds (that would defeat the pacing rules and get feeds
+  // blocked). Background tab = no poll; the pill only informs, it never
+  // touches the stream, so reading is never interrupted.
+  // baseline = what this page loaded, so "new" means ARRIVED SINCE BOOT.
+  // (A "globally newest ts" test instead stayed silent whenever another feed
+  // already held a later post, and re-raised the pill after a click.)
+  let pulseBaseTs = '', pulseBaseFeeds = null, pulseTimer = 0, pulseEveryMs = 60000;
+  function pulseClear() {
+    pulseBaseFeeds = null; pulseBaseTs = ''; $('pulse').hidden = true;
+  }
+  async function pulseTick() {
+    if (document.hidden || ptrBusy) return;
+    let p = null;
+    try { p = await (await fetch('/api/pulse')).json(); } catch (e) { return; }
+    if (typeof p.every_minutes === 'number') {
+      const ms = Math.round(p.every_minutes * 60000);
+      pulseEveryMs = (p.every_minutes >= 1 && ms <= 7200000) ? ms : 60000;
+      schedulePulse();
+    }
+    const feeds = p.feeds || [];
+    if (pulseBaseFeeds === null) {                    // (re)baseline quietly
+      pulseBaseFeeds = {}; pulseBaseTs = p.newest_ts || '';
+      for (const f of feeds) pulseBaseFeeds[f.feed_id] = f.unread;
+      $('pulse').hidden = true;
+      return;
+    }
+    let fresh = false, gainer = null, gainerDelta = 0;
+    for (const f of feeds) {
+      const d = f.unread - (pulseBaseFeeds[f.feed_id] || 0);
+      if (d > gainerDelta) { gainer = f; gainerDelta = d; }
+      if (d > 0) fresh = true;                        // a feed gained posts
+    }
+    if (!gainer && p.newest_ts && p.newest_ts > pulseBaseTs) fresh = true;
+    if (fresh) {
+      // name the feed that GAINED (largest gain), not the biggest pile or the
+      // newest ts: with several feeds in the library those are rarely yours
+      const top = gainer ? ` \u00b7 ${esc(gainer.title)}` : '';
+      const others = feeds.length - (gainer ? 1 : 0);
+      const more = others > 0 ? ` +${others} more` : '';
+      $('pulse-btn').textContent =
+        `\u2191 ${p.unread_total || 0} newer post` +
+        `${(p.unread_total || 0) === 1 ? '' : 's'} \u2014 tap to load${top}${more}`;
+      $('pulse').hidden = false;
+    } else {
+      $('pulse').hidden = true;
+    }
+  }
+  function schedulePulse() {
+    clearTimeout(pulseTimer);
+    if (pulseEveryMs > 0) {
+      pulseTimer = setTimeout(schedulePulse, pulseEveryMs);
+      pulseTick();
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(pulseTimer);
+    else { pulseTick(); schedulePulse(); }
+  });
+  $('pulse-btn').addEventListener('click', () => {
+    $('pulse').hidden = true;
+    restart(true);          // stream restarts at newest; no feed fetching
+    refreshPips();
+    pulseClear();           // else the next tick re-raises the pill forever
+  });
+  window.__pulseTick = pulseTick;      // test seam: run one check now
+
   // poll settle wait; tests shrink it via window.__SETTLE_MS (seam)
   const SETTLE_MS = typeof window.__SETTLE_MS === 'number'
                   ? window.__SETTLE_MS : 2500;
@@ -873,6 +941,11 @@
     renderChips(),
   ]).then(([s]) => {
     bootResume = s.resume_ts || '';
+    fetch('/api/pulse').then(r => r.json()).then(p => {
+      pulseBaseTs = p.newest_ts || '';
+      pulseBaseFeeds = {};
+      for (const f of (p.feeds || [])) pulseBaseFeeds[f.feed_id] = f.unread;
+    }).catch(() => {});                    // pill stays silent if it fails
     order = s.order === 'oldest' ? 'oldest' : 'newest';
     if (s.snapshot_width >= 360 && s.snapshot_width <= 1440)
       SHARE_W = Math.round(s.snapshot_width);

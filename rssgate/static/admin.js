@@ -299,6 +299,7 @@ async function loadConfig() {
   $('cfg-readdelay').value = (cfg.ui || {}).read_delay ?? 5;
   $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
   $('cfg-theme').value = (cfg.ui || {}).theme || 'auto';
+  $('cfg-pulse').value = (cfg.ui || {}).pulse_minutes ?? 1;
   const fc = cfg.fetch || {};
   $('cfg-ua').value = fc.user_agent || '';
   $('cfg-hostgap').value = fc.per_host_interval ?? 3;
@@ -538,6 +539,7 @@ const num = (el, lo, hi, dflt) => {
 };
 // colour scheme: save, then repaint this page immediately so the choice is
 // visible without a reload (the document attribute is normally server-rendered)
+autosave('cfg-pulse', el => ({ ui: { pulse_minutes: num(el, 0, 120, 1) } }));
 autosave('cfg-theme', el => ({ ui: { theme: el.value } }));
 $('cfg-theme').addEventListener('change', e =>
   document.documentElement.dataset.theme = e.target.value === 'auto' ? '' : e.target.value);

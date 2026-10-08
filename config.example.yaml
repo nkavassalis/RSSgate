@@ -77,6 +77,9 @@ ui:
   # 'auto' follows the browser's dark-mode setting; 'light'/'dark' force it.
   # Installed (PWA) windows can report their own theme, so pin it here if an
   # app window disagrees with your desktop. Also editable in the admin panel.
+  # Reader's quiet "newer posts" pill, in minutes (0 = never). The check is
+  # read-only: it never asks RSSgate to fetch feeds.
+  pulse_minutes: 1
   theme: auto
   items_per_page: 20
   # Share-snapshot card render width / desktop reading column width (admin-editable):

@@ -88,6 +88,8 @@ RSSgate Admin</title>
         Work queue)</label>
       <label>Mark as read after (seconds, 0-60, 0 = instantly)
         <input id="cfg-readdelay" type="number" min="0" max="60" step="1"></label>
+      <label>Check for new posts every (minutes, 0 = never)
+        <input id="cfg-pulse" type="number" min="0" max="120" step="1"></label>
       <label>Colour scheme
         <select id="cfg-theme">
           <option value="auto">auto (follow the browser)</option>
@@ -101,7 +103,9 @@ RSSgate Admin</title>
     take effect on the reader). Unread pills still count awaiting posts,
     so a feed can look busy while its stream stays quiet. Colour scheme follows
     your browser by default; some installed (PWA) windows report their own
-    theme rather than the system's, so you can pin light or dark here.</p>
+    theme rather than the system's, so you can pin light or dark here. The new-posts
+    check only reads this server's own database - it never asks RSSgate to fetch
+    feeds - and the reader never reloads itself: it offers a pill you can ignore.</p>
   </section>
 
   <section class="panel" id="sec-categories">

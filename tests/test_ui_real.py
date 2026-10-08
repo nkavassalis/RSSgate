@@ -150,15 +150,17 @@ RAIL_RECORDER = """
 _feed_seq = [0]
 
 
-def _mkfeed(prefix: str = "t") -> int:
-    """Fresh, uniquely-addressed feed in the session DB; returns its id."""
+def _mkfeed(prefix: str = "t", url: bool = False):
+    """Fresh, uniquely-addressed feed in the session DB; returns its id
+    (or (id, url) when url=True, for tests that must recognise their own
+    feed among the tier's shared data)."""
     from rssgate import db
     _feed_seq[0] += 1
+    link = f"https://{prefix}-{_feed_seq[0]}-{time.time_ns()}.test/feed"
     conn = db.connect(UI_DB)
-    fid = db.add_feed(conn, f"https://{prefix}-{_feed_seq[0]}-"
-                      f"{time.time_ns()}.test/feed", type_="feed")["id"]
+    fid = db.add_feed(conn, link, type_="feed")["id"]
     conn.commit(); conn.close()
-    return fid
+    return (fid, link) if url else fid
 
 
 def _seed_article(fid: int, guid: str, title: str = "probe",
@@ -1529,5 +1531,65 @@ def test_admin_theme_control_repaints_and_persists(ui_server, browser):
     pg.select_option("#cfg-theme", "auto")
     pg.wait_for_selector("label.cfg-ok", timeout=5000)
     assert pg.get_attribute("html", "data-theme") == ""
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_pill_informs_without_disturbing(ui_server, browser):
+    """The quiet pill tells you newer posts exist and does NOTHING else: it
+    must not move the scroll position, must not fetch feeds, and must stay
+    hidden until something readable (ready) is newer. Clicking it is what
+    reloads the stream. Counts/labels are GLOBAL (one server, many feeds in
+    this tier), so the test asserts its own feed is named, not a number."""
+    fid, link = _mkfeed("pulse", url=True)
+    _seed_article(fid, "old", title="already here", ts="2027-01-01T00:00:00Z")
+    token = link.split("//")[1].split(".")[0]      # unique feed hostname
+    pg = _new_page(browser, viewport={"width": 1280, "height": 700})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    assert pg.is_hidden("#pulse"), "pill appeared with nothing newer"
+    pg.evaluate("window.scrollTo(0, 400)")
+    pg.wait_for_timeout(150)
+    y_before = pg.evaluate("scrollY")
+    assert y_before > 0, "test needs the reader to be scrolled somewhere"
+    mine = pg.locator(".card", has_text="already here")
+    assert mine.count() == 1
+
+    # a readable post arrives AFTER the page booted
+    _seed_article(fid, "fresh", title="the new one", ts="2027-06-01T00:00:00Z")
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    txt = pg.locator("#pulse-btn").inner_text()
+    assert "newer post" in txt and "tap to load" in txt, txt
+    assert token in txt, f"pill does not name the feed that gained posts: {txt}"
+    assert pg.evaluate("scrollY") == y_before, "pill moved the reader's place"
+    assert mine.count() == 1, "pill inserted content by itself"
+    assert all("/api/poll" not in u for u in pg.evaluate(
+        "performance.getEntriesByType('resource').map(e => e.name)")), \
+        "the pill asked the server to fetch feeds"
+
+    pg.click("#pulse-btn")                      # the reload the user asked for
+    # the click's job is to load it; in an All-feeds stream another feed's
+    # later post may legally sit above it, so assert presence, not position
+    pg.wait_for_selector(".card:has-text('the new one')", timeout=5000)
+    assert pg.is_hidden("#pulse")
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_stays_quiet_for_unreadable_posts(ui_server, browser):
+    """A queued post has no card, so the pill must not advertise it."""
+    fid = _mkfeed("pulseq")
+    aid = _seed_article(fid, "base", title="base post", ts="2027-01-01T00:00:00Z")
+    from rssgate import db as _db
+    _c = _db.connect(UI_DB); _db.mark_articles_read(_c, [aid]); _c.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 700})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    _seed_article(fid, "queued", title="queued later", status="pending",
+                  ts="2027-09-01T00:00:00Z")
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_timeout(400)
+    assert pg.is_hidden("#pulse"), "pill advertised a post with no card"
     assert pg.errors == []
     pg.close()
