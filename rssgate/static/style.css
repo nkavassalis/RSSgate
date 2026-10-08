@@ -387,9 +387,13 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
 .pip { font-size:12px; font-weight:600; text-decoration:none;
   padding:3px 10px; border-radius:999px; margin-left:8px;
   align-self:center; }
-.pip-ok  { background:color-mix(in srgb, #2ecc71 18%, transparent);
-  color:var(--ok); }
-.pip-err { background:color-mix(in srgb, #e74c3c 18%, transparent);
+/* Pipeline tones, deliberately NOT the reading tones: queued work is not
+   something to read, so it is neutral grey. --ok (green) is reserved for
+   success; held-by-outage is --warn; failures --danger. (The queue pip used
+   to wear success green, which read as "unread posts".) */
+.pip-neutral { background:color-mix(in srgb, var(--muted) 16%, transparent);
+  color:var(--muted); }
+.pip-err { background:color-mix(in srgb, var(--danger) 18%, transparent);
   color:var(--danger); }
 
 /* admin: grouped nav, danger zone, feed filter */

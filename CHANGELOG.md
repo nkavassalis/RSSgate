@@ -35,6 +35,29 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.78.0] — 2026-10-08
+
+### Changed
+- Newest-first views now sort unread first **inside a single feed** too, not
+  only in the global New view. A feed's unread pip links to that feed, and
+  with plain chronology a late arrival hid below already-read cards: the pip
+  said "1 unread" while the top of the stream showed nothing unread (the real
+  case: published 16:08Z, fetched 17:03Z, ninth card down). `since` mode and
+  oldest-first stay chronological, as explicit requests for time order.
+- The queued pip no longer wears success green. Pending/processing work has no
+  card to read, so it now renders neutral grey (`--muted`), still amber while
+  the AI backend is held and red for failures; `--ok` is reserved for success.
+  The failures pip background now follows `--danger` instead of a fixed hex.
+
+### Tests
+- `test_backfilled_unread_surfaces_above_read_posts` asserts the unread card's
+  y is above the read card's in a feed view (canary: 247 vs 73 = red).
+- `test_queued_pip_does_not_wear_the_unread_green` compares computed colour
+  against `--muted`/`--ok` (canary: rgb(39,174,96) = red).
+- `test_main_feed_requests_priority_mode` rewritten: it previously asserted
+  the old rule, and its single-feed branch was vacuous (a `... if count else
+  None` expression that no-op'd when the row was absent).
+
 ## [0.77.3] — 2026-10-08
 
 ### Fixed

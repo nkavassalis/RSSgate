@@ -182,7 +182,10 @@
     loading = true;
     setBusy(true);
     const params = new URLSearchParams({ limit: PAGE, order });
-    const PRIO = order === 'newest' && !store.feed && store.mode === 'new';
+    // unread-first in EVERY newest-first view: a feed's pip links to that
+    // feed, and chronologically a late arrival (published earlier, fetched
+    // later) hides under already-read cards while the pip says "1 unread"
+    const PRIO = order === 'newest' && store.mode === 'new';
     if (PRIO) params.set('prio', '1');
     if (cursor) {
       params.set('before_ts', cursor.ts); params.set('before_id', cursor.id);

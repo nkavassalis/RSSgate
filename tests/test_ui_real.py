@@ -567,17 +567,27 @@ def test_snapshot_falls_back_to_download(ui_server, browser):
 
 
 def test_main_feed_requests_priority_mode(ui_server, browser):
-    """All-feeds New view must ask the server for unread-first ordering."""
+    """Newest-first views ask the server for unread-first ordering - globally
+    AND inside a single feed. A feed's pip links to that feed, and with plain
+    chronological order a late arrival (published earlier, fetched later) sat
+    under already-read cards while the pip said 1 unread: the reader looked
+    empty. Scoped views are where a pip leads the reader, so they use prio
+    too. Since-mode and oldest order stay chronological (they are explicit
+    requests for a time window / chronology)."""
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     urls = []
     pg.on("request", lambda r: urls.append(r.url)
           if "/api/articles" in r.url else None)
     pg.goto(ui_server, wait_until="networkidle")
     assert any("prio=1" in u for u in urls), urls
-    # scoped views (single feed) must NOT use priority mode
-    pg.click("#feed-filter li[data-feed='1']") if pg.locator("#feed-filter li[data-feed='1']").count() else None
-    pg.wait_for_timeout(800)
-    assert all("prio=1" not in u for u in urls[-1:]), urls[-1:]
+    fid = _mkfeed("priofeed")
+    _seed_article(fid, "p1", title="prio in a feed")
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    pg.wait_for_function(
+        "() => [...document.querySelectorAll('#stream .card')].some"
+        "(c => c.textContent.includes('prio in a feed'))", timeout=6000)
+    assert any(f"prio=1" in u and f"feed_id={fid}" in u for u in urls), urls[-3:]
     assert pg.errors == []
     pg.close()
 
@@ -866,8 +876,10 @@ def test_share_without_image_or_link_still_renders(share_page):
 
 
 def test_status_pips_visibility_and_links(ui_server, browser):
-    """Zero counts -> both pips display:none. Seed pending+error ->
-    counts render, green links to admin queue, red to failures."""
+    """Zero counts -> both pips display:none. Seed pending+error -> counts
+    render, the queue pip links to the admin queue and the failures pip to the
+    failures panel. Queued work reads NEUTRAL, not success green: a pending
+    post has no card, so it must not borrow the reading palette."""
     from rssgate import db
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.goto(ui_server, wait_until="networkidle")
@@ -1822,4 +1834,80 @@ def test_pulse_poll_rate_is_the_cadence_not_one_per_round_trip(ui_server, browse
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_timeout(200)
     assert len(hits) >= 2
+    pg.close()
+
+
+def test_backfilled_unread_surfaces_above_read_posts(ui_server, browser):
+    """The live symptom: a feed's pip said 1 unread while the top of that
+    feed's stream showed nothing but read cards, because the post arrived late
+    with an older publish time (published 16:08, fetched 17:03, i.e. newer to
+    us, older in the world). Unread-first in a scoped view must lift that card
+    above the already-read newer ones."""
+    fid = _mkfeed("backfill")
+    _seed_loaded_article(fid, "b-new", title="newer already read post",
+                         ts="2027-08-05T00:00:00Z")
+    _seed_article(fid, "b-old", title="backfilled unread post",
+                  ts="2027-08-01T00:00:00Z")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    pg.wait_for_function(
+        "() => [...document.querySelectorAll('#stream .card')].length >= 2",
+        timeout=6000)
+    unread = pg.locator(".card", has_text="backfilled unread post")
+    read = pg.locator(".card", has_text="newer already read post")
+    assert unread.count() == 1 and read.count() == 1
+    uy, ry = unread.bounding_box()["y"], read.bounding_box()["y"]
+    assert uy < ry, (f"backfilled unread card at y={uy} sits below the read "
+                     f"post at y={ry}: unread-first is not applied to feeds")
+    assert abs(unread.bounding_box()["x"] - read.bounding_box()["x"]) < 1.0
+    assert pg.errors == []
+    pg.close()
+
+
+def test_queued_pip_does_not_wear_the_unread_green(ui_server, browser):
+    """Regression: the queue pip carried .pip-ok (success green), so a backlog
+    of posts waiting to be digested read as unread posts. It must render in
+    --muted, and still turn --warn when the AI backend is unreachable."""
+    from rssgate import db
+
+    def to_rgb(v):
+        v = v.strip().lstrip("#")
+        return "rgb(%d, %d, %d)" % tuple(int(v[i:i + 2], 16) for i in (0, 2, 4))
+
+    conn = db.connect(UI_DB)
+    fid = db.add_feed(conn, "https://piptone.test/feed", type_="feed")["id"]
+    aid = db.upsert_article(conn, fid, "t1", "https://piptone.test/t1",
+                           "tone probe", "2027-05-01T00:00:00Z")
+    conn.execute("UPDATE articles SET status='pending' WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    down = {"st": False}
+
+    def handler(req):
+        req.fulfill(json={"pending": 1, "processing": 0, "errors": 0,
+                          "ready": 9, "every_minutes": 1,
+                          "llm_down_since": "2026-10-08T00:00:00Z"
+                          if down["st"] else ""})
+    pg.route("**/api/status", handler)
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_function("document.getElementById('pip-queue')"
+                         ".hidden === false", timeout=6000)
+    cs = pg.evaluate("""() => {
+        const r = getComputedStyle(document.documentElement);
+        const q = getComputedStyle(document.getElementById('pip-queue'));
+        return {muted: r.getPropertyValue('--muted'), ok: r.getPropertyValue('--ok'),
+                col: q.color}; }""")
+    assert cs["col"] == to_rgb(cs["muted"]), (
+        f"queued pip is {cs['col']}, not muted {cs['muted']}: queued work must "
+        "not wear the success/reading colour")
+    assert cs["col"] != to_rgb(cs["ok"]), "queued pip is still success green"
+    down["st"] = True                        # outage: the SAME pip goes amber
+    pg.reload(wait_until="networkidle")
+    pg.wait_for_function("document.getElementById('pip-queue')"
+                         ".classList.contains('pip-warn')", timeout=6000)
+    assert pg.evaluate("getComputedStyle(document.getElementById('pip-queue'))"
+                       ".color") != to_rgb(cs["muted"]), "held pip still neutral"
+    assert "waiting" in pg.inner_text("#pip-queue")
+    assert pg.errors == []
     pg.close()

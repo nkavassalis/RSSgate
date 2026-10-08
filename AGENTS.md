@@ -118,6 +118,16 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
   `images_mode` filters at read time (no re-digest).
 - **Read state:** dwell engine marks the topmost >=55%-visible unread card
   after `ui.read_delay` s -> beacon -> per-feed cursors (+ global in New/all).
+  Unread-first (`prio=1`) applies to EVERY newest-first New view, INCLUDING a
+  single feed (`store.feed`) and category filters - deliberately: a feed's pip
+  links to that feed, and chronologically a late arrival (published 16:08,
+  fetched 17:03) sat under eight read cards while the pip said "1 unread", so
+  the reader looked broken. `since` mode and oldest order stay chronological.
+- **Status pip tones are pipeline, not reading:** queued = `--muted`
+  (`.pip-neutral`), held by an AI outage = `--warn`, failures = `--danger`.
+  `--ok` green means success ONLY - never for pending work, which has no card
+  to read (the queue pip used to wear `.pip-ok`, and a test docstring called
+  that the spec; it is now `test_queued_pip_does_not_wear_the_unread_green`).
 - **Content source** (`feeds.content_source`): `auto` = article page, with
   fallback to the feed's own text (`fetcher.entry_excerpt`, stored at ingest
   as `articles.feed_text`) when the page is a challenge or extracts to <120
