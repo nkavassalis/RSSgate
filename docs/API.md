@@ -18,6 +18,7 @@ break the panel).
 | `GET /api/qr.png?u=<url>` | Local QR PNG for http(s) URLs (<=500 chars; 400 otherwise). Used by share cards. |
 | `GET /image/<name>` | Cached image. Only hash names `[0-9a-f]{24}.(jpg\|png\|webp\|gif)` resolve. A missing hero is re-fetched from the article's `image_url` and hash-verified (name = sha256(url)[:24]) before serving. Immutable cache headers. |
 | `GET /api/status` | `{version, uptime_min, feeds, feeds_enabled, pending, processing, errors, db_mb, cache_mb, llm_down_since, llm_down_reason, llm_next_try, polling}`. `llm_down_since` is non-null while the AI backend is unreachable and the queue is held. Powers the admin Status panel and the viewer's queue/failure pips. |
+| `GET /api/pulse` | `{newest_ts, ready_total, unread_total, unread_since_total, since_ts, every_minutes, feeds:[{feed_id,title,unread,unread_since,ts}]}`. READ-ONLY "anything waiting?" for the reader's pill: it never fetches feeds (pacing rule). `unread_total` mirrors the sidebar pills exactly (ready+error past the feed cursor, never pending/processing). `unread_since_total` is the pill's own number: those same posts restricted to ones newer than the reader's last-read marker (`state.resume_ts`, or the feed cursor when later); `since_ts` echoes the marker used, so the pill can say "since your last read" only when that is true. `feeds` is sorted by `unread_since` desc so `feeds[0]` is the feed with most to see. |
 
 ## Feeds
 

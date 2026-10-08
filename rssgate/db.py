@@ -889,7 +889,7 @@ def newest_ts(conn) -> str | None:
     return r["ts"] if r else None
 
 
-def pulse(conn) -> dict:
+def pulse(conn, since_ts: str = "") -> dict:
     """Cheap 'anything new?' facts for the reader's quiet pill. READ-ONLY:
     it never fetches feeds - new posts reach the DB via the scheduler's own
     paced polling, and a background refresh from the browser would turn a
@@ -901,24 +901,35 @@ def pulse(conn) -> dict:
     Ready AND failed posts count, because both render a card (a failed post
     shows its error line and a retry); pending/processing do not, exactly as
     in feed_unread. A pill printing '0 newer posts' once meant its 'new?'
-    test and its printed number used different definitions."""
+    test and its printed number used different definitions.
+
+    `since_ts` is the reader's last-read marker (global `resume_ts`): each
+    feed also reports `unread_since`, the readable-unread posts newer than
+    max(that marker, the feed's own cursor). The pill announces THAT, not
+    "what grew since this page loaded" - a reader who reloads a lot would
+    otherwise never hear from it, since their reload baseline already
+    contains the batch they reloaded into."""
+    marker = since_ts or ""
     rows = conn.execute(
         "SELECT f.id fid,"
         " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url) title,"
-        " COUNT(*) n, MAX(" + _TS_EXPR + ") ts"
+        " COUNT(*) n, MAX(" + _TS_EXPR + ") ts,"
+        " SUM(CASE WHEN " + _TS_EXPR + " > MAX(COALESCE(f.last_read_ts, ''), ?)"
+        "     THEN 1 ELSE 0 END) n_since"
         " FROM articles a JOIN feeds f ON f.id=a.feed_id"
         " WHERE a.status IN ('ready','error') AND a.read_at IS NULL"
         " AND " + _TS_EXPR + " > COALESCE(f.last_read_ts, '')"
-        " GROUP BY f.id ORDER BY n DESC")
+        " GROUP BY f.id ORDER BY n_since DESC, n DESC", (marker,))
     by_feed = [{"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
-                "ts": x["ts"] or ""} for x in rows]
+                "unread_since": x["n_since"], "ts": x["ts"] or ""} for x in rows]
     newest = conn.execute(
         "SELECT MAX(" + _TS_EXPR + ") ts FROM articles"
         " WHERE status IN ('ready','error')").fetchone()["ts"] or ""
     return {"newest_ts": newest, "ready_total": conn.execute(
         "SELECT COUNT(*) c FROM articles WHERE status='ready'").fetchone()["c"],
         "unread_total": sum(f["unread"] for f in by_feed),
-        "feeds": by_feed}
+        "unread_since_total": sum(f["unread_since"] for f in by_feed),
+        "since_ts": marker, "feeds": by_feed}
 
 
 def status_counts(conn) -> dict:

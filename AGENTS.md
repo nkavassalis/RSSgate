@@ -226,24 +226,34 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   via `retryPulse`; `bootFailed` suppresses the initial load and PTR. Never
   leave the reader as a bare logo + empty sidebar.
 - New-posts pill (viewer.js `pulseTick`): reads `GET /api/pulse` (read-only,
-  never `/api/poll`) on `ui.pulse_minutes`; baseline = per-feed unread at boot,
-  so "new" means arrived-since-boot, not globally-newest. It NEVER scrolls or
-  inserts; the click does `restart(true)` + `refreshPips()` + `pulseClear()`.
-  The element lives INSIDE `#stream`
-  and is `position:absolute`: a sibling of the stream is a flex item of
-  `.layout` and steals column width (291px observed), and in flow it pushes
-  the reader down. Query its node lazily (`pulseBox()`) - it does not exist
-  at script-eval time. Tests assert card geometry before/after it appears.
+  never `/api/poll`) on `ui.pulse_minutes` (0 = off). The SERVER owns the
+  number: `unread_since_total` = readable-unread posts newer than the reader's
+  last-read marker (`resume_ts`, or the feed's own cursor when later); the
+  client only compares it to a click watermark (`pulseAcked`) - show when
+  `n > pulseAcked`, click sets `pulseAcked = pulseShown` and restarts the
+  stream. Do NOT reintroduce a page-load baseline: the pill then swallows the
+  batch you reloaded into and a reader who reloads often never hears from it.
+  `unread_total` (all pip-equal unread) stays in the response for parity;
+  the pill must never print it. It NEVER scrolls or inserts.
+  The node lives INSIDE `#stream` (a sibling of the stream is a flex item of
+  `.layout` and steals column width - 291px observed) and is
+  `position:absolute` (in flow it pushes the reader down). Because
+  `restart()` does `stream.innerHTML=''`, the node is DETACHED by any Refresh
+  or feed switch: `pulseEl`/`pulseBtn` are captured at parse time and
+  `pulseBox()` re-prepends on demand, or the pill goes permanently mute for the
+  session (`test_pulse_pill_survives_a_stream_restart`).
   Scheduling has ONE owner: `pulseArm()` ticks, then re-arms with
   `setTimeout(pulseArm, …)` (a NAMED callback, so the suite can shorten just
   that timer); `pulseTick` must never arm anything - when it called
   `schedulePulse` and that called the tick back, the interval never applied
   and `/api/pulse` was requested once per round trip (1,282 hits in 5s), while
-  a cold page armed nothing at all and never polled. `ui.pulse_minutes: 0`
-  means off. A test seam that drives a scheduled function directly is NOT
-  coverage of the schedule: also assert the request rate and that it can fire
-  with no manual tick.
-  Browser tests must not assert global counts - the tier shares one DB.
+  a cold page armed nothing at all and never polled. A test seam that drives a
+  scheduled function directly is NOT coverage of the schedule: also assert the
+  request rate and that it can fire with no manual tick.
+  Browser tests that assert the pill's visibility must stub `/api/pulse` (the
+  tier shares one DB, so the real number is other tests' unread posts) and use
+  `wait_for_function` for the hidden state - `wait_for_selector("[hidden]")`
+  waits for *visible* and can never resolve.
 - Theme: `ui.theme` (auto|light|dark) is admin-editable (`cfg-theme`) and
   server-rendered into `data-theme`. Anything that differs by theme MUST be a
   CSS variable (the `--ok/--warn/--danger/--accent/--link` set) - a

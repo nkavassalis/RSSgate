@@ -312,3 +312,27 @@ def test_pulse_counts_equal_the_sidebar_pills(client):
     pl = client.get("/api/pulse").get_json()
     assert pill == 3 and pl["unread_total"] == 3            # ready+error, no pending
     assert sum(f["unread"] for f in pl["feeds"]) == pill
+
+
+def test_pulse_counts_since_the_read_marker(client):
+    """The pill's trigger is 'unread newer than the last thing you read', not
+    'grew since this page loaded': a reload must still announce the batch, or
+    a reader who reloads a lot never hears from it. `resume_ts` is the marker;
+    a feed's own cursor can be later and then wins."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://marker.test/feed")["id"]
+    for i in range(4):
+        a = db.upsert_article(conn, fid, f"m{i}", f"https://m.test/{i}",
+                              f"M{i}", f"2026-10-0{i + 1}T00:00:00Z")
+        db.set_article(conn, a, status="ready", summary="s")
+    p = client.get("/api/pulse").get_json()
+    assert p["since_ts"] == "" and p["unread_total"] == 4
+    assert p["unread_since_total"] == 4                     # no marker: all
+    db.set_state(conn, "resume_ts", "2026-10-02T12:00:00Z")
+    p = client.get("/api/pulse").get_json()
+    assert p["unread_total"] == 4, "the pip definition must not change"
+    assert p["unread_since_total"] == 2                     # 10-03, 10-04
+    assert p["feeds"][0]["unread_since"] == 2
+    db.update_feed(conn, fid, last_read_ts="2026-10-03T00:00:00Z")
+    assert client.get("/api/pulse").get_json()["unread_since_total"] == 1

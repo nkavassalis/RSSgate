@@ -211,7 +211,7 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         """Read-only 'anything new?' for the reader's quiet pill, plus how
         often the reader may ask. Never fetches feeds."""
         cfg = load_config(config_path)
-        out = db.pulse(conn)
+        out = db.pulse(conn, since_ts=db.get_state(conn, "resume_ts", ""))
         out["every_minutes"] = cfg["ui"].get("pulse_minutes", 1)
         return jsonify(out)
 

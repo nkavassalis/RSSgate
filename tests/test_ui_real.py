@@ -1548,18 +1548,28 @@ def test_admin_theme_control_repaints_and_persists(ui_server, browser):
 
 
 def test_pulse_pill_informs_without_disturbing(ui_server, browser):
-    """The quiet pill tells you newer posts exist and does NOTHING else: it
-    must not move the scroll position, must not fetch feeds, and must stay
-    hidden until something readable (ready) is newer. Clicking it is what
-    reloads the stream. Counts/labels are GLOBAL (one server, many feeds in
-    this tier), so the test asserts its own feed is named, not a number."""
+    """The pill says unread posts are waiting and does NOTHING else: no scroll
+    move, no feed fetching, no inserted content. A click loads them and counts
+    as an acknowledgement, so it stops repeating itself until the number grows
+    again. The trigger is the server's unread-since-last-read number, so the
+    pill may (honestly) speak at boot; /api/pulse is stubbed because this tier
+    shares one DB and the pill's number is global."""
     fid, link = _mkfeed("pulse", url=True)
     _seed_article(fid, "old", title="already here", ts="2027-01-01T00:00:00Z")
-    token = link.split("//")[1].split(".")[0]      # unique feed hostname
+    token = link.split("//")[1].split(".")[0]        # unique feed hostname
+    stub = {"newest_ts": "2027-01-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 1, "unread_since_total": 1,
+            "since_ts": "2026-12-31T00:00:00Z", "every_minutes": 1,
+            "feeds": [{"feed_id": fid, "title": token, "unread": 1,
+                       "unread_since": 1, "ts": "2027-01-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 700})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
-    assert pg.is_hidden("#pulse"), "pill appeared with nothing newer"
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    txt = pg.locator("#pulse-btn").inner_text()
+    assert "newer since your last read" in txt and "tap to jump" in txt, txt
+    assert token in txt, f"pill does not name the feed with most to see: {txt}"
     pg.evaluate("window.scrollTo(0, 400)")
     pg.wait_for_timeout(150)
     y_before = pg.evaluate("scrollY")
@@ -1567,39 +1577,55 @@ def test_pulse_pill_informs_without_disturbing(ui_server, browser):
     mine = pg.locator(".card", has_text="already here")
     assert mine.count() == 1
 
-    # a readable post arrives AFTER the page booted
+    # a second readable post becomes waiting while the page sits open
     _seed_article(fid, "fresh", title="the new one", ts="2027-06-01T00:00:00Z")
+    stub["unread_total"] = stub["feeds"][0]["unread"] = 2
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 2
     pg.evaluate("window.__pulseTick()")
-    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     txt = pg.locator("#pulse-btn").inner_text()
-    assert "newer post" in txt and "tap to load" in txt, txt
-    assert token in txt, f"pill does not name the feed that gained posts: {txt}"
+    assert "2 newer since your last read" in txt, txt
     assert pg.evaluate("scrollY") == y_before, "pill moved the reader's place"
     assert mine.count() == 1, "pill inserted content by itself"
     assert all("/api/poll" not in u for u in pg.evaluate(
         "performance.getEntriesByType('resource').map(e => e.name)")), \
         "the pill asked the server to fetch feeds"
 
-    pg.click("#pulse-btn")                      # the reload the user asked for
-    # the click's job is to load it; in an All-feeds stream another feed's
-    # later post may legally sit above it, so assert presence, not position
+    pg.click("#pulse-btn")                      # the load the user asked for
     pg.wait_for_selector(".card:has-text('the new one')", timeout=5000)
-    assert pg.is_hidden("#pulse")
+    assert pg.is_hidden("#pulse"), "click did not acknowledge the pill"
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_timeout(300)
+    assert pg.is_hidden("#pulse"), "the pill repeated itself after a tap"
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 3
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    assert "3 newer" in pg.locator("#pulse-btn").inner_text()
     assert pg.errors == []
     pg.close()
 
 
 def test_pulse_stays_quiet_for_unreadable_posts(ui_server, browser):
-    """A queued post has no card, so the pill must not advertise it."""
+    """A queued post has no card, so it must never be advertised: the SERVER
+    leaves it out of unread_since (asserted against the real endpoint for my own
+    feed), and the pill says nothing when the number it is handed is 0 (asserted
+    with a stub, since this tier shares one DB and other tests' unread posts
+    would honestly raise the pill)."""
     fid = _mkfeed("pulseq")
     aid = _seed_article(fid, "base", title="base post", ts="2027-01-01T00:00:00Z")
     from rssgate import db as _db
     _c = _db.connect(UI_DB); _db.mark_articles_read(_c, [aid]); _c.close()
-    pg = _new_page(browser, viewport={"width": 1280, "height": 700})
-    pg.goto(ui_server, wait_until="networkidle")
-    pg.wait_for_selector(".card")
     _seed_article(fid, "queued", title="queued later", status="pending",
                   ts="2027-09-01T00:00:00Z")
+    stub = {"newest_ts": "2027-01-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 0, "unread_since_total": 0,
+            "since_ts": "2027-01-01T00:00:00Z", "every_minutes": 1, "feeds": []}
+    pg = _new_page(browser, viewport={"width": 1280, "height": 700})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    mine = pg.evaluate("""(f) => fetch('/api/pulse').then(r => r.json()).then(p =>
+        (p.feeds.find(x => x.feed_id === f) || {unread_since: 0}).unread_since)""", fid)
+    assert mine == 0, "the server counted a post with no card as waiting"
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_timeout(400)
     assert pg.is_hidden("#pulse"), "pill advertised a post with no card"
@@ -1641,41 +1667,50 @@ def test_pulse_counts_equal_the_sidebar_pills_in_ui(ui_server, browser):
         fetch('/api/pulse').then(r => r.json())])
         .then(([f, p]) => [f.reduce((s, x) => s + (x.unread || 0), 0), p])""")
     assert pulse["unread_total"] == pill, (pill, pulse["unread_total"])
+    assert pulse["unread_since_total"] <= pulse["unread_total"], (
+        "posts newer than the read marker cannot outnumber all unread posts")
     assert pulse["newest_ts"], "no ready post to compare against"
     assert pg.errors == []
     pg.close()
 
 
 def test_pulse_pill_never_announces_zero(ui_server, browser):
-    """"0 newer posts" happened because the pill's 'new?' test and the number
-    it printed used different definitions. Stub the endpoint to reproduce the
-    awkward states deterministically: the pill must stay silent, and when it
-    does speak it names the feed that gained, not the biggest pile."""
+    """Two bugs in one shape: the pill once printed "0 newer posts", and it
+    announced posts that were merely unread rather than waiting. Stub the
+    endpoint to reproduce both: 44 unread with nothing newer than the marker
+    must be silent, and when it does speak it names the feed with most to see,
+    not the biggest backlog."""
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    feeds0 = [
-        {"feed_id": 1, "title": "Big Old Feed", "unread": 40, "ts": "2020-01-01T00:00:00Z"},
-        {"feed_id": 2, "title": "Feed That Gained", "unread": 4, "ts": "2020-01-01T00:00:00Z"}]
+    big = {"feed_id": 1, "title": "Big Old Feed", "unread": 40, "unread_since": 0,
+           "ts": "2020-01-01T00:00:00Z"}
+    gained = {"feed_id": 2, "title": "Feed That Gained", "unread": 4,
+              "unread_since": 0, "ts": "2020-01-01T00:00:00Z"}
     fake = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 1,
-            "unread_total": 44, "feeds": feeds0, "every_minutes": 0}
+            "unread_total": 44, "unread_since_total": 0,
+            "since_ts": "2020-01-01T00:00:00Z", "every_minutes": 0,
+            "feeds": [big, gained]}
     pg.route("**/api/pulse", lambda r: r.fulfill(json=fake))   # before boot
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
-    fake.update(newest_ts="2999-01-01T00:00:00Z", unread_total=0, feeds=[])
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_timeout(300)
-    assert pg.is_hidden("#pulse"), "pill announced 0 newer posts"
+    assert pg.is_hidden("#pulse"), "pill announced 0 waiting posts"
 
-    # a feed that gained readable posts must speak, and name that feed
-    fake.update(newest_ts="2020-01-01T00:00:00Z", unread_total=44, feeds=feeds0)
-    pg.evaluate("window.__pulseTick()")             # re-baseline: {1:40, 2:4}
-    fake["feeds"] = [feeds0[0], dict(feeds0[1], unread=6)]
-    fake["unread_total"] = 6
+    # posts newer than the marker: speak, name the biggest waiting feed, and
+    # count the others only among feeds that ARE waiting
+    gained["unread_since"] = big["unread_since"] = 0
+    gained["unread"] = 10
+    other = {"feed_id": 3, "title": "Other Waiter", "unread": 1,
+             "unread_since": 1, "ts": "2020-01-03T00:00:00Z"}
+    gained["unread_since"] = 6
+    fake.update(feeds=[gained, other, big], unread_since_total=7)
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     txt = pg.locator("#pulse-btn").inner_text()
-    assert "6 newer posts" in txt and "Feed That Gained" in txt, txt
-    assert "Big Old Feed" not in txt, f"named the biggest pile, not the gainer: {txt}"
-    assert "+1 more" in txt, txt
+    assert "7 newer since your last read" in txt, txt
+    assert "Feed That Gained" in txt, txt
+    assert "+1 more" in txt, f"waiting feeds other than the first not counted: {txt}"
+    assert "Big Old Feed" not in txt, f"named a backlog with nothing waiting: {txt}"
     assert pg.errors == []
     pg.close()
 
@@ -1690,23 +1725,20 @@ def test_pulse_pill_does_not_widen_the_stream(ui_server, browser):
                   summary="body text for width comparison " * 12)
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 9,
-            "unread_total": 3, "every_minutes": 0,
+            "unread_total": 3, "unread_since_total": 0,
+            "since_ts": "2020-01-01T00:00:00Z", "every_minutes": 0,
             "feeds": [{"feed_id": 99, "title": "Stub", "unread": 3,
-                       "ts": "2020-01-01T00:00:00Z"}]}
+                       "unread_since": 0, "ts": "2020-01-01T00:00:00Z"}]}
     pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     card = pg.locator(".card", has_text="geometry probe")
     assert card.count() == 1
-    # the stub IS the boot baseline (unread 3): click once to re-baseline,
-    # exactly as the app does, then a second stub makes the same feed 'gain'
-    pg.evaluate("window.__pulseClear()")      # as if the user had clicked
-    pg.evaluate("window.__pulseTick()")       # tick 1 re-baselines (silent)
+    pg.wait_for_function("document.getElementById('pulse').hidden === true")
     b0 = card.bounding_box()
     s0 = pg.locator("#stream").bounding_box()
-    stub["feeds"][0]["unread"] = 4          # same feed, one more readable post
-    stub["unread_total"] = 4
-    stub["newest_ts"] = "2020-01-02T00:00:00Z"
+    stub["feeds"][0]["unread_since"] = 3       # now 3 posts are waiting
+    stub["unread_since_total"] = 3
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     b1 = card.bounding_box()
@@ -1736,23 +1768,23 @@ def test_pulse_pill_overlays_without_pushing_text(ui_server, browser):
     _seed_article(fid, "o1", title="overlay probe",
                   summary="filler body text for vertical geometry " * 20)
     stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 9,
-            "unread_total": 3, "every_minutes": 0,
+            "unread_total": 3, "unread_since_total": 0,
+            "since_ts": "2020-01-01T00:00:00Z", "every_minutes": 0,
             "feeds": [{"feed_id": 99, "title": "Stub", "unread": 3,
-                       "ts": "2020-01-01T00:00:00Z"}]}
+                       "unread_since": 0, "ts": "2020-01-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
+    pg.wait_for_function("document.getElementById('pulse').hidden === true")
     card = pg.locator(".card", has_text="overlay probe")
     pg.evaluate("window.scrollTo(0, 300)")
     pg.wait_for_timeout(150)
     y0 = pg.evaluate("scrollY")
     c0 = card.bounding_box()
-    pg.evaluate("window.__pulseClear()")
-    pg.evaluate("window.__pulseTick()")                 # re-baseline (silent)
-    stub["feeds"][0]["unread"] = 4
-    stub["unread_total"] = 4
-    stub["newest_ts"] = "2020-01-02T00:00:00Z"
+    pg.evaluate("window.__pulseTick()")                 # nothing waiting yet
+    stub["feeds"][0]["unread_since"] = 4
+    stub["unread_since_total"] = 4
     pg.evaluate("window.__pulseTick()")
     pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
     c1 = card.bounding_box()
@@ -1792,7 +1824,8 @@ def test_pulse_pill_arms_itself_without_any_manual_tick(ui_server, browser):
     it went untested - and a normally-loaded page never armed it at all (no
     pill, ever, until you hid the tab). Here nothing is ticked by hand."""
     stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 0,
-            "unread_total": 0, "every_minutes": 1, "feeds": []}
+            "unread_total": 0, "unread_since_total": 0, "since_ts": "",
+            "every_minutes": 1, "feeds": []}
     hits = []
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     _shorten_pulse_timer(pg, 300)
@@ -1804,9 +1837,10 @@ def test_pulse_pill_arms_itself_without_any_manual_tick(ui_server, browser):
     pg.wait_for_selector(".card")
     assert len(hits) >= 1, "the page never asked /api/pulse at boot"
     n0 = len(hits)
-    stub.update(unread_total=3, newest_ts="2020-01-02T00:00:00Z",
+    stub.update(unread_total=3, unread_since_total=3,
+                newest_ts="2020-01-02T00:00:00Z", since_ts="2020-01-01T00:00:00Z",
                 feeds=[{"feed_id": 77, "title": "Gained Feed", "unread": 3,
-                        "ts": "2020-01-02T00:00:00Z"}])
+                        "unread_since": 3, "ts": "2020-01-02T00:00:00Z"}])
     pg.wait_for_selector("#pulse:not([hidden])", timeout=6000)
     assert len(hits) > n0, "the pill appeared without asking again?!"
     assert "Gained Feed" in pg.locator("#pulse-btn").inner_text()
@@ -1821,7 +1855,8 @@ def test_pulse_poll_rate_is_the_cadence_not_one_per_round_trip(ui_server, browse
     forever (self-DoS, battery burn). At every_minutes=1, a few seconds of a
     loaded page must cost ONE request."""
     stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 0,
-            "unread_total": 0, "every_minutes": 1, "feeds": []}
+            "unread_total": 0, "unread_since_total": 0, "since_ts": "",
+            "every_minutes": 1, "feeds": []}
     hits = []
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     pg.route("**/api/pulse", _pulse_route(stub, hits))
@@ -1909,5 +1944,39 @@ def test_queued_pip_does_not_wear_the_unread_green(ui_server, browser):
     assert pg.evaluate("getComputedStyle(document.getElementById('pip-queue'))"
                        ".color") != to_rgb(cs["muted"]), "held pip still neutral"
     assert "waiting" in pg.inner_text("#pip-queue")
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_pill_survives_a_stream_restart(ui_server, browser):
+    """REGRESSION: the pill node lives inside #stream, and restart() does
+    stream.innerHTML='' - which detached it, so after the first Refresh, feed
+    switch or pill click the pill could never appear again for the rest of the
+    session (a null box made every later tick a silent no-op). The node is now
+    captured at parse time and re-attached when next needed."""
+    fid, link = _mkfeed("pulsesurv", url=True)
+    _seed_article(fid, "s1", title="survivor post", ts="2027-02-01T00:00:00Z")
+    token = link.split("//")[1].split(".")[0]
+    stub = {"newest_ts": "2027-02-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 1, "unread_since_total": 1,
+            "since_ts": "2027-01-01T00:00:00Z", "every_minutes": 1,
+            "feeds": [{"feed_id": fid, "title": token, "unread": 1,
+                       "unread_since": 1, "ts": "2027-02-01T00:00:00Z"}]}
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    assert pg.locator("#pulse").count() == 1, "the pill node vanished"
+
+    pg.click(f"#feed-filter li[data-feed='{fid}']")      # clears the stream
+    pg.wait_for_function(
+        "() => [...document.querySelectorAll('#stream .card')].some"
+        "(c => c.textContent.includes('survivor post'))", timeout=6000)
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 2
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    txt = pg.locator("#pulse-btn").inner_text()
+    assert "2 newer since your last read" in txt, txt
     assert pg.errors == []
     pg.close()

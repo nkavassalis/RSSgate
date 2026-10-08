@@ -679,12 +679,21 @@
   // baseline = what this page loaded, so "new" means ARRIVED SINCE BOOT.
   // (A "globally newest ts" test instead stayed silent whenever another feed
   // already held a later post, and re-raised the pill after a click.)
-  let pulseBaseTs = '', pulseBaseFeeds = null, pulseTimer = 0, pulseEveryMs = 60000;
-  // the pill node lives INSIDE #stream, so it is queried lazily: at script
-  // time the stream is still empty and $('pulse') would be null
-  function pulseBox() { return document.getElementById('pulse'); }
-  function pulseClear() {
-    pulseBaseFeeds = null; pulseBaseTs = '';
+  let pulseTimer = 0, pulseEveryMs = 60000;
+  let pulseAcked = 0, pulseShown = 0;   // see pulseTick for the semantics
+  // The pill node lives INSIDE #stream (a flex sibling of the stream steals
+  // column width), and restart() does stream.innerHTML='' - which detaches
+  // it. Capture the nodes now (the template puts them in #stream at parse
+  // time, so they exist) and re-attach on demand: after any Refresh, feed
+  // switch or pill click the node was gone, and a null box made the pill
+  // permanently mute for the rest of the session.
+  const pulseEl = $('pulse'), pulseBtn = $('pulse-btn');
+  function pulseBox() {
+    if (pulseEl.parentNode !== stream) stream.prepend(pulseEl);
+    return pulseEl;
+  }
+  function pulseClear() {                // forget the acknowledgement
+    pulseAcked = 0; pulseShown = 0;
     const box = pulseBox(); if (box) box.hidden = true;
   }
   let pulseInFlight = false;         // overlapping ticks must stack into a burst
@@ -706,34 +715,30 @@
         pulseEveryMs = Math.min(Math.max(ms, 60000), 7200000);
       }
     }
-    const feeds = p.feeds || [];
-    if (pulseBaseFeeds === null) {                    // (re)baseline quietly
-      pulseBaseFeeds = {}; pulseBaseTs = p.newest_ts || '';
-      for (const f of feeds) pulseBaseFeeds[f.feed_id] = f.unread;
-      const box = pulseBox(); if (box) box.hidden = true;
-      return;
-    }
-    // ONE definition drives both 'new?' and the printed number: a feed's
-    // readable-unread count grew past what this page loaded. (Mixing two
-    // definitions once produced a pill reading "0 newer posts".)
-    let gain = 0, gainer = null, gainerDelta = 0;
-    for (const f of feeds) {
-      const d = f.unread - (pulseBaseFeeds[f.feed_id] || 0);
-      if (d > 0) gain += d;
-      if (d > gainerDelta) { gainer = f; gainerDelta = d; }
-    }
-    const total = p.unread_total || 0;
+    // The trigger is the SERVER's number: readable-unread posts newer than
+    // the last thing you actually read (resume_ts, or the feed's own cursor
+    // when that is later). It used to be "what grew since this page loaded",
+    // which meant a reload swallowed the batch it just showed you and the
+    // pill went silent exactly when you had the most to see.
+    // pulseAcked is a watermark, not a claim that you read them: a tap stops
+    // the nag until the number GROWS again (or you reload, and it tells the
+    // truth again). n > pulseAcked also means the pill can never show 0.
+    const feeds = (p.feeds || []).filter(f => (f.unread_since || 0) > 0);
+    const n = p.unread_since_total || 0;
     const box = pulseBox();
     if (!box) return;
-    if (gain > 0 && total > 0) {
-      // name the feed that GAINED (largest gain), not the biggest pile or the
-      // newest ts: with several feeds in the library those are rarely yours
-      const top = gainer ? ` \u00b7 ${esc(gainer.title)}` : '';
-      const others = feeds.length - (gainer ? 1 : 0);
-      const more = others > 0 ? ` +${others} more` : '';
-      $('pulse-btn').textContent =
-        `\u2191 ${total} newer post${total === 1 ? '' : 's'} \u2014 tap to load`
-        + top + more;
+    if (n > pulseAcked) {
+      pulseShown = n;
+      // feeds arrive sorted by 'since' count, so [0] is the feed with most to
+      // see - not the biggest backlog, which with a real library is never it
+      const top = feeds.length ? ` \u00b7 ${esc(feeds[0].title)}` : '';
+      const more = feeds.length > 1 ? ` +${feeds.length - 1} more` : '';
+      const basis = p.since_ts ? 'newer since your last read' : 'unread posts';
+      pulseBtn.textContent =
+        `\u2191 ${n} ${basis} \u2014 tap to jump${top}${more}`;
+      pulseBtn.title = n + ' unread posts' + (p.since_ts
+        ? ' newer than the last one you read' : '')
+        + '; tap to start the stream at the newest';
       box.hidden = false;
     } else {
       box.hidden = true;
@@ -751,12 +756,11 @@
     if (document.hidden) clearTimeout(pulseTimer);
     else pulseArm();                 // back in sight: check now, re-arm after
   });
-  $('pulse-btn').addEventListener('click', () => {
+  pulseBtn.addEventListener('click', () => {
+    pulseAcked = pulseShown;      // acknowledge THIS many (not: you read them)
     const box = pulseBox(); if (box) box.hidden = true;
     restart(true);          // stream restarts at newest; no feed fetching
     refreshPips();
-    pulseClear();           // else the next tick re-raises the pill forever
-    pulseArm();             // re-baseline now, keep the cadence
   });
   window.__pulseTick = pulseTick;      // test seam: run one check now
   window.__pulseClear = pulseClear;    // test seam: re-baseline (as a click)
