@@ -301,6 +301,16 @@ perf, docs, tests, polish. When unsure, cut smaller.
 13. **Same-size canary edits can run stale bytecode.** A revert that keeps
     the file size within the same second reuses the `.pyc`; clear
     `__pycache__` (or change the size) after a canary.
+14. **A test seam is not coverage of the mechanism it bypasses.** The pill's
+    tests all drove `window.__pulseTick()` by hand, so they stayed green while
+    the scheduler that should call it was never armed at boot (no pill, ever)
+    and, once a tab-return armed it, polled once per round trip - 1,282 hits
+    in 5 seconds at a 60s setting. For anything time-driven, assert the
+    request rate and that it can fire with no manual tick.
+15. **A heredoc python block joined to the next command by a newline is not
+    `&&`-guarded.** Three releases of edits here died mid-script (assert
+    anchor) while the `sed`/`git commit` line after them still ran. Separate
+    the invocations, or use the edit tool.
 
 ## Known follow-ups (not started)
 - systemd user unit for the live server.
