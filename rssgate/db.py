@@ -73,6 +73,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "content_source" not in cols:      # auto | feed | page
         conn.execute("ALTER TABLE feeds ADD COLUMN content_source TEXT"
                      " NOT NULL DEFAULT 'auto'")
+    if "challenge_streak" not in cols:    # bot checks in a row (auto mode)
+        conn.execute("ALTER TABLE feeds ADD COLUMN challenge_streak INTEGER"
+                     " NOT NULL DEFAULT 0")
+    if "page_probe_at" not in cols:       # streak>=3: next allowed page probe
+        conn.execute("ALTER TABLE feeds ADD COLUMN page_probe_at TEXT")
     if "challenge_at" not in cols:        # site serves a browser check
         conn.execute("ALTER TABLE feeds ADD COLUMN challenge_at TEXT")
     if "challenge_hits" not in cols:
@@ -120,6 +125,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "last_read_ts" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
+    if "upgrade_at" not in cols:         # excerpt -> retry the page then
+        conn.execute("ALTER TABLE articles ADD COLUMN upgrade_at TEXT")
+    if "upgrade_tries" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN upgrade_tries INTEGER"
+                     " NOT NULL DEFAULT 0")
     if "read_at" not in cols:            # per-article read mark
         conn.execute("ALTER TABLE articles ADD COLUMN read_at TEXT")
     if "feed_text" not in cols:          # the feed's own excerpt/content
@@ -437,10 +447,13 @@ def feed_counts(conn, feed_id: int) -> dict:
     r = conn.execute(
         "SELECT COUNT(*) n,"
         " SUM(status='hidden') hid, SUM(status='ready') rdy,"
-        " SUM(status='ready' AND digest_source='excerpt') exc"
+        " SUM(status='ready' AND digest_source='excerpt') exc,"
+        " SUM(status='ready' AND digest_source='excerpt'"
+        "     AND upgrade_at IS NOT NULL) upg"
         " FROM articles WHERE feed_id=?", (feed_id,)).fetchone()
     return {"article_count": r["n"] or 0, "hidden_count": r["hid"] or 0,
-            "ready_count": r["rdy"] or 0, "excerpt_count": r["exc"] or 0}
+            "ready_count": r["rdy"] or 0, "excerpt_count": r["exc"] or 0,
+            "upgrade_pending": r["upg"] or 0}
 
 
 def category_list(conn) -> dict:
@@ -666,13 +679,79 @@ def claim_pending(conn, limit: int = 1) -> list[sqlite3.Row]:
     return rows
 
 
+STREAK_LIMIT = 3            # bot checks in a row before Auto stops fetching
+PROBE_HOURS = 24            # then: one page probe per this many hours
+
+
+def _iso_in(hours: float) -> str:
+    return (datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def feed_challenge(conn, feed_id: int) -> None:
-    """Flag a site that answers with a browser check (Cloudflare-style
-    "Just a moment"). Informational: feeds whose pages can't be fetched
-    should switch content_source to 'feed'."""
-    conn.execute("UPDATE feeds SET challenge_at=?, challenge_hits=challenge_hits+1"
-                 " WHERE id=?", (now_iso(), feed_id))
+    """A site answered with a bot check instead of the article. Counts the
+    streak; at STREAK_LIMIT, Auto stops requesting pages and probes once per
+    PROBE_HOURS. Never a block/backoff - waiting on the queue won't help."""
+    conn.execute("UPDATE feeds SET challenge_at=?, challenge_hits=challenge_hits+1,"
+                 " challenge_streak=challenge_streak+1 WHERE id=?",
+                 (now_iso(), feed_id))
+    conn.execute("UPDATE feeds SET page_probe_at=? WHERE id=? AND"
+                 " challenge_streak>=? AND COALESCE(page_probe_at, '') <= ?",
+                 (_iso_in(PROBE_HOURS), feed_id, STREAK_LIMIT, now_iso()))
     conn.commit()
+
+
+def feed_pages_ok(conn, feed_id: int) -> None:
+    """A real article page came back: the streak is over."""
+    conn.execute("UPDATE feeds SET challenge_streak=0, page_probe_at=NULL"
+                 " WHERE id=? AND (challenge_streak>0 OR page_probe_at IS NOT NULL)",
+                 (feed_id,))
+    conn.commit()
+
+
+def feed_pages_skipped(feed) -> bool:
+    """Auto mode is using feed text because the site keeps serving checks
+    (and no probe is due)."""
+    keys = feed.keys()
+    if "challenge_streak" not in keys or feed["challenge_streak"] < STREAK_LIMIT:
+        return False
+    return bool(feed["page_probe_at"] and feed["page_probe_at"] > now_iso())
+
+
+def claim_page_probe(conn, feed_id: int) -> bool:
+    """Atomically take the one page probe a streaked feed gets per period."""
+    n = conn.execute("UPDATE feeds SET page_probe_at=? WHERE id=? AND"
+                     " challenge_streak>=? AND COALESCE(page_probe_at, '') <= ?",
+                     (_iso_in(PROBE_HOURS), feed_id, STREAK_LIMIT,
+                      now_iso())).rowcount
+    conn.commit()
+    return n > 0
+
+
+UPGRADE_HOURS = (6, 24, 72)  # excerpt -> retry the article page after...
+
+
+def schedule_upgrade(conn, aid: int, tries: int) -> None:
+    """Excerpt posts retry their page later; after the last slot, stop."""
+    at = _iso_in(UPGRADE_HOURS[tries]) if tries < len(UPGRADE_HOURS) else None
+    conn.execute("UPDATE articles SET upgrade_at=?, upgrade_tries=? WHERE id=?",
+                 (at, tries, aid))
+    conn.commit()
+
+
+def due_upgrades(conn, limit: int = 1) -> list[sqlite3.Row]:
+    """Excerpt posts whose page retry is due, newest first, skipping feeds
+    that are paused or currently skipping pages (unless a probe is due)."""
+    now = now_iso()
+    return list(conn.execute(
+        "SELECT a.* FROM articles a JOIN feeds f ON f.id=a.feed_id"
+        " WHERE a.status='ready' AND a.digest_source='excerpt'"
+        "   AND a.upgrade_at IS NOT NULL AND a.upgrade_at <= ?"
+        "   AND f.enabled=1 AND f.content_source='auto'"
+        "   AND COALESCE(f.backoff_until, '') <= ?"
+        "   AND (f.challenge_streak < ? OR COALESCE(f.page_probe_at, '') <= ?)"
+        " ORDER BY COALESCE(a.published_at, a.fetched_at) DESC LIMIT ?",
+        (now, now, STREAK_LIMIT, now, limit)))
 
 
 def feed_paused(feed) -> bool:

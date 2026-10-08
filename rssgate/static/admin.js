@@ -23,6 +23,18 @@ document.getElementById('admin-close').addEventListener('click', e => {
 const chk = (root, sel, fb) => root.querySelector(sel) || { checked: !!fb };
 const catChip = v => `<span class="chip user cat" data-name="${esc(v)}">${esc(v)} <b>×</b></span>`;
 
+// Auto content-source state, in words (mirrors db.STREAK_LIMIT = 3)
+function autoState(f) {
+  if ((f.content_source || 'auto') !== 'auto') return null;
+  const hhmm = t => t ? new Date(t).toLocaleString([], { hour: '2-digit',
+    minute: '2-digit', month: 'short', day: 'numeric' }) : '';
+  const n = f.challenge_streak || 0;
+  if (n >= 3 && f.page_probe_at)
+    return { level: 'skip', text: `Auto: using feed text \u2014 site shows a bot check (next page probe ${hhmm(f.page_probe_at)})` };
+  if (n > 0)
+    return { level: 'warn', text: `Auto: ${n} bot check${n === 1 ? '' : 's'} in a row (switches to feed text at 3)` };
+  return null;
+}
 function applyFeedFilter() {
   const q = $('feed-q').value.trim().toLowerCase();
   $('feed-table').querySelectorAll('tbody tr[data-id]').forEach(tr => {
@@ -50,9 +62,11 @@ async function renderFeeds() {
           ${f.content_source && f.content_source !== 'auto'
             ? `<span class="src-pill">${f.content_source === 'feed' ? 'feed text only' : 'article page only'}</span>` : ''}
           ${f.excerpt_count
-            ? `<span class="excerpt-pill" title="the article page couldn't be used, so these posts show the feed's own excerpt">${f.excerpt_count} from feed excerpt</span>` : ''}
-          ${f.challenge_at
-            ? `<span class="challenge-pill" title="the site answers automated requests with a browser check (often Cloudflare 'Just a moment'): article pages can't be fetched">browser-check site</span>` : ''}
+            ? `<span class="excerpt-pill" title="the article page couldn't be used, so these posts show the feed's own excerpt; pages are retried after 6h, 24h and 3 days">${f.excerpt_count} from feed excerpt${f.upgrade_pending ? ` \u00b7 ${f.upgrade_pending} awaiting page retry` : ''}</span>` : ''}
+          ${autoState(f)
+            ? `<span class="challenge-pill" title="the site answers automated requests with a bot check instead of the article">${esc(autoState(f).text)}</span>`
+            : f.challenge_at
+              ? `<span class="challenge-pill" title="the site has answered automated requests with a bot check before">browser-check site</span>` : ''}
           ${f.backoff_until && f.backoff_until > new Date().toISOString().slice(0, 19) + 'Z'
             ? `<span class="paused-pill" title="the site refused our requests (403/429); polling and digests for this feed wait until then">paused by site until ${esc(f.backoff_until.slice(11, 16))} UTC</span>`
             : ''}</td>
@@ -657,6 +671,7 @@ async function openFeedCfg(id) {
              ['page', 'Article page only - never fall back']].map(([v, t]) =>
             `<option value="${v}"${(feed.content_source || 'auto') === v ? ' selected' : ''}>${t}</option>`).join('')}
         </select>
+        ${autoState(feed) ? `<b class="warn">${esc(autoState(feed).text)}</b><br>` : ''}
         <small>${feed.challenge_at
           ? '<b class="warn">\u26a0 This site answers with a browser check (often Cloudflare \u201cJust a moment\u201d): its article pages can\'t be fetched. \u201cFeed text only\u201d is usually the right choice here.</b>'
           : '(feed text only suits sites that block readers or feeds that already carry full articles; long feed text still gets an LLM digest)'}</small></label>

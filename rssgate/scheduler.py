@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from . import db
-from .refresh import refresh_feed, summarize_pending
+from .refresh import refresh_feed, summarize_pending, upgrade_excerpts
 
 log = logging.getLogger("rssgate.scheduler")
 
@@ -86,5 +86,13 @@ class Scheduler(threading.Thread):
                     break
                 if time.time() > deadline:   # leave room for the next poll
                     break
+            # then at most ONE excerpt upgrade per tick: page retries are
+            # deliberately slow (polite to sites that pushed back)
+            if self.db_path:
+                import contextlib
+                with contextlib.closing(db.connect(self.db_path)) as uconn:
+                    upgrade_excerpts(uconn, self.cfg, llm, limit=1)
+            else:
+                upgrade_excerpts(self.conn, self.cfg, llm, limit=1)
         except Exception:  # noqa: BLE001
             log.exception("summarize round failed")

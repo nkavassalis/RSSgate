@@ -1080,7 +1080,8 @@ def test_challenge_flag_warns_in_admin(ui_server, browser):
     row = pg.locator(f"tr[data-id='{fid}']")
     badge = row.locator(".challenge-pill")
     assert badge.count() == 1
-    assert "browser-check site" in badge.inner_text()
+    txt0 = badge.inner_text()          # Auto feeds now spell out the streak
+    assert "bot check" in txt0 or "browser-check site" in txt0, txt0
     row.locator("button[data-act=cfg]").click()
     pg.wait_for_selector(".cfg-panel [data-role=csrc]")
     txt = pg.inner_text(".cfg-panel label:has([data-role=csrc])")
@@ -1256,5 +1257,30 @@ def test_share_icons_are_tappable_and_proportioned(ui_server, browser):
     (_, t), (_, w) = m["tall"], m["wide"]
     assert t["height"] > t["width"] * 1.3, t
     assert 1.2 <= w["width"] / w["height"] <= 1.7, w
+    assert pg.errors == []
+    pg.close()
+
+
+def test_auto_state_is_spelled_out(ui_server, browser):
+    """A streaked Auto feed says what it's doing and when it next probes;
+    the excerpt badge counts posts awaiting a page retry."""
+    from rssgate import db
+    fid = _mkfeed("autostate")
+    aid = _seed_article(fid, "a1", title="auto state probe")
+    conn = db.connect(UI_DB)
+    for _ in range(3):
+        db.feed_challenge(conn, fid)
+    db.set_article(conn, aid, digest_source="excerpt",
+                   upgrade_at="2999-01-01T00:00:00Z")
+    conn.close()
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    row = pg.locator(f"tr[data-id='{fid}']")
+    pill = row.locator(".challenge-pill").inner_text()
+    assert "using feed text" in pill and "next page probe" in pill, pill
+    assert "1 awaiting page retry" in row.locator(".excerpt-pill").inner_text()
+    row.locator("button[data-act=cfg]").click()
+    pg.wait_for_selector(".cfg-panel [data-role=csrc]")
+    assert "using feed text" in pg.inner_text(".cfg-panel label:has([data-role=csrc])")
     assert pg.errors == []
     pg.close()

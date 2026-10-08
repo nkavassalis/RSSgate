@@ -35,6 +35,26 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.70.0] — 2026-10-08
+
+### Added
+- Auto content source adapts to sites that keep serving bot checks: after
+  3 in a row it stops requesting article pages (uses the feed's text) and
+  probes ONE page per day; any real page resets it.
+- Excerpt posts are upgraded later: their page is retried after 6h, 24h
+  and 3 days (one retry per scheduler tick); when a real page comes back a
+  proper digest replaces the excerpt in place - read or not.
+- Feed row and cog modal spell out Auto's state ("Auto: using feed text -
+  site shows a bot check (next page probe ...)", "Auto: N bot checks in a
+  row") and count excerpt posts awaiting a page retry. /api/feeds adds
+  challenge_streak, page_probe_at, upgrade_pending.
+
+### Notes
+- TechPowerUp's check is a browser-fingerprinting firewall (WebGL renderer,
+  GPU limits, webdriver flag); it passes in a real browser without any
+  click, and rejects headless Chromium by design. RSSgate doesn't disguise
+  automation; it detects, falls back, and upgrades when the site allows.
+
 ## [0.69.0] — 2026-10-07
 
 Rough-edges pass over the whole codebase.

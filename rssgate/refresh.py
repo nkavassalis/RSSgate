@@ -435,7 +435,98 @@ def _use_excerpt(conn, art) -> bool:
     db.set_article(conn, art["id"], summary=ft, status="ready",
                    digest_source="excerpt", summarized_at=db.now_iso(),
                    body_hash=hashlib.sha256(ft.encode()).hexdigest(), llm_ms=0)
+    db.schedule_upgrade(conn, art["id"], 0)   # retry the real page later
     return True
+
+
+def upgrade_excerpts(conn, cfg, llm, limit: int = 1) -> int:
+    """Excerpt posts retry their article page on a schedule (db.UPGRADE_HOURS:
+    6h, 24h, 3 days). When a real page comes back, a proper digest replaces
+    the excerpt IN PLACE (the card never disappears from the stream). Read
+    status doesn't matter. Streaked feeds only try via their daily probe.
+    Returns the number of posts upgraded."""
+    from . import net
+    if not llm_may_try(conn):
+        return 0
+    upgraded = 0
+    for art in db.due_upgrades(conn, limit):
+        feed = db.get_feed(conn, art["feed_id"])
+        tries = (art["upgrade_tries"] or 0) + 1
+        if feed["challenge_streak"] >= db.STREAK_LIMIT and \
+                not db.claim_page_probe(conn, feed["id"]):
+            continue                      # another worker took today's probe
+        try:
+            resp = net.get(art["link"], timeout=30)
+        except Exception:  # noqa: BLE001 - network blip: just try later
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        if net.is_challenge(resp):
+            db.feed_challenge(conn, feed["id"])
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        if resp.status_code in net.BLOCK_STATUSES:
+            db.feed_block(conn, feed["id"], _backoff_minutes(cfg))
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        if not resp.ok:
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        cap = cfg["summarizer"]["max_input_chars"]
+        if feed["max_input_chars"]:
+            cap = min(cap, feed["max_input_chars"])
+        text = extract_article_text(resp.text, cap)
+        if looks_like_botcheck(text):
+            db.feed_challenge(conn, feed["id"])
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        if len(text) < 120:
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        db.feed_pages_ok(conn, feed["id"])          # the site lets us in again
+        body_hash = hashlib.sha256(text.encode()).hexdigest()
+        usage, dur_ms = {"prompt_tokens": 0, "completion_tokens": 0}, 0
+        if not feed["summarize"]:
+            digest = text                           # raw mode: zero tokens
+        else:
+            cached = db.find_summary_by_hash(conn, body_hash)
+            if cached and not is_refusal(cached["summary"]):
+                digest = cached["summary"]
+            else:
+                user = (f"Feed: {feed['title'] or feed['url']}\n"
+                        f"Article: {art['title']}\nSource: {art['link']}\n\n{text}")
+                t0 = time.perf_counter()
+                try:
+                    digest, usage = llm.chat(
+                        [{"role": "system", "content": system_prompt(cfg, feed)},
+                         {"role": "user", "content": user}],
+                        max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)),
+                        model=_purpose_model(cfg, "model_summarize"))
+                except Exception as exc:  # noqa: BLE001
+                    if llm_unavailable(exc):
+                        mark_llm_down(conn, f"{type(exc).__name__}: {exc}")
+                        return upgraded     # excerpt stays; retried later
+                    db.schedule_upgrade(conn, art["id"], tries)
+                    continue
+                mark_llm_up(conn)
+                dur_ms = int((time.perf_counter() - t0) * 1000)
+                db.log_usage(conn, llm.provider, llm.model or "auto",
+                             usage["prompt_tokens"], usage["completion_tokens"],
+                             duration_ms=dur_ms, purpose="summarize")
+                if is_refusal(digest):
+                    db.feed_challenge(conn, feed["id"])
+                    db.schedule_upgrade(conn, art["id"], tries)
+                    continue
+        if not (digest or "").strip():
+            db.schedule_upgrade(conn, art["id"], tries)
+            continue
+        _cache_image(conn, art, resp.text)
+        db.set_article(conn, art["id"], summary=digest.strip(), digest_source="",
+                       body_hash=body_hash, upgrade_at=None,
+                       summarized_at=db.now_iso(), llm_ms=dur_ms,
+                       tokens_in=usage["prompt_tokens"],
+                       tokens_out=usage["completion_tokens"])
+        upgraded += 1
+    return upgraded
 
 
 def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
@@ -483,6 +574,17 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                     continue
                 text, page_html = ft[:cap], ""
             else:
+                if src == "auto" and feed and \
+                        feed["challenge_streak"] >= db.STREAK_LIMIT and \
+                        not db.claim_page_probe(conn, feed["id"]):
+                    # site keeps serving bot checks: use the feed's text now,
+                    # upgrade later when a probe gets through
+                    if _use_excerpt(conn, art):
+                        done += 1
+                    else:
+                        fail(conn, cfg, art["id"], "site serves a bot check and"
+                             " the feed has no text (retrying pages daily)")
+                    continue
                 resp = net.get(art["link"], timeout=30)
                 if net.is_challenge(resp):
                     db.feed_challenge(conn, art["feed_id"])
@@ -526,6 +628,8 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                     fail(conn, cfg, art["id"], f"extracted text too short ({len(text)} ch)")
                     continue
                 page_html = resp.text
+                if feed and feed["challenge_streak"]:
+                    db.feed_pages_ok(conn, feed["id"])
                 if "digest_source" in art.keys() and art["digest_source"]:
                     db.set_article(conn, art["id"], digest_source="")
             _cache_image(conn, art, page_html)

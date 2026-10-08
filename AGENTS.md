@@ -126,6 +126,16 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
   `page` = never fall back. `articles.digest_source` records the outcome
   ('' page / 'excerpt' forced fallback / 'feed' chosen) and drives the card
   chips and the admin "N from feed excerpt" badge.
+- **Auto adapts to bot checks.** Each detected check bumps
+  `feeds.challenge_streak` (`db.feed_challenge`); at `STREAK_LIMIT` (3) Auto
+  stops requesting article pages and uses the feed's text, allowing one page
+  probe per `PROBE_HOURS` (24, `claim_page_probe` is atomic). Any real page
+  resets it (`feed_pages_ok`). Excerpt fallbacks get `upgrade_at` slots
+  (`UPGRADE_HOURS` 6/24/72); the scheduler runs ONE `upgrade_excerpts` per
+  tick, which replaces the excerpt with a real digest in place (status stays
+  `ready`, read state ignored). TechPowerUp's check is a browser-fingerprint
+  firewall (WebGL renderer, GPU limits, webdriver): headless Chromium fails
+  it by design. Do not add fingerprint spoofing or a disguised browser.
 - **LLM outage = hold, not fail.** `refresh.llm_unavailable` (connection
   errors, timeouts, 502/503/504) puts the post back untouched, records the
   outage in state (`llm_down_since/reason/next_try`, probe 15s doubling to
