@@ -1632,3 +1632,37 @@ def test_pulse_counts_equal_the_sidebar_pills_in_ui(ui_server, browser):
     assert pulse["newest_ts"], "no ready post to compare against"
     assert pg.errors == []
     pg.close()
+
+
+def test_pulse_pill_never_announces_zero(ui_server, browser):
+    """"0 newer posts" happened because the pill's 'new?' test and the number
+    it printed used different definitions. Stub the endpoint to reproduce the
+    awkward states deterministically: the pill must stay silent, and when it
+    does speak it names the feed that gained, not the biggest pile."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    feeds0 = [
+        {"feed_id": 1, "title": "Big Old Feed", "unread": 40, "ts": "2020-01-01T00:00:00Z"},
+        {"feed_id": 2, "title": "Feed That Gained", "unread": 4, "ts": "2020-01-01T00:00:00Z"}]
+    fake = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 44, "feeds": feeds0, "every_minutes": 0}
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=fake))   # before boot
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.wait_for_selector(".card")
+    fake.update(newest_ts="2999-01-01T00:00:00Z", unread_total=0, feeds=[])
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_timeout(300)
+    assert pg.is_hidden("#pulse"), "pill announced 0 newer posts"
+
+    # a feed that gained readable posts must speak, and name that feed
+    fake.update(newest_ts="2020-01-01T00:00:00Z", unread_total=44, feeds=feeds0)
+    pg.evaluate("window.__pulseTick()")             # re-baseline: {1:40, 2:4}
+    fake["feeds"] = [feeds0[0], dict(feeds0[1], unread=6)]
+    fake["unread_total"] = 6
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    txt = pg.locator("#pulse-btn").inner_text()
+    assert "6 newer posts" in txt and "Feed That Gained" in txt, txt
+    assert "Big Old Feed" not in txt, f"named the biggest pile, not the gainer: {txt}"
+    assert "+1 more" in txt, txt
+    assert pg.errors == []
+    pg.close()

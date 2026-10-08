@@ -898,20 +898,23 @@ def pulse(conn) -> dict:
     Counts mirror feed_unread EXACTLY (same read-cursor semantics, same
     _TS_EXPR): an unread figure that disagrees with the sidebar pills on the
     same page is worse than none (it once read 714 where the UI said 1).
-    Only READY posts count - a pending post has no card to read."""
+    Ready AND failed posts count, because both render a card (a failed post
+    shows its error line and a retry); pending/processing do not, exactly as
+    in feed_unread. A pill printing '0 newer posts' once meant its 'new?'
+    test and its printed number used different definitions."""
     rows = conn.execute(
         "SELECT f.id fid,"
         " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url) title,"
         " COUNT(*) n, MAX(" + _TS_EXPR + ") ts"
         " FROM articles a JOIN feeds f ON f.id=a.feed_id"
-        " WHERE a.status='ready' AND a.read_at IS NULL"
+        " WHERE a.status IN ('ready','error') AND a.read_at IS NULL"
         " AND " + _TS_EXPR + " > COALESCE(f.last_read_ts, '')"
         " GROUP BY f.id ORDER BY n DESC")
     by_feed = [{"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
                 "ts": x["ts"] or ""} for x in rows]
     newest = conn.execute(
-        "SELECT MAX(" + _TS_EXPR + ") ts FROM articles WHERE status='ready'"
-    ).fetchone()["ts"] or ""
+        "SELECT MAX(" + _TS_EXPR + ") ts FROM articles"
+        " WHERE status IN ('ready','error')").fetchone()["ts"] or ""
     return {"newest_ts": newest, "ready_total": conn.execute(
         "SELECT COUNT(*) c FROM articles WHERE status='ready'").fetchone()["c"],
         "unread_total": sum(f["unread"] for f in by_feed),

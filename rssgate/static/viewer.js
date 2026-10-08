@@ -696,22 +696,25 @@
       $('pulse').hidden = true;
       return;
     }
-    let fresh = false, gainer = null, gainerDelta = 0;
+    // ONE definition drives both 'new?' and the printed number: a feed's
+    // readable-unread count grew past what this page loaded. (Mixing two
+    // definitions once produced a pill reading "0 newer posts".)
+    let gain = 0, gainer = null, gainerDelta = 0;
     for (const f of feeds) {
       const d = f.unread - (pulseBaseFeeds[f.feed_id] || 0);
+      if (d > 0) gain += d;
       if (d > gainerDelta) { gainer = f; gainerDelta = d; }
-      if (d > 0) fresh = true;                        // a feed gained posts
     }
-    if (!gainer && p.newest_ts && p.newest_ts > pulseBaseTs) fresh = true;
-    if (fresh) {
+    const total = p.unread_total || 0;
+    if (gain > 0 && total > 0) {
       // name the feed that GAINED (largest gain), not the biggest pile or the
       // newest ts: with several feeds in the library those are rarely yours
       const top = gainer ? ` \u00b7 ${esc(gainer.title)}` : '';
       const others = feeds.length - (gainer ? 1 : 0);
       const more = others > 0 ? ` +${others} more` : '';
       $('pulse-btn').textContent =
-        `\u2191 ${p.unread_total || 0} newer post` +
-        `${(p.unread_total || 0) === 1 ? '' : 's'} \u2014 tap to load${top}${more}`;
+        `\u2191 ${total} newer post${total === 1 ? '' : 's'} \u2014 tap to load`
+        + top + more;
       $('pulse').hidden = false;
     } else {
       $('pulse').hidden = true;

@@ -240,24 +240,25 @@ def test_pulse_is_read_only_and_counts_visible_only(client):
                               f"P{i}", f"2026-10-0{i+1}T00:00:00Z")
         db.set_article(conn, a, status=st, summary="s" if st == "ready" else None)
     p = client.get("/api/pulse").get_json()
-    # newest READY post (the later error/pending rows must not count)
-    assert p["newest_ts"] == "2026-10-02T00:00:00Z"
-    assert p["ready_total"] == 2 and p["unread_total"] == 2
+    # ready AND failed posts are readable cards; pending is not. Newest of
+    # the readable ones is the 2026-10-04 error post.
+    assert p["newest_ts"] == "2026-10-04T00:00:00Z"
+    assert p["ready_total"] == 2 and p["unread_total"] == 3
     assert len(p["feeds"]) == 1
-    assert p["feeds"][0]["feed_id"] == fid and p["feeds"][0]["unread"] == 2
-    assert p["feeds"][0]["ts"] == "2026-10-02T00:00:00Z"  # newest unread here
+    assert p["feeds"][0]["feed_id"] == fid and p["feeds"][0]["unread"] == 3
+    assert p["feeds"][0]["ts"] == "2026-10-04T00:00:00Z"  # newest readable here
     assert p["every_minutes"] == 1                      # reader's poll cadence
     # a NEWER post that is only pending must not change anything: no card yet
     late = db.upsert_article(conn, fid, "p9", "https://p.test/9", "P9",
                              "2026-10-20T00:00:00Z")
     db.set_article(conn, late, status="pending")
     again = client.get("/api/pulse").get_json()
-    assert again["newest_ts"] == "2026-10-02T00:00:00Z" and again["unread_total"] == 2
+    assert again["newest_ts"] == "2026-10-04T00:00:00Z" and again["unread_total"] == 3
     aid = conn.execute("SELECT MIN(id) m FROM articles WHERE status='ready'"
                        " AND feed_id=?", (fid,)).fetchone()["m"]
     db.mark_articles_read(conn, [aid])
     after = client.get("/api/pulse").get_json()
-    assert after["unread_total"] == 1 and after["feeds"][0]["unread"] == 1
+    assert after["unread_total"] == 2 and after["feeds"][0]["unread"] == 2
 
 
 def test_config_pulse_minutes_is_validated(client):
@@ -282,6 +283,8 @@ def test_pulse_unread_matches_the_sidebar_pills(client):
                               f"C{i}", f"2026-10-0{i+1}T00:00:00Z")
         db.set_article(conn, a, status="ready", summary="s")
     assert client.get("/api/pulse").get_json()["unread_total"] == 4
+    assert client.get("/api/pulse").get_json()["unread_total"] == \
+        next(f["unread"] for f in client.get("/api/feeds").get_json() if f["id"] == fid)
     db.update_feed(conn, fid, last_read_ts="2026-10-02T12:00:00Z")
     pill = next(f["unread"] for f in client.get("/api/feeds").get_json()
                 if f["id"] == fid)
@@ -290,3 +293,22 @@ def test_pulse_unread_matches_the_sidebar_pills(client):
     assert pl["unread_total"] == pill                 # same number, one page
     assert pl["feeds"][0]["unread"] == pill
     assert db.feed_unread(conn, fid, "2026-10-02T12:00:00Z") == pill
+
+
+def test_pulse_counts_equal_the_sidebar_pills(client):
+    """One page, one unread number: /api/pulse must equal the sum of the
+    sidebar pills, which count every post that renders a card (ready AND
+    failed) past the feed cursor. A '0 newer posts' pill was born from this
+    same split - the label and the 'new?' test disagreeing."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://parity.test/feed")["id"]
+    for i, st in enumerate(["ready", "error", "pending", "ready"]):
+        a = db.upsert_article(conn, fid, f"y{i}", f"https://y.test/{i}",
+                              f"Y{i}", f"2026-10-1{i}T00:00:00Z")
+        db.set_article(conn, a, status=st, summary="s" if st == "ready" else None)
+    pill = next(f["unread"] for f in client.get("/api/feeds").get_json()
+                if f["id"] == fid)
+    pl = client.get("/api/pulse").get_json()
+    assert pill == 3 and pl["unread_total"] == 3            # ready+error, no pending
+    assert sum(f["unread"] for f in pl["feeds"]) == pill
