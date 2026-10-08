@@ -88,12 +88,20 @@ RSSgate Admin</title>
         Work queue)</label>
       <label>Mark as read after (seconds, 0-60, 0 = instantly)
         <input id="cfg-readdelay" type="number" min="0" max="60" step="1"></label>
+      <label>Colour scheme
+        <select id="cfg-theme">
+          <option value="auto">auto (follow the browser)</option>
+          <option value="light">always light</option>
+          <option value="dark">always dark</option>
+        </select></label>
     </div>
     <p class="hint">Saved instantly on change. Each post has two share
     buttons: tall (&#9647;, a fixed phone-friendly card) and wide (&#9645;, the
     magazine layout at the width set here). Reading column width is the desktop reader measure (reloads
     take effect on the reader). Unread pills still count awaiting posts,
-    so a feed can look busy while its stream stays quiet.</p>
+    so a feed can look busy while its stream stays quiet. Colour scheme follows
+    your browser by default; some installed (PWA) windows report their own
+    theme rather than the system's, so you can pin light or dark here.</p>
   </section>
 
   <section class="panel" id="sec-categories">

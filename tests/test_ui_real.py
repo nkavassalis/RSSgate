@@ -1493,3 +1493,41 @@ def test_queue_panel_explains_idle_and_paused(ui_server, browser):
     assert pg.locator("#wq-waiting li").count() >= 1
     assert pg.errors == []
     pg.close()
+
+
+def test_admin_theme_control_repaints_and_persists(ui_server, browser):
+    """Pinned themes must actually recolour (installed/PWA windows sometimes
+    report their own theme, so 'auto' cannot be relied on): attribute, body
+    colours and a status colour all follow, and survive a reload."""
+    def bg(pg):
+        return pg.evaluate("getComputedStyle(document.body).backgroundColor")
+    def scheme(pg):
+        # forced themes must also set `color-scheme`: it is the only thing that
+        # tells native scrollbars/form widgets, and a media query cannot fake it
+        return pg.evaluate("getComputedStyle(document.documentElement)"
+                           ".colorScheme")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-display", wait_until="networkidle")
+    pg.select_option("#cfg-theme", "dark")
+    pg.wait_for_selector("#cfg-theme:disabled, label.cfg-ok", timeout=5000)
+    assert pg.get_attribute("html", "data-theme") == "dark"
+    dark_bg, dark_cs = bg(pg), scheme(pg)
+    pg.select_option("#cfg-theme", "light")
+    pg.wait_for_selector("label.cfg-ok", timeout=5000)
+    light_bg, light_cs = bg(pg), scheme(pg)
+    assert dark_bg != light_bg, "body background did not follow the scheme"
+    assert (dark_cs, light_cs) == ("dark", "light"), (dark_cs, light_cs)
+    pg.reload(wait_until="networkidle")            # server-rendered, not just JS
+    assert pg.get_attribute("html", "data-theme") == "light"
+    assert bg(pg) == light_bg and scheme(pg) == "light"
+    # the reader repaints too (it is the page the user actually reads)
+    pg2 = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg2.goto(ui_server, wait_until="networkidle")
+    assert pg2.get_attribute("html", "data-theme") == "light"
+    assert pg2.evaluate("getComputedStyle(document.body).backgroundColor") == light_bg
+    pg2.close()
+    pg.select_option("#cfg-theme", "auto")
+    pg.wait_for_selector("label.cfg-ok", timeout=5000)
+    assert pg.get_attribute("html", "data-theme") == ""
+    assert pg.errors == []
+    pg.close()

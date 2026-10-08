@@ -35,6 +35,30 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.75.0] — 2026-10-08
+
+### Added
+- Colour scheme control in Admin → Display & sharing: auto (follow the
+  browser), always light, always dark. Saves on change, repaints without a
+  reload, and is server-rendered so it holds on first paint. An installed
+  (PWA) window can report its own dark-mode state rather than the system's,
+  which is why pinning exists. `ui.theme` always existed in config but had
+  no control, and `PUT /api/config` silently dropped it.
+- README: installing RSSgate as a desktop app (Chrome/Edge/Brave "Install
+  app", Safari on macOS "Add to Dock"), and the theme caveat the control
+  solves.
+
+### Fixed
+- Forced light/dark rendered some accents for the wrong theme: four rules
+  (status pips, danger zone, excerpt/browser-check/paused pills) keyed off
+  `@media (prefers-color-scheme)`, which no attribute can override, and the
+  `data-theme` blocks omitted `--accent`/`--link`. Everything that varies by
+  theme is now a variable (`--ok`, `--warn`, `--danger`, `--accent`,
+  `--link`) set by the OS block and by both forced blocks; forced themes
+  also set `color-scheme`, so native scrollbars and form widgets follow.
+- `PUT /api/config` accepts a validated `ui.theme` (auto|light|dark); other
+  values are dropped rather than stored.
+
 ## [0.74.0] — 2026-10-08
 
 ### Changed

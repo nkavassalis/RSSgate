@@ -474,6 +474,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
             rd = ui.get("read_delay")
             if isinstance(rd, (int, float)) and 0 <= rd <= 60:
                 ui_patch["read_delay"] = int(rd)
+            if ui.get("theme") in ("auto", "light", "dark"):
+                ui_patch["theme"] = ui["theme"]
         if ui_patch:
             patch["ui"] = ui_patch        # rest of ui: file only
         fetch = patch.pop("fetch", None)

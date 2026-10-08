@@ -74,7 +74,9 @@ summarizer:
     only.
 
 ui:
-  # 'auto' follows the OS/browser dark-mode setting; 'light'/'dark' force it.
+  # 'auto' follows the browser's dark-mode setting; 'light'/'dark' force it.
+  # Installed (PWA) windows can report their own theme, so pin it here if an
+  # app window disagrees with your desktop. Also editable in the admin panel.
   theme: auto
   items_per_page: 20
   # Share-snapshot card render width / desktop reading column width (admin-editable):

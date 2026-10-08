@@ -141,6 +141,29 @@ and browse `https://<machine>.<tailnet>.ts.net`. Same machine, same
 process, no port forwarding, no public exposure — and Serve talks to RSSgate
 over loopback, so the default `127.0.0.1` bind needs no change.
 
+## Desktop app (Chrome, Edge, Brave) and Safari on macOS
+
+The same install-as-app idea works on a computer, and it is worth doing: the
+reader opens in its own window with its own icon and taskbar entry, no address
+bar, and links to articles open in your normal browser.
+
+- **Chrome / Edge / Brave:** open your instance, then the address bar's
+  **Install app** icon (Edge calls it **Apps &#8594; Install this site as an
+  app**), or the menu &#8594; **Install / Save and launch**.
+- **Safari on macOS:** **File &#8594; Add to Dock** (Safari 17 or newer). It
+  opens as a standalone window the same way.
+
+An installed window is a separate "tab" as far as the browser is concerned, so
+RSSgate remembers your scroll position per window, and pull-to-refresh and the
+loading rail behave exactly as on the phone. Over HTTPS (Tailscale Serve) the
+share buttons hand the digest image to your system share target too.
+
+One quirk worth knowing: an installed window can report **its own** dark-mode
+state instead of your system's, so "follow the browser" may not match the rest
+of your desktop. **Admin &#8594; Display &amp; sharing &#8594; Colour scheme**
+pins it to always light or always dark for every page and every device; leave
+it on **auto** to follow the browser.
+
 ## Reader UI: sidebar, New/Since modes
 
 The sidebar is an independently scrollable column with three filter boxes:

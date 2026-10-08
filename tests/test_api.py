@@ -216,3 +216,14 @@ def test_poll_is_single_route_and_reports_throttle(client, monkeypatch):
     assert first.get("throttled") in (None, False)
     second = client.post("/api/poll").get_json()
     assert second["throttled"] is True and second["started"] is False
+
+
+def test_config_theme_is_validated(client):
+    """ui.theme is admin-settable but enum-checked: an unknown value must be
+    dropped, not stored (a typo would silently disable the scheme control)."""
+    for bad in ("purple", "", 3, None, {"x": 1}):
+        assert client.put("/api/config", json={"ui": {"theme": bad}}).status_code == 200
+        assert client.get("/api/config").get_json()["ui"]["theme"] == "auto"
+    for good in ("light", "dark", "auto"):
+        assert client.put("/api/config", json={"ui": {"theme": good}}).status_code == 200
+        assert client.get("/api/config").get_json()["ui"]["theme"] == good

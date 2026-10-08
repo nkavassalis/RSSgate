@@ -206,6 +206,11 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   receive the SAME tuple `/api/articles` withholds (web.py `_hide_statuses(cfg)`,
   from ui.hide_untranscribed); a queued post has no card, so it must not hold
   a pill. `error` posts DO render, so they count.
+- Theme: `ui.theme` (auto|light|dark) is admin-editable (`cfg-theme`) and
+  server-rendered into `data-theme`. Anything that differs by theme MUST be a
+  CSS variable (the `--ok/--warn/--danger/--accent/--link` set) - a
+  `@media (prefers-color-scheme)` rule cannot be overridden by the attribute.
+  Only the `:root` OS block may use the media query.
 - Status panel cells: add new items to the single `cells` list in
   `loadStatus` (reading order); it splits into two balanced rows itself.
   Manual refresh buttons use `withSpin(btn, work, dimEl)`.

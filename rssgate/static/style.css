@@ -3,18 +3,29 @@
   --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1e; --muted: #6b6b76;
   --line: #e4e4ea; --accent: #3b6ef6; --chip: #eceefb; --chip-text: #3d4a8a;
   --link: #3f4147;
+  --ok: #27ae60; --warn: #b26a00; --danger: #c0392b;
   --topbar: #fffffff2; --shadow: 0 1px 3px rgba(20,20,30,.08);
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg:#101014; --card:#1a1a21; --text:#e8e8ee; --muted:#9a9aa6;
     --line:#2a2a34; --accent:#7a9bff; --chip:#24243a; --chip-text:#aab6f0;
     --link: #ffffff;
-    --topbar:#15151bf2; --shadow: 0 1px 3px rgba(0,0,0,.5); }
+    --topbar:#15151bf2; --shadow: 0 1px 3px rgba(0,0,0,.5);
+    --ok:#4be08a; --warn:#ffc56b; --danger:#ff7a6e; }
 }
+/* Forced themes repeat the OS-dark variable SET in full (accent and link were
+   once missing here, so a forced theme rendered wrong accents). Status colours
+   are variables too: a @media (prefers-color-scheme) rule cannot be overridden
+   by an attribute, so anything that differs by theme must be a variable. */
+html { color-scheme: light; }
 html[data-theme="light"] { --bg:#f7f7f8; --card:#fff; --text:#1a1a1e; --muted:#6b6b76;
-  --line:#e4e4ea; --chip:#eceefb; --chip-text:#3d4a8a; --topbar:#fffffff2; }
+  --line:#e4e4ea; --accent:#3b6ef6; --chip:#eceefb; --chip-text:#3d4a8a;
+  --link:#3f4147; --topbar:#fffffff2;
+  --ok:#27ae60; --warn:#b26a00; --danger:#c0392b; color-scheme: light; }
 html[data-theme="dark"] { --bg:#101014; --card:#1a1a21; --text:#e8e8ee; --muted:#9a9aa6;
-  --line:#2a2a34; --chip:#24243a; --chip-text:#aab6f0; --topbar:#15151bf2; }
+  --line:#2a2a34; --accent:#7a9bff; --chip:#24243a; --chip-text:#aab6f0;
+  --link:#ffffff; --topbar:#15151bf2;
+  --ok:#4be08a; --warn:#ffc56b; --danger:#ff7a6e; color-scheme: dark; }
 
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--text);
@@ -361,13 +372,9 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
   padding:3px 10px; border-radius:999px; margin-left:8px;
   align-self:center; }
 .pip-ok  { background:color-mix(in srgb, #2ecc71 18%, transparent);
-  color:#27ae60; }
+  color:var(--ok); }
 .pip-err { background:color-mix(in srgb, #e74c3c 18%, transparent);
-  color:#c0392b; }
-@media (prefers-color-scheme: dark) {
-  .pip-ok  { color:#4be08a; }
-  .pip-err { color:#ff7a6e; }
-}
+  color:var(--danger); }
 
 /* admin: grouped nav, danger zone, feed filter */
 .nav-group { display:none; font-size:.68rem; font-weight:700;
@@ -379,13 +386,13 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
   border:1px solid color-mix(in srgb, #c62828 45%, var(--line));
   border-radius:10px; }
 .danger-zone h3 { margin:0 0 8px; font-size:.9rem; color:#c62828; }
-@media (prefers-color-scheme: dark) { .danger-zone h3, .btn.danger { color:#ff7a6e; } }
+.danger-zone h3, .btn.danger { color:var(--danger); }
 .feed-q { width:100%; margin:0 0 10px; }
 
 .paused-pill { display:inline-block; margin-top:3px; font-size:.72rem;
   padding:1px 8px; border-radius:999px; color:#b26a00;
   background:color-mix(in srgb, #f5a623 18%, transparent); }
-@media (prefers-color-scheme: dark) { .paused-pill { color:#ffc56b; } }
+.paused-pill { color:var(--warn); }
 
 .src-pill, .excerpt-pill { display:inline-block; margin:3px 4px 0 0;
   font-size:.72rem; padding:1px 8px; border-radius:999px; }
@@ -394,16 +401,15 @@ select.imgmode { width:auto; display:inline-block; margin:0 0 0 8px;
   background:color-mix(in srgb, #f5a623 18%, transparent); }
 .chip.excerpt { border-color:transparent; }
 b.warn { color:#b26a00; }
-@media (prefers-color-scheme: dark) {
-  .excerpt-pill, .chip.excerpt, b.warn { color:#ffc56b; } }
+.excerpt-pill, .chip.excerpt, b.warn { color:var(--warn); }
 
 .challenge-pill { display:inline-block; margin:3px 4px 0 0;
   font-size:.72rem; padding:1px 8px; border-radius:999px; color:#c0392b;
   background:color-mix(in srgb, #e74c3c 16%, transparent); }
-@media (prefers-color-scheme: dark) { .challenge-pill { color:#ff7a6e; } }
+.challenge-pill { color:var(--danger); }
 
 .pip-warn { background:color-mix(in srgb, #f5a623 22%, transparent); color:#b26a00; }
-@media (prefers-color-scheme: dark) { .pip-warn { color:#ffc56b; } }
+.pip-warn { color:var(--warn); }
 .status-grid.llm-down .status-cell[data-role=llm] b { color:#b26a00; }
 
 /* manual refresh feedback (admin): spinning glyph + dimmed content */
