@@ -238,15 +238,22 @@ def fail(conn, cfg, article_id: int, why: str) -> str:
 
 
 # ---- LLM backend outage: hold the queue instead of failing it -------------
+ARTICLE_REJECT_STATUSES = (400, 413, 422)   # the request itself was bad
+
+
 def llm_unavailable(exc) -> bool:
-    """The LLM BACKEND is unreachable (down, restarting, overloaded) - as
-    opposed to a request it rejected. Such errors say nothing about the
-    article, so they must never count against it."""
+    """The LLM BACKEND can't serve (down, restarting, route/model missing
+    mid-maintenance, auth broken, overloaded) - as opposed to rejecting THIS
+    request. Backend errors say nothing about the article, so they hold the
+    queue instead of counting against it. Only 400/413/422 fail an article.
+    (A 404 from /v1/models during backend maintenance caused 46 failures.)"""
     import requests
     if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
         return True
-    return isinstance(exc, LLMError) and bool(
-        re.search(r"\((502|503|504)\)", str(exc)))
+    if not isinstance(exc, LLMError):
+        return False
+    m = re.search(r"\((\d{3})\)", str(exc))
+    return not (m and int(m.group(1)) in ARTICLE_REJECT_STATUSES)
 
 
 def llm_down_state(conn) -> dict:

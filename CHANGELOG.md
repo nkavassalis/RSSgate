@@ -35,6 +35,15 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.66.1] — 2026-10-07
+
+### Fixed
+- The outage hold only recognised connection errors and 502-504, but the
+  real maintenance window answered "models request failed (404)". Now
+  every backend-level LLM error (404 route/model missing, 401/403 auth,
+  5xx, connection, timeout, no model available) holds the queue; only
+  request-specific rejections (400, 413, 422) fail an article.
+
 ## [0.66.0] — 2026-10-07
 
 ### Added

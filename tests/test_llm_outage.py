@@ -78,6 +78,19 @@ def test_backend_down_holds_queue_then_resumes(conn, cfg, monkeypatch):
     assert not refresh.llm_down_state(conn)["since"]
 
 
+def test_backend_errors_hold_and_only_request_errors_fail():
+    """The real incident: 'models request failed (404)' during maintenance."""
+    hold = ["models request failed (404): unknown route", "chat failed (503): x",
+            "chat failed (401): bad key", "chat failed (502): gateway",
+            "no model configured and auto-selection failed"]
+    for msg in hold:
+        assert refresh.llm_unavailable(LLMError(msg)), msg
+    for msg in ["chat failed (400): bad", "chat failed (413): too large",
+                "chat failed (422): invalid"]:
+        assert not refresh.llm_unavailable(LLMError(msg)), msg
+    assert not refresh.llm_unavailable(ValueError("parse error"))
+
+
 def test_gateway_errors_count_as_down_but_bad_requests_fail(conn, cfg, monkeypatch):
     monkeypatch.setattr("requests.get", lambda url, **kw: Page(ARTICLE))
     c = load_config(cfg)
