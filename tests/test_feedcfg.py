@@ -186,7 +186,8 @@ def _fake_page(monkeypatch, html):
     monkeypatch.setattr("requests.get", lambda *a, **k: R())
 
 
-def test_failure_logging_gated(client, monkeypatch):
+def test_failure_reason_always_recorded(client, monkeypatch):
+    """Failure reasons are always stored (the opt-in checkbox is gone)."""
     from rssgate.config import load_config
     fid = db.add_feed(client.conn, "https://ex/fail", type_="feed")["id"]
     aid = db.upsert_article(client.conn, fid, "g", "https://blog.example/p",
@@ -196,13 +197,7 @@ def test_failure_logging_gated(client, monkeypatch):
     refresh.summarize_pending(client.conn, cfg, None)
     row = client.conn.execute("SELECT status, error_msg FROM articles"
                               " WHERE id=?", (aid,)).fetchone()
-    assert row["status"] == "error" and row["error_msg"] == ""   # off by default
-    cfg["troubleshooting"]["log_llm_failures"] = True
-    db.set_article(client.conn, aid, status="pending")
-    refresh.summarize_pending(client.conn, cfg, None)
-    row = client.conn.execute("SELECT status, error_msg FROM articles"
-                              " WHERE id=?", (aid,)).fetchone()
-    assert "too short" in row["error_msg"]
+    assert row["status"] == "error" and "too short" in row["error_msg"]
     errs = client.get("/api/feed-errors").get_json()
     assert errs[0]["feed_id"] == fid and "too short" in errs[0]["error_msg"]
 

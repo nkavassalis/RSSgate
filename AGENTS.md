@@ -119,6 +119,20 @@ tests/              hermetic tests + test_ui_contract.py + test_ui_real.py
   `page` = never fall back. `articles.digest_source` records the outcome
   ('' page / 'excerpt' forced fallback / 'feed' chosen) and drives the card
   chips and the admin "N from feed excerpt" badge.
+- **LLM outage = hold, not fail.** `refresh.llm_unavailable` (connection
+  errors, timeouts, 502/503/504) puts the post back untouched, records the
+  outage in state (`llm_down_since/reason/next_try`, probe 15s doubling to
+  5m) and stops the batch; `summarize_pending` claims nothing until the
+  probe time, and the first success clears it. Viewer pip turns amber
+  "waiting · AI offline"; admin Status explains. A real rejection (400 etc.)
+  still fails the article. `fail()` alone decides pending-vs-error; never
+  override its status afterwards (that bug silently disabled retries).
+- **Not-an-article guards:** `looks_like_botcheck` catches interstitials
+  served as HTTP 200 (TechPowerUp's "drag the handle"); `is_refusal`
+  catches the model saying the input wasn't an article (matched only in the
+  first 300 chars - real digests can end with caveats). Refusals are never
+  published and never served from the hash cache; maintenance
+  `requeue_refusals` repairs old ones.
 - **Digest queue:** `claim_pending` takes the NEWEST pending post first
   (across feeds, skipping paused feeds), so a new feed's latest posts
   digest first and its backlog drips in at the paced rate.

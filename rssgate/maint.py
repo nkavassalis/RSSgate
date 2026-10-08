@@ -44,6 +44,17 @@ def prune_orphans(conn) -> tuple[int, int]:
     return n, size
 
 
+def requeue_refusals(conn) -> int:
+    """Ready posts whose "digest" is the model saying the input wasn't an
+    article (bot-check pages, error pages) go back through digestion; the
+    pipeline now detects those pages and falls back to the feed's text."""
+    from .refresh import is_refusal
+    rows = conn.execute("SELECT id, summary FROM articles WHERE status='ready'"
+                        " AND digest_source=''").fetchall()
+    bad = [r["id"] for r in rows if is_refusal(r["summary"] or "")]
+    return db.requeue_articles(conn, bad)
+
+
 def dedupe_galleries(conn) -> int:
     """Repair pass: apply imgstore.dedupe to stored articles (rows written
     before the current rules). Idempotent - a clean row is never rewritten.
@@ -115,6 +126,7 @@ def run_all(conn, cfg) -> dict:
 
         # size cap may delete referenced files -> clean dangling refs too
         report["galleries_deduped"] = dedupe_galleries(conn)
+        report["refusals_requeued"] = requeue_refusals(conn)
         max_mb = float(cfg.get("maintenance", {}).get("images_max_mb", 0) or 0)
         d = imgstore.directory()
         if d and max_mb > 0:

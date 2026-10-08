@@ -35,6 +35,35 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.66.0] — 2026-10-07
+
+### Added
+- LLM backend outages hold the queue instead of failing it: unreachable /
+  timing-out / 502-504 backends put the post back untouched and pause
+  digesting, probing again at 15s doubling to 5m; the first success
+  resumes. Viewer queue pip turns amber "waiting · AI offline" (links to
+  Status); admin Status shows "AI backend: offline since HH:MM" with the
+  reason and next check. /api/status adds llm_down_since/reason/next_try.
+- "Retry all failed" button (POST /api/articles/retry-failed).
+- Bot checks served as normal HTTP 200 pages are detected by their text
+  (TechPowerUp's "Automated bot check... Drag the handle") and handled like
+  JS challenges: feed flagged, feed-text fallback, no LLM call.
+- The model's "this isn't an article" replies are never published or
+  reused from the content-hash cache; maintenance re-queues old ones.
+
+### Changed
+- Failure reasons are always recorded; the troubleshooting checkbox
+  (troubleshooting.log_llm_failures) is gone.
+
+### Fixed
+- Automatic retries for transient failures never ran: the digest error
+  handler forced status=error after fail() had chosen pending. That's why
+  LLM maintenance produced 46 failures instead of retries.
+- 120 TechPowerUp posts shared one cached "this page is a bot check"
+  digest (identical challenge text -> identical hash -> cache hit).
+- Admin Status "Refresh" button and update note were never wired
+  ($('#id') with an id-only helper).
+
 ## [0.65.0] — 2026-10-07
 
 ### Added

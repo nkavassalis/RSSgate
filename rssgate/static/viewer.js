@@ -638,7 +638,14 @@
       const s = await (await fetch('/api/status')).json();
       const pend = (s.pending || 0) + (s.processing || 0);
       const fail = s.errors || 0;
+      const down = !!s.llm_down_since;     // AI backend unreachable: held
       $('pip-queue-n').textContent = pend;
+      $('pip-queue-label').textContent = down ? 'waiting \u00b7 AI offline' : 'queued';
+      $('pip-queue').classList.toggle('pip-warn', down);
+      $('pip-queue').href = down ? '/admin#sec-status' : '/admin#sec-queue';
+      $('pip-queue').title = down
+        ? 'the AI backend is unreachable; these posts are held and resume automatically'
+        : 'posts waiting to be digested';
       $('pip-fail-n').textContent = fail;
       $('pip-queue').hidden = pend === 0;
       $('pip-fail').hidden = fail === 0;

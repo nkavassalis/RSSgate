@@ -1087,3 +1087,50 @@ def test_challenge_flag_warns_in_admin(ui_server, browser):
     assert "browser check" in txt and "Feed text only" in txt
     assert pg.errors == []
     pg.close()
+
+
+def test_llm_outage_shows_held_not_failed(ui_server, browser):
+    """AI backend down: the queue pip turns amber 'waiting · AI offline'
+    and links to Status, which explains the hold."""
+    from rssgate import db, refresh
+    fid = _mkfeed("held")
+    _seed_article(fid, "h1", status="pending")
+    conn = db.connect(UI_DB)
+    refresh.mark_llm_down(conn, "ConnectionError: refused")
+    db.set_state(conn, "llm_next_try", "2999-01-01T00:00:00Z")  # stay down
+    conn.close()
+    try:
+        pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+        pg.goto(ui_server, wait_until="networkidle")
+        pip = pg.locator("#pip-queue")
+        pg.wait_for_function("document.getElementById('pip-queue')"
+                             ".classList.contains('pip-warn')", timeout=5000)
+        assert "AI offline" in pip.inner_text()
+        assert pip.get_attribute("href").endswith("#sec-status")
+        pip.click()
+        pg.wait_for_url("**/admin#sec-status", wait_until="networkidle")
+        pg.wait_for_function("document.getElementById('status-note')"
+                             ".textContent.includes('held')", timeout=5000)
+        assert "offline since" in pg.inner_text("#status-grid")
+        assert pg.errors == []
+        pg.close()
+    finally:
+        conn = db.connect(UI_DB); refresh.mark_llm_up(conn); conn.close()
+
+
+def test_retry_all_failed_button(ui_server, browser):
+    from rssgate import db
+    fid = _mkfeed("retry")
+    aid = _seed_article(fid, "r1", status="error")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin#sec-failures", wait_until="networkidle")
+    assert pg.locator("#cfg-logfail").count() == 0       # checkbox removed
+    pg.click("#fail-retry-btn")
+    pg.wait_for_function("document.getElementById('fail-retry-result')"
+                         ".textContent.includes('back in the queue')", timeout=5000)
+    conn = db.connect(UI_DB)
+    assert conn.execute("SELECT status FROM articles WHERE id=?",
+                        (aid,)).fetchone()[0] in ("pending", "processing", "ready")
+    conn.close()
+    assert pg.errors == []
+    pg.close()

@@ -392,3 +392,7 @@ b.warn { color:#b26a00; }
   font-size:.72rem; padding:1px 8px; border-radius:999px; color:#c0392b;
   background:color-mix(in srgb, #e74c3c 16%, transparent); }
 @media (prefers-color-scheme: dark) { .challenge-pill { color:#ff7a6e; } }
+
+.pip-warn { background:color-mix(in srgb, #f5a623 22%, transparent); color:#b26a00; }
+@media (prefers-color-scheme: dark) { .pip-warn { color:#ffc56b; } }
+.status-grid.llm-down .status-cell:nth-child(5) b { color:#b26a00; }

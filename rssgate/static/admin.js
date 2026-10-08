@@ -287,7 +287,6 @@ async function loadConfig() {
   $('cfg-hostgap').value = fc.per_host_interval ?? 3;
   $('cfg-backoff').value = fc.block_backoff_minutes ?? 60;
   $('cfg-streamwidth').value = (cfg.ui || {}).stream_width ?? 800;
-  $('cfg-logfail').checked = !!((cfg.troubleshooting || {}).log_llm_failures);
   renderFailures();
   $('cfg-length').value = cfg.summarizer.length;
   $('cfg-max-chars').value = cfg.summarizer.max_input_chars;
@@ -417,12 +416,15 @@ async function loadStatus() {
   if (!box) return;
   try {
     const s = await api('/api/status');
-    const q = s.processing ? `${s.processing} working` : (s.pending ? `${s.pending} queued` : 'idle');
+    const hhmm = t => t ? new Date(t).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+    const q = s.llm_down_since ? `${s.pending} held`
+      : s.processing ? `${s.processing} working` : (s.pending ? `${s.pending} queued` : 'idle');
     const rowA = [
       ['RSSgate', `v${s.version}`],
       ['Uptime', s.uptime_min < 60 ? `${s.uptime_min}m` : `${Math.floor(s.uptime_min/60)}h ${s.uptime_min%60}m`],
       ['Feeds', `${s.feeds_enabled}/${s.feeds} enabled`],
       ['Queue', q],
+      ['AI backend', s.llm_down_since ? `offline since ${hhmm(s.llm_down_since)}` : 'online'],
     ];
     const rowB = [
       ['Digest errors', String(s.errors || 0)],
@@ -433,11 +435,14 @@ async function loadStatus() {
       `<div class="status-cell"><b>${esc(v)}</b><span>${k}</span></div>`;
     box.innerHTML = rowA.map(cell).join('')
       + '<div class="grid-break"></div>' + rowB.map(cell).join('');
-    $('#status-note') && ($('#status-note').textContent =
-      'updated ' + new Date().toLocaleTimeString());
+    $('status-note').textContent = s.llm_down_since
+      ? `AI backend unreachable since ${hhmm(s.llm_down_since)}; posts are held, not failed. Next check ${hhmm(s.llm_next_try)}. (${s.llm_down_reason || ''})`
+      : 'updated ' + new Date().toLocaleTimeString();
+    box.classList.toggle('llm-down', !!s.llm_down_since);
   } catch { /* server busy; keep last */ }
 }
-$('#status-refresh')?.addEventListener('click', loadStatus);
+$('status-refresh').addEventListener('click', loadStatus);
+setInterval(loadStatus, 30000);
 loadStatus();
 setTimeout(loadStatus, 2000);
 
@@ -503,7 +508,6 @@ $('save-btn').addEventListener('click', async () => {
                             +$('cfg-sharewidth').value || 800)),
         stream_width: Math.max(480, Math.min(1600,
                             +$('cfg-streamwidth').value || 1280)) },
-    troubleshooting: { log_llm_failures: $('cfg-logfail').checked },
     maintenance: { retention_months: +$('cfg-retention').value,
                    images_max_mb: +$('cfg-imgcap').value,
                    images_per_post: Math.max(1, Math.min(8, +$('cfg-imgperpost').value || 4)) },
@@ -871,6 +875,13 @@ async function renderFailures() {
     }));
 }
 $('fail-refresh').addEventListener('click', renderFailures);
+$('fail-retry-btn').addEventListener('click', async () => {
+  const r = await (await fetch('/api/articles/retry-failed',
+    { method: 'POST' })).json();
+  $('fail-retry-result').textContent =
+    `${r.requeued} post${r.requeued === 1 ? '' : 's'} back in the queue`;
+  renderFailures();
+});
 $('fail-clear-btn').addEventListener('click', async () => {
   if (!confirm('Delete ALL failed posts? Their cached images go too.'))
     return;
@@ -883,4 +894,3 @@ $('fail-clear-btn').addEventListener('click', async () => {
   renderFailures();
   if (window.refreshPips) window.refreshPips();
 });
-$('cfg-logfail').addEventListener('change', () => {});   // saved with Save config

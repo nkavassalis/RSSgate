@@ -17,7 +17,7 @@ break the panel).
 | `POST /api/poll` | Poll all enabled feeds now in a background thread (own DB connection), throttled to once per 60 s: `{ok, started, throttled?, why?}`. The viewer skips its settle wait when `throttled` is true. |
 | `GET /api/qr.png?u=<url>` | Local QR PNG for http(s) URLs (<=500 chars; 400 otherwise). Used by share cards. |
 | `GET /image/<name>` | Cached image. Only hash names `[0-9a-f]{24}.(jpg\|png\|webp\|gif)` resolve. A missing hero is re-fetched from the article's `image_url` and hash-verified (name = sha256(url)[:24]) before serving. Immutable cache headers. |
-| `GET /api/status` | `{version, uptime_min, feeds, feeds_enabled, pending, processing, errors, db_mb, cache_mb, polling}`. Powers the admin Status panel and the viewer's queue/failure pips. |
+| `GET /api/status` | `{version, uptime_min, feeds, feeds_enabled, pending, processing, errors, db_mb, cache_mb, llm_down_since, llm_down_reason, llm_next_try, polling}`. `llm_down_since` is non-null while the AI backend is unreachable and the queue is held. Powers the admin Status panel and the viewer's queue/failure pips. |
 
 ## Feeds
 
@@ -46,7 +46,8 @@ break the panel).
 | Method / path | Description |
 |---|---|
 | `GET /api/workqueue` | `{current:[...], recent:[...], working, queue_ahead}`. |
-| `GET /api/feed-errors` | Latest failed articles `[{feed_title,title,link,error_msg}]` (`error_msg` only with `troubleshooting.log_llm_failures`). |
+| `GET /api/feed-errors` | Latest failed articles `[{feed_title,title,link,error_msg}]`; the reason is always recorded. |
+| `POST /api/articles/retry-failed` | Re-queue every failed article with a fresh attempt budget: `{requeued}`. |
 | `POST /api/articles/<id>/retry` | Re-queue a failed article, reset attempts. |
 | `POST /api/articles/<id>/drop` | Hide a failed article permanently. |
 | `POST /api/articles/clear-failed` | Delete every `error` article and release images only they used: `{deleted, images_released}`. |

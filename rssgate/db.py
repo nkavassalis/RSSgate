@@ -761,6 +761,26 @@ def article_needing_image(conn, name: str) -> str | None:
     return row["image_url"] if row else None
 
 
+def retry_failed(conn) -> int:
+    """Re-queue every failed article with a fresh attempt budget."""
+    n = conn.execute("UPDATE articles SET status='pending', attempts=0,"
+                     " started_at=NULL WHERE status='error'").rowcount
+    conn.commit()
+    return n
+
+
+def requeue_articles(conn, ids) -> int:
+    """Send ready articles back through digestion from scratch (clears the
+    digest and its content hash so the cache can't hand it back)."""
+    ids = list(ids)
+    for i in ids:
+        conn.execute("UPDATE articles SET status='pending', summary=NULL,"
+                     " body_hash=NULL, digest_source='', attempts=0,"
+                     " started_at=NULL WHERE id=?", (i,))
+    conn.commit()
+    return len(ids)
+
+
 def delete_articles_status(conn, status: str) -> tuple[int, set[str]]:
     """Delete all articles with the given terminal status.
     Returns (deleted_count, referenced image filenames)."""

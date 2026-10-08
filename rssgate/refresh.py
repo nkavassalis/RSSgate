@@ -11,6 +11,7 @@ from . import imgstore
 from .config import LENGTH_TARGETS
 from .extract import extract_article_text, extract_images, page_title
 from .fetcher import fetch_feed, fetch_page, discover_page_articles, probe
+from .llm import LLMError
 
 log = logging.getLogger("rssgate.refresh")
 
@@ -221,7 +222,7 @@ def fail(conn, cfg, article_id: int, why: str) -> str:
     (429s, timeouts, 5xx, connection resets) go back to 'pending' for an
     automatic retry on the next tick - the 30s scheduler tick is the back-
     off - until summarizer.max_retries is exhausted, then 'error'.
-    With troubleshooting.log_llm_failures the reason is stored. Returns the
+    The reason is always stored (shown in admin Failures). Returns the
     resulting status."""
     conn.execute("UPDATE articles SET attempts=attempts+1 WHERE id=?",
                  (article_id,))
@@ -230,13 +231,82 @@ def fail(conn, cfg, article_id: int, why: str) -> str:
     max_retries = int(cfg.get("summarizer", {}).get("max_retries", 2))
     retry = bool(TRANSIENT_RE.search(str(why))) and attempts <= max_retries
     status = "pending" if retry else "error"
-    fields = {"status": status}
-    if cfg.get("troubleshooting", {}).get("log_llm_failures"):
-        fields["error_msg"] = (f"{str(why)[:400]} "
-                               f"[attempt {attempts}"
-                               f"{', retrying' if retry else ''}]")
-    db.set_article(conn, article_id, **fields)
+    db.set_article(conn, article_id, status=status,
+                   error_msg=(f"{str(why)[:400]} [attempt {attempts}"
+                              f"{', retrying' if retry else ''}]"))
     return status
+
+
+# ---- LLM backend outage: hold the queue instead of failing it -------------
+def llm_unavailable(exc) -> bool:
+    """The LLM BACKEND is unreachable (down, restarting, overloaded) - as
+    opposed to a request it rejected. Such errors say nothing about the
+    article, so they must never count against it."""
+    import requests
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    return isinstance(exc, LLMError) and bool(
+        re.search(r"\((502|503|504)\)", str(exc)))
+
+
+def llm_down_state(conn) -> dict:
+    return {"since": db.get_state(conn, "llm_down_since", ""),
+            "reason": db.get_state(conn, "llm_down_reason", ""),
+            "next_try": db.get_state(conn, "llm_next_try", "")}
+
+
+def mark_llm_down(conn, why: str) -> None:
+    """Record an outage and schedule the next probe (15s doubling, max 5m)."""
+    import datetime
+    n = int(db.get_state(conn, "llm_down_count", "0") or 0) + 1
+    if not db.get_state(conn, "llm_down_since", ""):
+        db.set_state(conn, "llm_down_since", db.now_iso())
+        log.warning("LLM backend unavailable, holding the queue: %s", why)
+    wait = min(300, 15 * 2 ** (n - 1))
+    nxt = (datetime.datetime.now(datetime.timezone.utc)
+           + datetime.timedelta(seconds=wait)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.set_state(conn, "llm_down_count", str(n))
+    db.set_state(conn, "llm_down_reason", str(why)[:300])
+    db.set_state(conn, "llm_next_try", nxt)
+
+
+def mark_llm_up(conn) -> None:
+    if db.get_state(conn, "llm_down_since", ""):
+        log.warning("LLM backend is back; resuming the queue")
+    for k in ("llm_down_since", "llm_down_reason", "llm_next_try",
+              "llm_down_count"):
+        db.set_state(conn, k, "")
+
+
+def llm_may_try(conn) -> bool:
+    nxt = db.get_state(conn, "llm_next_try", "")
+    return not nxt or nxt <= db.now_iso()
+
+
+# Bot-check / interstitial pages that arrive as normal HTML (HTTP 200).
+BOTCHECK_RE = re.compile(
+    r"(automated bot check|bot check in progress|verify (that )?you('| a)re "
+    r"(a )?human|are you a robot|checking (if the site connection is secure|"
+    r"your browser)|drag the (handle|slider)|press (and|&) hold|complete the "
+    r"(security )?check|enable javascript and cookies to continue|"
+    r"attention required)", re.I)
+# The model telling us the input was not an article - never publish/cache it.
+REFUSAL_RE = re.compile(
+    r"(does not contain (a |an |any )?(news |actual |substantive )?"
+    r"(article|news|information)|cannot be summari[sz]ed|no (factual )?digest "
+    r"(can|could) be (generated|produced)|(bot|security) (check|verification)"
+    r" (notice|page|message|prompt)|was not successfully retrieved)", re.I)
+
+
+def looks_like_botcheck(text: str) -> bool:
+    return len(text) < 2000 and bool(BOTCHECK_RE.search(text))
+
+
+def is_refusal(digest: str) -> bool:
+    """A refusal LEADS with it; a real digest may end with a caveat like
+    "...therefore cannot be summarized" and must not be thrown away."""
+    d = digest or ""
+    return len(d) < 1500 and bool(REFUSAL_RE.search(d[:300]))
 
 
 def system_prompt(cfg, feed=None) -> str:
@@ -367,6 +437,8 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
     Claims atomically, so multiple worker threads may call this concurrently."""
     imgstore.set_per_post(cfg.get("maintenance", {}).get("images_per_post", 4))
     done = 0
+    if not llm_may_try(conn):          # backend down: leave the queue alone
+        return 0
     rows = db.claim_pending(conn, limit)
     for art in rows:
         try:
@@ -430,6 +502,16 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                          + (" (transient)" if transient else ""))
                     continue
                 text = extract_article_text(resp.text, cap)
+                if looks_like_botcheck(text):
+                    # bot check served as a normal 200 page (TechPowerUp's
+                    # "drag the handle"): same handling as a JS challenge
+                    db.feed_challenge(conn, art["feed_id"])
+                    if src == "auto" and _use_excerpt(conn, art):
+                        done += 1
+                    else:
+                        fail(conn, cfg, art["id"],
+                             "site served a bot check instead of the article")
+                    continue
                 if len(text) < 120:
                     if src == "auto" and _use_excerpt(conn, art):
                         done += 1                     # page empty, feed has text
@@ -452,7 +534,7 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                 done += 1
                 continue
             cached = db.find_summary_by_hash(conn, body_hash)
-            if cached:
+            if cached and not is_refusal(cached["summary"]):
                 db.set_article(conn, art["id"], summary=cached["summary"],
                                status="ready", body_hash=body_hash,
                                summarized_at=db.now_iso(), llm_ms=0)
@@ -472,12 +554,34 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
             user = (f"Feed: {feed['title'] or feed['url']}\n"
                     f"Article: {art['title']}\nSource: {art['link']}\n\n{text}")
             t0 = time.perf_counter()
-            digest, usage = llm.chat(
-                [{"role": "system", "content": system_prompt(cfg, feed)},
-                 {"role": "user", "content": user}],
-                max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)),
-                model=_purpose_model(cfg, "model_summarize"))
+            try:
+                digest, usage = llm.chat(
+                    [{"role": "system", "content": system_prompt(cfg, feed)},
+                     {"role": "user", "content": user}],
+                    max_tokens=int(cfg["summarizer"].get("max_output_tokens", 4000)),
+                    model=_purpose_model(cfg, "model_summarize"))
+            except Exception as exc:  # noqa: BLE001
+                if llm_unavailable(exc):
+                    # backend down: not this article's fault - put it back
+                    # untouched and stop; the next probe decides when to resume
+                    mark_llm_down(conn, f"{type(exc).__name__}: {exc}")
+                    db.set_article(conn, art["id"], status="pending",
+                                   started_at=None)
+                    break
+                raise
+            mark_llm_up(conn)
             dur_ms = int((time.perf_counter() - t0) * 1000)
+            if is_refusal(digest):
+                # the model says the input wasn't an article (bot check,
+                # error page): don't publish or cache that "digest"
+                db.feed_challenge(conn, art["feed_id"])
+                if not ((feed["content_source"] if "content_source" in feed.keys()
+                         else "auto") == "auto" and _use_excerpt(conn, art)):
+                    fail(conn, cfg, art["id"],
+                         "the model reported the page held no article")
+                else:
+                    done += 1
+                continue
             db.log_usage(conn, llm.provider, llm.model or "auto",
                          usage["prompt_tokens"], usage["completion_tokens"],
                          duration_ms=dur_ms, purpose="summarize")
@@ -498,7 +602,8 @@ def summarize_pending(conn, cfg, llm, limit: int = 5) -> int:
                            summarized_at=db.now_iso())
             done += 1
         except Exception as exc:  # noqa: BLE001
+            # fail() decides pending (transient retry) vs error - don't
+            # override it (it used to force 'error', so retries never ran)
             fail(conn, cfg, art["id"], f"{type(exc).__name__}: {exc}")
             log.warning("summarize failed for %s: %s", art["link"], exc)
-            db.set_article(conn, art["id"], status="error")
     return done

@@ -534,6 +534,10 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         from . import maint
         return jsonify(maint.run_all(conn, load_config(config_path)))
 
+    @app.route("/api/articles/retry-failed", methods=["POST"])
+    def api_retry_failed():
+        return jsonify({"requeued": db.retry_failed(conn)})
+
     @app.route("/api/articles/clear-failed", methods=["POST"])
     def api_clear_failed():
         n, files = db.delete_articles_status(conn, "error")
@@ -561,13 +565,18 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         except OSError:
             pass
         from . import imgstore
+        from .refresh import llm_down_state
         cache_mb = imgstore.cache_mb()
+        down = llm_down_state(conn)
         return jsonify({"version": __version__, "feeds": n_feeds,
                         "feeds_enabled": n_on, "pending": q.get("pending", 0),
                         "processing": q.get("processing", 0),
                         "errors": q.get("error", 0),
                         "uptime_min": round((_t.time() - START_TIME) / 60),
                         "db_mb": db_mb, "cache_mb": cache_mb,
+                        "llm_down_since": down["since"] or None,
+                        "llm_down_reason": down["reason"] or None,
+                        "llm_next_try": down["next_try"] or None,
                         "polling": cfg["polling"]})
 
     return app
