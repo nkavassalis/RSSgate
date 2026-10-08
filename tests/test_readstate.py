@@ -201,3 +201,28 @@ def test_prio_orders_unread_first_and_pages_correctly(conn):
                              before_u=cur["unread"], unread_first=True,
                              limit=10)
     assert [r["title"] for r in page2] == ["Read NEW"]
+
+
+def test_per_article_read_marks_do_not_read_the_backlog(client):
+    """Reading a feed's newest post marks THAT post only (the old per-feed
+    cursor read every older post the moment you saw the newest)."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://pa.test/feed", type_="feed")["id"]
+    ids = []
+    for i in range(3):
+        aid = db.upsert_article(conn, fid, f"g{i}", f"https://pa.test/{i}", "t",
+                                f"2026-10-0{i + 1}T00:00:00Z")
+        db.set_article(conn, aid, status="ready", summary="s")
+        ids.append(aid)
+    newest = ids[-1]
+    r = client.post("/api/position", json={"read_ids": [newest]})
+    assert r.get_json() == {"ok": True, "marked": 1}
+    items = client.get(f"/api/articles?feed_id={fid}&fresh=1").get_json()["items"]
+    unread = {i["id"]: i["unread"] for i in items}
+    assert unread[newest] is False
+    assert unread[ids[0]] is True and unread[ids[1]] is True
+    assert db.feed_unread(conn, fid, db.get_feed(conn, fid)["last_read_ts"]) == 2
+    # legacy cursor history still counts as read
+    db.mark_feed_read(conn, fid, "2026-10-02T00:00:00Z")
+    assert db.feed_unread(conn, fid, db.get_feed(conn, fid)["last_read_ts"]) == 0

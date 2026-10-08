@@ -1134,3 +1134,46 @@ def test_retry_all_failed_button(ui_server, browser):
     conn.close()
     assert pg.errors == []
     pg.close()
+
+
+def test_read_marking_is_honest(ui_server, browser):
+    """A card that has only partly scrolled into view stays unread; a card
+    scrolled ENTIRELY past is read; clicking a card reads it instantly."""
+    from rssgate import db
+    fid = _mkfeed("readpass")
+    long = " ".join(f"Sentence {i} of a long digest body." for i in range(60))
+    ids = [_seed_article(fid, f"r{i}", title=f"read probe {i}",
+                         ts=f"2027-06-0{9 - i}T00:00:00Z", summary=long)
+           for i in range(5)]
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    pg.wait_for_selector(f".card[data-id='{ids[0]}']", timeout=5000)
+    card = lambda i: pg.locator(f".card[data-id='{ids[i]}']")
+    # put card 1's top at 75% of the screen: mostly below the fold
+    pg.evaluate("""(id) => { const c = document.querySelector(
+        `.card[data-id='${id}']`);
+        scrollTo(0, c.getBoundingClientRect().top + scrollY - innerHeight * 0.75);
+    }""", ids[1])
+    pg.wait_for_timeout(2000)                     # past the 1.2s save debounce
+    assert "unread" in card(1).get_attribute("class")
+    # scroll card 0 completely off the top -> read
+    pg.evaluate("""(id) => { const c = document.querySelector(
+        `.card[data-id='${id}']`);
+        scrollTo(0, c.offsetTop + c.offsetHeight + 5); }""", ids[0])
+    pg.wait_for_function(f"""() => !document.querySelector(
+        ".card[data-id='{ids[0]}']").classList.contains('unread')""",
+        timeout=4000)
+    # click card 3 -> read immediately (well before any dwell timer)
+    card(3).locator(".digest").click()
+    assert "unread" not in card(3).get_attribute("class")
+    pg.wait_for_timeout(400)
+    conn = db.connect(UI_DB)
+    got = dict(conn.execute(
+        "SELECT id, read_at IS NOT NULL FROM articles WHERE feed_id=?",
+        (fid,)).fetchall())
+    conn.close()
+    assert got[ids[0]] == 1 and got[ids[3]] == 1
+    assert got[ids[2]] == 0 and got[ids[4]] == 0   # never seen: still unread
+    assert pg.errors == []
+    pg.close()

@@ -35,6 +35,25 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.67.0] — 2026-10-07
+
+### Fixed
+- Posts were marked read while mostly off screen: the scroll handler
+  marked every card whose TOP had crossed 60% of the viewport (ignoring the
+  read delay). Now scrolling marks a card only once it has scrolled
+  ENTIRELY past the top of the screen; the dwell timer still needs most of
+  the card on screen (or, for cards taller than the screen, the card
+  filling most of it - those used to never count).
+- Reading a feed's newest post silently read its whole backlog on the
+  server (read state was one per-feed "read up to" timestamp). Read state
+  is now per article (articles.read_at); the old cursor still covers
+  history from before this release.
+
+### Added
+- Clicking anywhere on an unread card marks it read instantly.
+- POST /api/position accepts {read_ids: [...]} (ts/id optional when only
+  marking); legacy payloads still work.
+
 ## [0.66.1] — 2026-10-07
 
 ### Fixed

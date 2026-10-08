@@ -120,6 +120,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "last_read_ts" not in cols:
         conn.execute("ALTER TABLE feeds ADD COLUMN last_read_ts TEXT")
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
+    if "read_at" not in cols:            # per-article read mark
+        conn.execute("ALTER TABLE articles ADD COLUMN read_at TEXT")
     if "feed_text" not in cols:          # the feed's own excerpt/content
         conn.execute("ALTER TABLE articles ADD COLUMN feed_text TEXT")
     if "digest_source" not in cols:      # '' = page/LLM, 'excerpt' = feed text
@@ -554,8 +556,12 @@ def upsert_article(conn, feed_id: int, guid: str, link: str, title: str,
 
 
 _TS_EXPR = "COALESCE(published_at, fetched_at)"
-UNREAD_EXPR = ("CASE WHEN COALESCE(f.last_read_ts, '') = '' THEN 1"
-               " WHEN COALESCE(published_at, fetched_at) > f.last_read_ts"
+# Read = this article was marked (read_at), or it predates the feed's legacy
+# read cursor (history from before per-article marks). New marks never move
+# the cursor, so reading a feed's newest post no longer "reads" its backlog.
+UNREAD_EXPR = ("CASE WHEN a.read_at IS NOT NULL THEN 0"
+               " WHEN COALESCE(f.last_read_ts, '') = '' THEN 1"
+               " WHEN COALESCE(a.published_at, a.fetched_at) > f.last_read_ts"
                " THEN 1 ELSE 0 END")
 
 
@@ -875,6 +881,18 @@ def log_usage(conn, provider: str, model: str, prompt: int, completion: int,
     conn.commit()
 
 
+def mark_articles_read(conn, ids) -> int:
+    """Per-article read marks (dwell, click, scrolled fully past)."""
+    ids = [int(i) for i in ids if str(i).isdigit()][:500]
+    if not ids:
+        return 0
+    q = ",".join("?" * len(ids))
+    n = conn.execute(f"UPDATE articles SET read_at=? WHERE id IN ({q})"
+                     " AND read_at IS NULL", (now_iso(), *ids)).rowcount
+    conn.commit()
+    return n
+
+
 def mark_feed_read(conn, feed_id: int, ts: str) -> None:
     """Advance one feed's read cursor (canonical UTC strings); forward only."""
     ts = norm_ts(ts)
@@ -892,7 +910,7 @@ def feed_unread(conn, feed_id: int, last_read_ts: str | None) -> int:
     to dwell-mark it away."""
     return conn.execute(
         "SELECT COUNT(*) c FROM articles WHERE feed_id=?"
-        " AND status NOT IN ('hidden','dropped')"
+        " AND status NOT IN ('hidden','dropped') AND read_at IS NULL"
         " AND " + _TS_EXPR + " > COALESCE(?, '')",
         (feed_id, last_read_ts)).fetchone()["c"]
 

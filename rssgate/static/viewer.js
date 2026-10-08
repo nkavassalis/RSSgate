@@ -110,13 +110,16 @@
       curTimer = 0; markSeen(curCard); armRead();
     }, READ_DELAY_MS);
   }
+  // "being read" = most of the card is on screen, or (cards taller than
+  // the screen) it fills most of the screen - a partly-entered card never is
   const dwellObs = new IntersectionObserver(entries => {
     for (const e of entries) {
-      const vis = e.isIntersecting && e.intersectionRatio >= 0.55;
+      const fills = e.intersectionRect.height >= window.innerHeight * 0.6;
+      const vis = e.isIntersecting && (e.intersectionRatio >= 0.55 || fills);
       if (vis) visCards.add(e.target); else visCards.delete(e.target);
     }
     armRead();
-  }, { threshold: [0, 0.55] });
+  }, { threshold: [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1] });
   function observeCards() {
     stream.querySelectorAll('.card.unread:not([data-obs])').forEach(c => {
       c.dataset.obs = '1';
@@ -131,16 +134,20 @@
     if (dot) dot.remove();
     bumpPill(card.dataset.feed);
     scheduleFeedSync();
-    const body = JSON.stringify({
-      ts: card.dataset.ts, id: +card.dataset.id,
-      reads: { [card.dataset.feed]: card.dataset.ts },
-      global: false,
-    });
+    sendPosition({ read_ids: [+card.dataset.id] });
+  }
+  function sendPosition(payload) {
+    const body = JSON.stringify(payload);
     navigator.sendBeacon && navigator.sendBeacon('/api/position',
       new Blob([body], { type: 'application/json' }))
       || fetch('/api/position', { method: 'POST', body,
           headers: { 'content-type': 'application/json' } });
   }
+  // clicking anywhere on an unread card (link, image, share, text) reads it
+  stream.addEventListener('click', e => {
+    const card = e.target.closest && e.target.closest('.card.unread');
+    if (card) markSeen(card);
+  });
   let pillSync = null;
   function scheduleFeedSync() {
     clearTimeout(pillSync);
@@ -255,42 +262,34 @@
   function savePosition() {
     const cards = [...stream.querySelectorAll('.card')];
     if (!cards.length) return;
+    // resume point (position, not read state): cards reaching 60% down
     const cutoff = window.scrollY + window.innerHeight * 0.6;
     const passed = cards.filter(c => c.offsetTop <= cutoff);
-    if (!passed.length) return;
-    // per-feed cursor = NEWEST passed card of that feed (fast scrolling past
-    // an unread card must still mark it read; one oldest-position beacon did not)
-    const reads = {};
-    for (const c of passed) {
-      const f = c.dataset.feed, t = c.dataset.ts;
-      if (f && (!reads[f] || t > reads[f])) reads[f] = t;
+    // READ = scrolled ENTIRELY past (bottom edge above the screen top); a
+    // card that has merely started to appear is not read
+    const gone = cards.filter(c => c.classList.contains('unread')
+                 && c.offsetTop + c.offsetHeight <= window.scrollY);
+    const readIds = gone.map(c => +c.dataset.id);
+    for (const c of gone) {
+      c.classList.remove('unread');
+      const dot = c.querySelector('.newdot');
+      if (dot) dot.remove();
+      bumpPill(c.dataset.feed);
     }
-    // newest mode: resume = deepest (oldest) card passed;
-    // oldest mode: resume = frontier (newest) card passed
-    let pos = passed[passed.length - 1];
-    if (order === 'oldest')
-      for (const c of passed) if (c.dataset.ts > pos.dataset.ts) pos = c;
-    const body = JSON.stringify({
-      ts: pos.dataset.ts, id: +pos.dataset.id, reads,
-      global: store.mode === 'new' && !store.feed,
-    });
-    // local reflection: cards you just passed ARE read — flip them now
-    // instead of waiting for a re-fetch, and resync the sidebar pills
-    let flipped = false;
-    for (const c of passed) {
-      if (c.classList.contains('unread')) {
-        c.classList.remove('unread');
-        const dot = c.querySelector('.newdot');
-        if (dot) dot.remove();
-        bumpPill(c.dataset.feed);
-        flipped = true;
-      }
+    if (gone.length) setTimeout(renderFeedFilter, 500);   // after beacon
+    const global = store.mode === 'new' && !store.feed;
+    if (!global && !readIds.length) return;
+    const payload = { read_ids: readIds };
+    if (global && passed.length) {
+      // newest mode: resume = deepest (oldest) card passed;
+      // oldest mode: resume = frontier (newest) card passed
+      let pos = passed[passed.length - 1];
+      if (order === 'oldest')
+        for (const c of passed) if (c.dataset.ts > pos.dataset.ts) pos = c;
+      Object.assign(payload, { ts: pos.dataset.ts, id: +pos.dataset.id,
+                               global: true });
     }
-    if (flipped) setTimeout(renderFeedFilter, 500);  // after beacon lands
-    navigator.sendBeacon && navigator.sendBeacon('/api/position',
-      new Blob([body], { type: 'application/json' }))
-      || fetch('/api/position', { method: 'POST', body,
-          headers: { 'content-type': 'application/json' } });
+    sendPosition(payload);
   }
   function queueSave() { clearTimeout(saveTimer); saveTimer = setTimeout(savePosition, 1200); }
   window.addEventListener('scroll', queueSave, { passive: true });

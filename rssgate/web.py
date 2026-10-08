@@ -119,8 +119,12 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
     @app.route("/api/position", methods=["POST"])
     def api_position():
         data = request.get_json(force=True)
-        ts, aid = data.get("ts"), int(data.get("id", 0))
+        ts, aid = data.get("ts"), int(data.get("id", 0) or 0)
+        rid = data.get("read_ids")
+        marked = db.mark_articles_read(conn, rid) if isinstance(rid, list) else 0
         if not (ts and aid):
+            if isinstance(rid, list):              # read marks only
+                return jsonify({"ok": True, "marked": marked})
             return jsonify({"ok": False, "error": "ts and id required"}), 400
         # precise per-feed cursors: {"reads": {"<feed_id>": "<ts>", ...}}
         reads = data.get("reads")
