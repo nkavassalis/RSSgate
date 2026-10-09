@@ -699,7 +699,12 @@
   }
   let pulseInFlight = false;         // overlapping ticks must stack into a burst
   async function pulseTick() {
-    if (document.hidden || ptrBusy || pulseInFlight) return;
+    // The FIRST answer of a load must be fetched no matter what else is going
+    // on: skipping it (a refresh in flight, a tab return) leaves the page with
+    // no baseline, and the next tick then baselines on the NEW number - which
+    // silently swallows an arrival that happened in the gap. Only a hidden tab
+    // can postpone it; a hidden tab has no reader to notify anyway.
+    if (document.hidden || (pulseBooted && (ptrBusy || pulseInFlight))) return;
     pulseInFlight = true;
     let p = null;
     try { p = await (await fetch('/api/pulse')).json(); }
@@ -750,6 +755,10 @@
         ? ' newer than the last one you read' : '')
         + '; tap to start the stream at the newest';
       box.hidden = false;
+      // this answer proves the sidebar pills are stale: that list only
+      // re-renders on a feed switch or after a read bumps it, so overnight
+      // arrivals left the pill saying 45 while every sidebar pip said nothing
+      renderFeedFilter().catch(() => {});
     } else {
       box.hidden = true;
     }
@@ -759,8 +768,10 @@
   function pulseArm() { Promise.resolve(pulseTick()).then(pulseStart); }
   function pulseStart() {
     clearTimeout(pulseTimer);
-    if (pulseEveryMs > 0 && !document.hidden)
-      pulseTimer = setTimeout(pulseArm, pulseEveryMs);
+    if (pulseEveryMs <= 0 || document.hidden) return;
+    // until the baseline exists the loop is blind, so re-check quickly (2s)
+    // instead of trusting one chance and waiting out the whole cadence
+    pulseTimer = setTimeout(pulseArm, pulseBooted ? pulseEveryMs : 2000);
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) clearTimeout(pulseTimer);
@@ -771,9 +782,12 @@
     const box = pulseBox(); if (box) box.hidden = true;
     restart(true);          // stream restarts at newest; no feed fetching
     refreshPips();
+    renderFeedFilter().catch(() => {});   // sidebar pips must match what loaded
   });
   window.__pulseTick = pulseTick;      // test seam: run one check now
   window.__pulseClear = pulseClear;    // test seam: re-baseline (as a click)
+  window.__pulseState = () => ({acked: pulseAcked, shown: pulseShown,
+                                booted: pulseBooted});   // test seam
   // Offline at boot: keep a quiet re-check going, and retry on demand. If the
   // server is back, a reload brings the reader up with the saved position.
   function retryPulse() {           // defined once, re-armed on failure

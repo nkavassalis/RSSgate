@@ -2023,3 +2023,76 @@ def test_reload_does_not_repeat_what_the_reload_showed(ui_server, browser):
     assert "5 newer" in pg.locator("#pulse-btn").inner_text()
     assert pg.errors == []
     pg.close()
+
+
+def test_the_load_baseline_is_taken_promptly(ui_server, browser):
+    """A skipped first answer left the page without a baseline, so the NEXT
+    tick baselined on the new number and an arrival in that gap vanished. The
+    first answer of a load must be fetched at boot even if a refresh is in
+    flight; a later number must then announce itself."""
+    fid, link = _mkfeed("pulbase", url=True)
+    _seed_article(fid, "k1", title="baseline probe", ts="2027-04-01T00:00:00Z")
+    token = link.split("//")[1].split(".")[0]
+    stub = {"newest_ts": "2027-04-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 3, "unread_since_total": 3,
+            "since_ts": "2027-03-01T00:00:00Z", "every_minutes": 60,
+            "feeds": [{"feed_id": fid, "title": token, "unread": 3,
+                       "unread_since": 3, "ts": "2027-04-01T00:00:00Z"}]}
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    def poll(req):                      # slow: keeps ptrBusy true for ~4s
+        time.sleep(4.0)
+        req.fulfill(json={"queued": 0, "feeds": 1, "refreshed": 1})
+    def slow_resume(req):               # the boot arm waits on this, so the
+        time.sleep(1.5)                 # first tick lands mid-refresh
+        req.fallback()
+    pg.route("**/api/poll", poll)
+    pg.route("**/api/resume", slow_resume)
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.click("#refresh-btn")
+    pg.wait_for_selector(".card")
+    pg.wait_for_function("window.__pulseState().booted === true", timeout=4000)
+    assert pg.evaluate("window.__pulseState().acked") == 3, \
+        "the baseline was not taken while a refresh was in flight"
+    assert pg.is_hidden("#pulse"), "the baseline itself announced itself"
+    stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 4
+    pg.evaluate("window.__pulseTick()")               # still refreshing
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    assert "4 newer" in pg.locator("#pulse-btn").inner_text(), \
+        "an arrival during a refresh was swallowed by a late baseline"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pill_and_sidebar_pips_agree_when_it_speaks(ui_server, browser):
+    """The overnight case: the pill announced 45 newer posts while every
+    sidebar pip still said nothing, because the feed list only re-renders on a
+    feed switch or after a read - arrivals never refreshed it, so the two
+    numbers on one page disagreed until the user clicked All feeds. When the
+    pill speaks, the sidebar must be re-read from the server."""
+    fid, link = _mkfeed("pipagree", url=True)
+    token = link.split("//")[1].split(".")[0]
+    stub = {"newest_ts": "2027-05-01T00:00:00Z", "ready_total": 1,
+            "unread_total": 0, "unread_since_total": 0,
+            "since_ts": "2027-04-01T00:00:00Z", "every_minutes": 1, "feeds": []}
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector(".card")
+    pg.wait_for_function("window.__pulseState().booted === true", timeout=5000)
+    assert pg.is_hidden("#pulse")
+
+    # posts arrive after boot: the pill's stub grows, the sidebar is real
+    _seed_article(fid, "a1", title="overnight one", ts="2027-05-02T00:00:00Z")
+    _seed_article(fid, "a2", title="overnight two", ts="2027-05-03T00:00:00Z")
+    stub.update(unread_total=2, unread_since_total=2,
+                feeds=[{"feed_id": fid, "title": token, "unread": 2,
+                        "unread_since": 2, "ts": "2027-05-03T00:00:00Z"}])
+    pg.evaluate("window.__pulseTick()")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=4000)
+    pg.wait_for_function(
+        f"""() => {{
+          const li = document.querySelector("#feed-filter li[data-feed='{fid}'] .unread-pill");
+          return li && li.textContent.trim() === '2'; }}""", timeout=5000)
+    assert pg.errors == []
+    pg.close()

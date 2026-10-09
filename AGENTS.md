@@ -253,6 +253,10 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   a cold page armed nothing at all and never polled. A test seam that drives a
   scheduled function directly is NOT coverage of the schedule: also assert the
   request rate and that it can fire with no manual tick.
+  When the pill appears it re-reads the sidebar (`renderFeedFilter()`): that
+  answer proves the pips are stale, and arrivals used to leave the pill at 45
+  with every pip empty until a feed switch
+  (`test_pill_and_sidebar_pips_agree_when_it_speaks`).
   Browser tests that assert the pill's visibility must stub `/api/pulse` (the
   tier shares one DB, so the real number is other tests' unread posts) and use
   `wait_for_function` for the hidden state - `wait_for_selector("[hidden]")`
