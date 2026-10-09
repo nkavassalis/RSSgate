@@ -245,6 +245,16 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   or feed switch: `pulseEl`/`pulseBtn` are captured at parse time and
   `pulseBox()` re-prepends on demand, or the pill goes permanently mute for the
   session (`test_pulse_pill_survives_a_stream_restart`).
+  Parity covers the hide flag too: with `ui.hide_untranscribed` off a queued
+  post HAS a card, so `db.pulse` takes the same `hide_statuses` tuple as
+  `feed_unread` (web passes `_hide_statuses`); a hard-coded status list was a
+  latent divergence (`test_pulse_parity_honours_hide_untranscribed_off`).
+  Failed checks back off on a ladder (2s/5s/15s, then the cadence, floor 60s)
+  instead of drumming a fixed 2s at a dead server, and a non-OK or
+  unparseable answer never becomes the baseline
+  (`test_pulse_backs_off_when_the_server_is_down`). `every_minutes` is only
+  honoured when finite: NaN passes `typeof === 'number'` and `setTimeout(NaN)`
+  fires immediately - the once-per-round-trip storm in new clothes.
   Scheduling has ONE owner: `pulseArm()` ticks, then re-arms with
   `setTimeout(pulseArm, …)` (a NAMED callback, so the suite can shorten just
   that timer); `pulseTick` must never arm anything - when it called

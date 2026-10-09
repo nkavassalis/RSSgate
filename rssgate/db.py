@@ -889,19 +889,21 @@ def newest_ts(conn) -> str | None:
     return r["ts"] if r else None
 
 
-def pulse(conn, since_ts: str = "") -> dict:
+def pulse(conn, since_ts: str = "", hide_statuses: tuple = ()) -> dict:
     """Cheap 'anything new?' facts for the reader's quiet pill. READ-ONLY:
     it never fetches feeds - new posts reach the DB via the scheduler's own
     paced polling, and a background refresh from the browser would turn a
     polite reader into a crawler (rule 10).
 
     Counts mirror feed_unread EXACTLY (same read-cursor semantics, same
-    _TS_EXPR): an unread figure that disagrees with the sidebar pills on the
-    same page is worse than none (it once read 714 where the UI said 1).
-    Ready AND failed posts count, because both render a card (a failed post
-    shows its error line and a retry); pending/processing do not, exactly as
-    in feed_unread. A pill printing '0 newer posts' once meant its 'new?'
-    test and its printed number used different definitions.
+    _TS_EXPR, same hide_statuses from web._hide_statuses): an unread figure
+    that disagrees with the sidebar pills on the same page is worse than none
+    (it once read 714 where the UI said 1). The visible set is derived the
+    same way as feed_unread's - never-visible statuses are out, plus whatever
+    the caller withholds - so ui.hide_untranscribed=off (queued posts DO get
+    a card) cannot leave the pill blind while the pip already counts them.
+    A pill printing '0 newer posts' once meant its 'new?' test and its
+    printed number used different definitions.
 
     `since_ts` is the reader's last-read marker (global `resume_ts`): each
     feed also reports `unread_since`, the readable-unread posts newer than
@@ -910,6 +912,10 @@ def pulse(conn, since_ts: str = "") -> dict:
     otherwise never hear from it, since their reload baseline already
     contains the batch they reloaded into."""
     marker = since_ts or ""
+    vis = "a.status NOT IN ('hidden','dropped')"
+    params: list = [marker, *hide_statuses]
+    if hide_statuses:
+        vis += " AND a.status NOT IN (%s)" % ",".join("?" * len(hide_statuses))
     rows = conn.execute(
         "SELECT f.id fid,"
         " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url) title,"
@@ -917,14 +923,15 @@ def pulse(conn, since_ts: str = "") -> dict:
         " SUM(CASE WHEN " + _TS_EXPR + " > MAX(COALESCE(f.last_read_ts, ''), ?)"
         "     THEN 1 ELSE 0 END) n_since"
         " FROM articles a JOIN feeds f ON f.id=a.feed_id"
-        " WHERE a.status IN ('ready','error') AND a.read_at IS NULL"
+        " WHERE " + vis + " AND a.read_at IS NULL"
         " AND " + _TS_EXPR + " > COALESCE(f.last_read_ts, '')"
-        " GROUP BY f.id ORDER BY n_since DESC, n DESC", (marker,))
+        " GROUP BY f.id ORDER BY n_since DESC, n DESC", params)
     by_feed = [{"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
                 "unread_since": x["n_since"], "ts": x["ts"] or ""} for x in rows]
+    nvis = vis.replace("a.", "")
     newest = conn.execute(
-        "SELECT MAX(" + _TS_EXPR + ") ts FROM articles"
-        " WHERE status IN ('ready','error')").fetchone()["ts"] or ""
+        "SELECT MAX(" + _TS_EXPR + ") ts FROM articles WHERE " + nvis,
+        list(hide_statuses)).fetchone()["ts"] or ""
     return {"newest_ts": newest, "ready_total": conn.execute(
         "SELECT COUNT(*) c FROM articles WHERE status='ready'").fetchone()["c"],
         "unread_total": sum(f["unread"] for f in by_feed),

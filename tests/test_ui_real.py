@@ -1877,6 +1877,38 @@ def test_pulse_poll_rate_is_the_cadence_not_one_per_round_trip(ui_server, browse
     pg.close()
 
 
+def test_pulse_backs_off_when_the_server_is_down(ui_server, browser):
+    """Before the baseline exists the loop retries quickly - but a FIXED 2s
+    retry was a drumbeat against a dead server (forever, at an app whose boot
+    panel already says offline). Consecutive failures must back off on a
+    ladder: assert the gap between retries GROWS and the window stays cheap.
+    Served as unparseable HTML: a JSON-shaped 5xx body would parse, and the
+    tick must not baseline off a server error either. Nothing is ticked by
+    hand; the timer is deliberately NOT shortened, so real delays are timed."""
+    hits = []
+
+    def handler(req):
+        hits.append(time.monotonic())
+        req.fulfill(status=503, body="<html>down</html>",
+                    content_type="text/html")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.route("**/api/pulse", handler)
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector(".card")
+    deadline = time.time() + 25
+    while len(hits) < 3 and time.time() < deadline:
+        pg.wait_for_timeout(250)
+    assert len(hits) >= 3, "the pill never retried a failed check"
+    g1, g2 = hits[1] - hits[0], hits[2] - hits[1]
+    assert g2 > g1 + 1.0, (f"retry gaps {g1:.1f}s then {g2:.1f}s: failures "
+                          "re-fire on a fixed timer, not a backoff ladder")
+    assert len(hits) <= 4, (f"{len(hits)} retries already: the ladder never "
+                           "settles to its cap")
+    assert pg.evaluate("window.__pulseState().booted") is False, \
+        "a 503 was accepted as the baseline"
+    pg.close()
+
+
 def test_backfilled_unread_surfaces_above_read_posts(ui_server, browser):
     """The live symptom: a feed's pip said 1 unread while the top of that
     feed's stream showed nothing but read cards, because the post arrived late

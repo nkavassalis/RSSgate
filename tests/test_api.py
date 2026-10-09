@@ -314,6 +314,33 @@ def test_pulse_counts_equal_the_sidebar_pills(client):
     assert sum(f["unread"] for f in pl["feeds"]) == pill
 
 
+def test_pulse_parity_honours_hide_untranscribed_off(client):
+    """The invariant is ONE unread number per page, not 'ready+error':
+    feed_unread takes the caller's hide_statuses and api_articles/api_feeds
+    pass _hide_statuses(cfg), so with ui.hide_untranscribed off a queued post
+    HAS a card and the sidebar pip counts it - /api/pulse must then count it
+    too. Its status list was hard-coded, so the flag was a latent divergence:
+    the pill went blind to arriving pendings while the pip already counted
+    them (and hidden stays excluded either way)."""
+    from rssgate import db
+    conn = client.conn
+    assert client.put("/api/config",
+                      json={"ui": {"hide_untranscribed": False}}).status_code == 200
+    fid = db.add_feed(conn, "https://nofilter.test/feed")["id"]
+    for i, st in enumerate(["pending", "processing", "ready", "error",
+                            "hidden", "dropped"]):
+        a = db.upsert_article(conn, fid, f"n{i}", f"https://n.test/{i}",
+                              f"N{i}", f"2026-11-0{i+1}T00:00:00Z")
+        db.set_article(conn, a, status=st, summary="s" if st == "ready" else None)
+    pill = next(f["unread"] for f in client.get("/api/feeds").get_json()
+                if f["id"] == fid)
+    pl = client.get("/api/pulse").get_json()
+    assert pill == 4, pill                        # pending+processing+ready+error
+    assert pl["unread_total"] == pill             # same number, one page
+    assert sum(f["unread"] for f in pl["feeds"]) == pill
+    assert pl["feeds"][0]["unread_since"] == 4    # the marker test counts the same set
+
+
 def test_pulse_counts_since_the_read_marker(client):
     """The pill's trigger is 'unread newer than the last thing you read', not
     'grew since this page loaded': a reload must still announce the batch, or

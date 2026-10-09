@@ -35,6 +35,29 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.79.3] — 2026-10-08
+
+### Fixed
+- `/api/pulse` ignored `ui.hide_untranscribed`. The pill's counts are
+  supposed to mirror the sidebar pips exactly, but `db.pulse` hard-coded
+  `status IN ('ready','error')` while `feed_unread` takes the caller's
+  withheld statuses. With the flag off (queued posts render a card, and the
+  pip counts them) the pill went blind to arriving pendings - the
+  two-unread-numbers-on-one-page bug, latent behind a default. `db.pulse`
+  now takes the same `hide_statuses` tuple as `feed_unread` and `api_pulse`
+  passes `_hide_statuses(cfg)`.
+- A dead server used to be polled on a fixed 2 s retry loop forever (and a
+  JSON-shaped 5xx body could even become the pill's baseline). Consecutive
+  fetch failures now back off along a ladder (2 s, 5 s, 15 s, then the
+  configured cadence, floor 60 s), non-OK responses and unparseable bodies
+  count as failures, and `every_minutes` is only honoured when finite (NaN
+  passes `typeof === 'number'` and `setTimeout(NaN)` fires immediately).
+
+### Tests
+- Hermetic: pill↔pip parity with `hide_untranscribed` off.
+- Browser: the retry gap between failed checks must grow, the window must
+  stay cheap, and a 503 must not boot the pill - nothing ticked by hand.
+
 ## [0.79.2] — 2026-10-08
 
 ### Fixed

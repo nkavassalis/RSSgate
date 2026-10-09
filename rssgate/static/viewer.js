@@ -698,6 +698,11 @@
     const box = pulseBox(); if (box) box.hidden = true;
   }
   let pulseInFlight = false;         // overlapping ticks must stack into a burst
+  let pulseFails = 0;                // consecutive fetch/parse failures
+  // backoff ladder while the baseline is missing: a fixed 2s retry was a
+  // drumbeat against a dead server; this is a trickle. Past the ladder the
+  // loop falls back to the configured cadence (never faster than 60s).
+  const PULSE_FAIL_LADDER = [2000, 5000, 15000];
   async function pulseTick() {
     // The FIRST answer of a load must be fetched no matter what else is going
     // on: skipping it (a refresh in flight, a tab return) leaves the page with
@@ -707,14 +712,21 @@
     if (document.hidden || (pulseBooted && (ptrBusy || pulseInFlight))) return;
     pulseInFlight = true;
     let p = null;
-    try { p = await (await fetch('/api/pulse')).json(); }
-    catch (e) { pulseInFlight = false; return; }        // off: retry on schedule
+    try {
+      const r = await fetch('/api/pulse');
+      if (!r.ok) throw new Error('pulse ' + r.status);   // an error page is
+      p = await r.json();                                // not a baseline
+    } catch (e) { pulseFails++; return; }                // off: retry, backed off
     finally { pulseInFlight = false; }
+    if (!p || typeof p !== 'object') { pulseFails++; return; }
+    pulseFails = 0;
     // ONE owner of the cadence: this function reads it, pulseStart() arms it.
     // (It used to call schedulePulse(), which called this back: each pass
     // clearTimeout-ed the timer it had just set, so the interval never applied
     // and /api/pulse was asked once per round trip.) 0 = off, honoured now.
-    if (typeof p.every_minutes === 'number') {
+    // isFinite: NaN passes `typeof === 'number'` and would poison the timer
+    // delay (setTimeout(NaN) fires NOW - the once-per-round-trip storm again).
+    if (typeof p.every_minutes === 'number' && isFinite(p.every_minutes)) {
       if (p.every_minutes === 0) pulseEveryMs = 0;
       else {
         const ms = Math.round(p.every_minutes * 60000);
@@ -770,8 +782,16 @@
     clearTimeout(pulseTimer);
     if (pulseEveryMs <= 0 || document.hidden) return;
     // until the baseline exists the loop is blind, so re-check quickly (2s)
-    // instead of trusting one chance and waiting out the whole cadence
-    pulseTimer = setTimeout(pulseArm, pulseBooted ? pulseEveryMs : 2000);
+    // instead of trusting one chance and waiting out the whole cadence -
+    // BUT consecutive failures back off along the ladder (2s, 5s, 15s, then
+    // the cadence, floor 60s), so a dead server costs a trickle.
+    let d = pulseBooted ? pulseEveryMs : 2000;
+    if (pulseFails) {
+      const cap = Math.max(pulseEveryMs, 60000);
+      d = Math.min(pulseFails <= PULSE_FAIL_LADDER.length
+                   ? PULSE_FAIL_LADDER[pulseFails - 1] : cap, cap);
+    }
+    pulseTimer = setTimeout(pulseArm, d);
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) clearTimeout(pulseTimer);
