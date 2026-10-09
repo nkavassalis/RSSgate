@@ -74,7 +74,7 @@
       ? `<div class="gallery">${extra.map(g =>
           `<a href="${esc(a.link)}" target="_blank" rel="noopener"><img src="/image/${esc(g)}" loading="lazy" alt=""></a>`).join('')}</div>`
       : '';
-    const readmore = `<p class="readmore"><a href="${esc(a.link)}" target="_blank" rel="noopener">Read the full article at ${esc(a.feed_title || 'the original')} &#8599;</a></p>`;
+    const readmore = `<p class="readmore"><button class="copy-btn" type="button" title="Copy article link" aria-label="Copy link to this article">${ICON_COPY}</button><a href="${esc(a.link)}" target="_blank" rel="noopener">Read the full article at ${esc(a.feed_title || 'the original')} &#8599;</a></p>`;
     const thumb = a.image
       ? `<img class="card-thumb" src="/image/${esc(a.image)}" alt="" loading="lazy">`
       : '';
@@ -261,6 +261,14 @@
   const svgRect = (x, y, w, h) => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>`;
   const ICON_TALL = svgRect(4, 1.5, 8, 13);
   const ICON_WIDE = svgRect(1.5, 3.5, 13, 9);
+  // copy glyph: front sheet + the sheet behind it, drawn as an L
+  const ICON_COPY = '<svg viewBox="0 0 16 16" width="16" height="16"' +
+    ' aria-hidden="true" focusable="false">' +
+    '<rect x="5.5" y="2" width="8.5" height="8.5" rx="1.6" fill="none"' +
+    ' stroke="currentColor" stroke-width="1.7"/>' +
+    '<path d="M10.5 12.3v1.6a1.6 1.6 0 0 1-1.6 1.6H3.2a1.6 1.6 0 0 1-1.6-1.6' +
+    'V6.5" fill="none" stroke="currentColor" stroke-width="1.7"' +
+    ' stroke-linecap="round"/></svg>';
   const SHARE_FORMATS = {
     tall: { style: 'banner', width: () => TALL_W },
     wide: { style: 'float', width: () => SHARE_W },
@@ -607,9 +615,55 @@
     } catch { btn.textContent = '\u2717'; }
     setTimeout(() => { btn.innerHTML = glyph; }, 1400);
   }
+  // "Copy link", left of the read-more link. The native share sheet leads
+  // when the reader runs the app from a home-screen icon (display-mode:
+  // standalone, or iOS Safari's navigator.standalone) - that is the pattern
+  // phone users expect there; everywhere else the clipboard is. Clipboard
+  // failures fall to the classic off-screen textarea, and a cancelled share
+  // is NOT a failure (no red flash for changing your mind).
+  async function doCopyLink(btn) {
+    const card = btn.closest('.card');
+    const a = card && snapData[card.dataset.id];
+    if (!a || !a.link) return;
+    const glyph = btn.innerHTML;
+    btn.textContent = '\u2026';
+    try {
+      const standalone = (window.matchMedia
+        && matchMedia('(display-mode: standalone)').matches)
+        || navigator.standalone === true;
+      let done = false;
+      if (standalone && navigator.share) {
+        await navigator.share({ title: a.title, text: a.summary || '',
+                                url: a.link });
+        done = true;
+      } else {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(a.link);
+            done = true;
+          }
+        } catch (e) { /* permissions/focus: fall through */ }
+        if (!done) {
+          const ta = document.createElement('textarea');
+          ta.value = a.link;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed'; ta.style.left = '-9999px';
+          document.body.appendChild(ta); ta.select();
+          done = document.execCommand('copy');
+          ta.remove();
+        }
+      }
+      btn.textContent = done ? '\u2713' : '\u2717';
+    } catch (err) {
+      if (!err || err.name !== 'AbortError') btn.textContent = '\u2717';
+    }
+    setTimeout(() => { btn.innerHTML = glyph; }, 1400);
+  }
   $('stream').addEventListener('click', e => {
     const btn = e.target.closest('.snap-btn');
-    if (btn) doSnapshot(btn);
+    if (btn) { doSnapshot(btn); return; }
+    const cp = e.target.closest('.copy-btn');
+    if (cp) doCopyLink(cp);
   });
 
   // ---- pull to refresh (mobile) ------------------------------------------

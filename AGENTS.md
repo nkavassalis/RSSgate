@@ -194,6 +194,17 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   stable); via bottom-right.
 - The agent usually cannot SEE the PNG. Verify with geometry + pixel probes,
   and when the user judges the look, change one thing per iteration and ask.
+- **Copy link** (`.readmore .copy-btn`, left of the read-more link, ready
+  cards only - NOT the PNG share): native share sheet FIRST when the reader
+  runs the app from a home-screen icon (`display-mode: standalone` or iOS
+  `navigator.standalone`) with the article url; clipboard otherwise;
+  off-screen textarea when the async clipboard is denied; an X flash when
+  even that fails. A cancelled share is not a failure (no X). Delegation
+  follows `.snap-btn` (class on a JS-emitted button, one `#stream` click
+  listener); feedback is the glyph-flash idiom (\u2026 / \u2713 / \u2717,
+  restore 1400 ms). Browser tests grant clipboard permissions and stub
+  `navigator.share` / `navigator.standalone` / `execCommand` per path.
+  Flash waits use the file's 6 s convention (3 s was flaky under tier load).
 
 ## Admin page (admin.html / admin.js)
 - Sections are `section.panel#sec-*`, listed in `.sec-nav` under group labels

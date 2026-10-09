@@ -1909,6 +1909,115 @@ def test_pulse_backs_off_when_the_server_is_down(ui_server, browser):
     pg.close()
 
 
+def test_copy_link_button_copies_and_sits_left_of_the_link(ui_server, browser):
+    """The card's "Copy link" ghost button lives LEFT of the read-more link
+    and puts the article URL on the clipboard (desktop / browser pattern)."""
+    fid, _ = _mkfeed("cp", url=True)
+    link = "https://example.com/copy-me-1"
+    _seed_article(fid, "c1", title="copy probe", link=link,
+                  ts="2027-03-01T00:00:00Z")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900},
+                   permissions=["clipboard-read", "clipboard-write"])
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    card = pg.locator(".card", has_text="copy probe")
+    btn = card.locator(".copy-btn")
+    assert btn.count() == 1
+    assert btn.bounding_box()["x"] < \
+        card.locator(".readmore a").bounding_box()["x"], \
+        "the copy button drifted right of the article link"
+    btn.click()
+    pg.wait_for_function(
+        "() => document.querySelector('.copy-btn').textContent === '\\u2713'",
+        timeout=6000)
+    assert pg.evaluate("navigator.clipboard.readText()") == link
+    assert pg.errors == []
+    pg.close()
+
+
+def test_copy_link_opens_the_share_sheet_from_the_home_screen(ui_server, browser):
+    """Home-screen / PWA pattern (display-mode standalone or iOS's
+    navigator.standalone): tap copies NOTHING to the clipboard and opens the
+    native share sheet with the article url instead. A cancelled share must
+    not flash the failure mark - changing your mind is not an error."""
+    fid, _ = _mkfeed("shr", url=True)
+    link = "https://example.com/share-me"
+    _seed_article(fid, "s1", title="share probe", link=link,
+                  ts="2027-03-02T00:00:00Z")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.add_init_script("""
+      Object.defineProperty(navigator, 'standalone', {get: () => true});
+      navigator.share = (d) => { window.__shared = d; return Promise.resolve(); };
+    """)
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    card = pg.locator(".card", has_text="share probe")
+    card.locator(".copy-btn").click()
+    shared = pg.evaluate("window.__shared")
+    assert shared and shared["url"] == link, shared
+    pg.wait_for_function(
+        "() => document.querySelector('.copy-btn').textContent === '\\u2713'",
+        timeout=6000)
+
+    # cancelled share (second feed so the button is fresh): silent, no X mark
+    fid2, _ = _mkfeed("shr2", url=True)
+    _seed_article(fid2, "s2", title="abort probe",
+                  link="https://example.com/abort", ts="2027-03-03T00:00:00Z")
+    pg.add_init_script("""
+      navigator.share = () => Promise.reject(
+        Object.assign(new Error('cancel'), {name: 'AbortError'}));
+    """)
+    pg.reload(wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid2}']")
+    card2 = pg.locator(".card", has_text="abort probe")
+    card2.locator(".copy-btn").click()
+    pg.wait_for_timeout(300)
+    assert "\u2717" not in card2.locator(".copy-btn").inner_text(), \
+        "a cancelled share was marked as a failure"
+    assert pg.errors == []
+    pg.close()
+
+
+def test_copy_link_falls_back_to_textarea_and_marks_failure(ui_server, browser):
+    """No async clipboard (permissions, insecure context) -> the classic
+    off-screen textarea must carry the copy (shown by the check flash); and
+    when even that fails the reader gets the X, not silence."""
+    fid, _ = _mkfeed("fb", url=True)
+    _seed_article(fid, "f1", title="fallback probe",
+                  link="https://example.com/fallback",
+                  ts="2027-03-04T00:00:00Z")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.add_init_script(
+        "Object.defineProperty(navigator, 'clipboard', {value: undefined});")
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    card = pg.locator(".card", has_text="fallback probe")
+    card.locator(".copy-btn").click()
+    pg.wait_for_function(
+        "() => document.querySelector('.copy-btn').textContent === '\\u2713'",
+        timeout=6000)                                      # execCommand said ok
+
+    # and now break copying completely: the button must admit it
+    fid2, _ = _mkfeed("fb2", url=True)
+    _seed_article(fid2, "f2", title="doomed probe",
+                  link="https://example.com/doomed",
+                  ts="2027-03-05T00:00:00Z")
+    pg.add_init_script("""
+      Object.defineProperty(navigator, 'clipboard', {value: undefined});
+      document.addEventListener('DOMContentLoaded', () => {
+        document.execCommand = () => false; });
+    """)
+    pg.reload(wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid2}']")
+    card2 = pg.locator(".card", has_text="doomed probe")
+    card2.locator(".copy-btn").click()
+    pg.wait_for_function(
+        "() => [...document.querySelectorAll('.copy-btn')].some"
+        "(b => b.textContent === '\\u2717')", timeout=6000)
+    assert pg.errors == []
+    pg.close()
+
+
 def test_pulse_announces_on_watermark_not_count(ui_server, browser):
     """F1 in the browser: the pill must speak when the since-total does NOT
     grow. The stub holds unread_since_total at 2 the whole time (the arrival

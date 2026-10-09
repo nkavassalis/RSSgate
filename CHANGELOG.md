@@ -35,6 +35,24 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.81.0] — 2026-10-09
+
+### Added
+- "Copy link" on article cards: a ghost button left of the read-more link.
+  On the home-screen/PWA pattern (`display-mode: standalone`, or iOS's
+  `navigator.standalone`) it opens the native share sheet with the article
+  url; everywhere else it puts the url on the clipboard. Denied async
+  clipboard falls back to the classic off-screen textarea; if even that
+  fails the button flashes \u2717 (a cancelled share stays silent - changing
+  your mind is not an error). Delegation and the \u2026/\u2713/\u2717 glyph flash
+  follow the snapshot buttons.
+
+### Tests
+- Three browser tests: clipboard path (button sits LEFT of the link, reads
+  back via `clipboard.readText`), standalone share path incl. cancelled
+  share, and the textarea fallback + failure flash. All three observed red
+  before the feature.
+
 ## [0.80.2] — 2026-10-09
 
 ### Docs
