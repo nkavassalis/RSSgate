@@ -889,7 +889,8 @@ def newest_ts(conn) -> str | None:
     return r["ts"] if r else None
 
 
-def pulse(conn, since_ts: str = "", hide_statuses: tuple = ()) -> dict:
+def pulse(conn, since_ts: str = "", hide_statuses: tuple = (),
+          above_id: int = 0) -> dict:
     """Cheap 'anything new?' facts for the reader's quiet pill. READ-ONLY:
     it never fetches feeds - new posts reach the DB via the scheduler's own
     paced polling, and a background refresh from the browser would turn a
@@ -910,24 +911,37 @@ def pulse(conn, since_ts: str = "", hide_statuses: tuple = ()) -> dict:
     max(that marker, the feed's own cursor). The pill announces THAT, not
     "what grew since this page loaded" - a reader who reloads a lot would
     otherwise never hear from it, since their reload baseline already
-    contains the batch they reloaded into."""
+    contains the batch they reloaded into.
+
+    `above_id` is the pill's IDENTITY watermark: `new_since_id` counts
+    readable-unread-since-marker posts with id beyond it, and
+    `high_water_id` is the set's max id. A snapshot count cannot be the
+    trigger - it cancels out (one read + one arrival = no news) and it
+    ratchets (after a read-down the next arrival must beat a stale ack).
+    Article ids only grow, and reads only shrink the set from BELOW, so a
+    watermark advancing proves a post nobody has seen exists."""
     marker = since_ts or ""
     vis = "a.status NOT IN ('hidden','dropped')"
-    params: list = [marker, *hide_statuses]
+    params: list = [marker, marker, above_id, marker, *hide_statuses]
     if hide_statuses:
         vis += " AND a.status NOT IN (%s)" % ",".join("?" * len(hide_statuses))
-    rows = conn.execute(
-        "SELECT f.id fid,"
+    rows = conn.execute(  # fetchall below: totals re-iterate the rows, and a
+        "SELECT f.id fid,"  # live cursor hands the SECOND pass nothing
         " COALESCE(NULLIF(f.custom_title,''),NULLIF(f.title,''),f.url) title,"
         " COUNT(*) n, MAX(" + _TS_EXPR + ") ts,"
         " SUM(CASE WHEN " + _TS_EXPR + " > MAX(COALESCE(f.last_read_ts, ''), ?)"
-        "     THEN 1 ELSE 0 END) n_since"
+        "     THEN 1 ELSE 0 END) n_since,"
+        " SUM(CASE WHEN " + _TS_EXPR + " > MAX(COALESCE(f.last_read_ts, ''), ?)"
+        "     AND a.id > ? THEN 1 ELSE 0 END) n_above,"
+        " MAX(CASE WHEN " + _TS_EXPR + " > MAX(COALESCE(f.last_read_ts, ''), ?)"
+        "     THEN a.id END) hw"
         " FROM articles a JOIN feeds f ON f.id=a.feed_id"
         " WHERE " + vis + " AND a.read_at IS NULL"
         " AND " + _TS_EXPR + " > COALESCE(f.last_read_ts, '')"
-        " GROUP BY f.id ORDER BY n_since DESC, n DESC", params)
+        " GROUP BY f.id ORDER BY n_since DESC, n DESC", params).fetchall()
     by_feed = [{"feed_id": x["fid"], "title": x["title"], "unread": x["n"],
                 "unread_since": x["n_since"], "ts": x["ts"] or ""} for x in rows]
+    hws = [x["hw"] for x in rows if x["hw"] is not None]
     nvis = vis.replace("a.", "")
     newest = conn.execute(
         "SELECT MAX(" + _TS_EXPR + ") ts FROM articles WHERE " + nvis,
@@ -936,6 +950,8 @@ def pulse(conn, since_ts: str = "", hide_statuses: tuple = ()) -> dict:
         "SELECT COUNT(*) c FROM articles WHERE status='ready'").fetchone()["c"],
         "unread_total": sum(f["unread"] for f in by_feed),
         "unread_since_total": sum(f["unread_since"] for f in by_feed),
+        "high_water_id": max(hws) if hws else 0,
+        "new_since_id": sum(x["n_above"] for x in rows),
         "since_ts": marker, "feeds": by_feed}
 
 

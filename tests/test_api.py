@@ -341,6 +341,43 @@ def test_pulse_parity_honours_hide_untranscribed_off(client):
     assert pl["feeds"][0]["unread_since"] == 4    # the marker test counts the same set
 
 
+def test_pulse_watermark_announces_when_counts_cancel_out(client):
+    """The trigger must be identity, not arithmetic. A snapshot count
+    cancels out (one post read in the same tick as one arrives: the total
+    never moves and the pill is silent about a post nobody has seen) and it
+    ratchets (the pill acked 5, the reader read down to 2, the next arrival
+    must beat the stale 5 before it may speak). /api/pulse?hw=<id> therefore
+    reports `new_since_id` - readable-unread-since-marker posts with id
+    beyond the caller's watermark - and the set's `high_water_id`. Article
+    ids only grow, and reads only shrink the set from BELOW, so neither
+    failure mode can recur. Junk hw is 0 (the hygiene doctrine)."""
+    from rssgate import db
+    conn = client.conn
+    fid = db.add_feed(conn, "https://hw.test/feed")["id"]
+    ids = [db.upsert_article(conn, fid, f"h{i}", f"https://hw.test/{i}",
+                             f"H{i}", f"2026-12-0{i+1}T00:00:00Z")
+           for i in range(5)]
+    for a in ids:
+        db.set_article(conn, a, status="ready", summary="s")
+    pl = client.get("/api/pulse").get_json()
+    assert pl["high_water_id"] == max(ids)
+    assert pl["new_since_id"] == 5                  # no hw = everything is news
+    assert client.get(f"/api/pulse?hw={max(ids)}").get_json()["new_since_id"] == 0
+    assert client.get("/api/pulse?hw=junk").status_code == 200
+    # cancel-out: the reader consumes the TOP post, a new one arrives, and
+    # the since-total is the unchanged 5 - the count trigger sees nothing.
+    conn.execute("UPDATE articles SET read_at=CURRENT_TIMESTAMP WHERE id=?",
+                 (ids[-1],))
+    gain = db.upsert_article(conn, fid, "h9", "https://hw.test/9", "H9",
+                             "2026-12-10T00:00:00Z")
+    db.set_article(conn, gain, status="ready", summary="s")
+    conn.commit()
+    pl = client.get(f"/api/pulse?hw={max(ids)}").get_json()
+    assert pl["unread_since_total"] == 5            # same number as at baseline...
+    assert pl["new_since_id"] == 1                  # ...yet there IS news
+    assert pl["high_water_id"] == gain              # and the watermark moved
+
+
 def test_pulse_counts_since_the_read_marker(client):
     """The pill's trigger is 'unread newer than the last thing you read', not
     'grew since this page loaded': a reload must still announce the batch, or

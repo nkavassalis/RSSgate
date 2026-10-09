@@ -229,11 +229,20 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   never `/api/poll`) on `ui.pulse_minutes` (0 = off). The SERVER owns the
   number: `unread_since_total` = readable-unread posts newer than the reader's
   last-read marker (`resume_ts`, or the feed's own cursor when later); the
-  client only compares it to one watermark (`pulseAcked`): the FIRST answer of
-  each page load raises the watermark to itself and stays silent (those posts
+  client compares it to TWO watermarks (`pulseAcked`, and the IDENTITY one,
+  `pulseSeenHw`, sent as `/api/pulse?hw=`): the FIRST answer of
+  each page load raises the watermarks to themselves and stays silent (those posts
   are already at the top of the stream thanks to unread-first, so announcing
   them restates the screen and the tap does nothing); after that it shows when
-  `n > pulseAcked`, and a tap raises it to `pulseShown`. A stream restart or a
+  `p.new_since_id > 0` OR `n > pulseAcked`, and a tap raises the count to
+  `pulseShown` and the id watermark to `pulseShownHw`. The IDENTITY trigger
+  exists because a snapshot count cancels out (one read + one arrival = no
+  news, so a post nobody has seen stays silent) and ratchets (the pill acked
+  5, the reader read down to 2, the next arrival must beat the stale 5);
+  article ids only grow and reads only shrink the set from below, so
+  `high_water_id`/`new_since_id` are immune to both - the count stays as the
+  label and as the trigger for queued posts that turn readable late. A stream
+  restart or a
   tab return must NOT re-baseline - only a load does (`pulseBooted`). Net rule:
   the pill only ever speaks about posts that are not in front of you.
   `unread_total` (all pip-equal unread) stays in the response for parity;
@@ -254,7 +263,16 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   unparseable answer never becomes the baseline
   (`test_pulse_backs_off_when_the_server_is_down`). `every_minutes` is only
   honoured when finite: NaN passes `typeof === 'number'` and `setTimeout(NaN)`
-  fires immediately - the once-per-round-trip storm in new clothes.
+  fires immediately - the once-per-round-trip storm in new clothes. A tick
+  that THROWS after its fetch must still re-arm (`pulseArm` handles the
+  rejection and counts it as a failure): the old `.then(pulseStart)` chain
+  silently muted the pill for the session on one malformed answer
+  (`test_pulse_survives_a_garbage_answer_with_no_manual_tick`). Browser
+  `/api/pulse` route stubs must match `**/api/pulse**` - the client now
+  appends `?hw=`. Watch item: the first full UI run of v0.80.0 had ONE
+  unnamed test failure that never repeated across four later runs; suspects
+  are the timing-sensitive pulse browser tests (the two timer-free ones pass
+  in isolation).
   Scheduling has ONE owner: `pulseArm()` ticks, then re-arms with
   `setTimeout(pulseArm, …)` (a NAMED callback, so the suite can shorten just
   that timer); `pulseTick` must never arm anything - when it called

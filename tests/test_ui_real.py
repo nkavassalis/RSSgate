@@ -1563,7 +1563,7 @@ def test_pulse_pill_informs_without_disturbing(ui_server, browser):
             "feeds": [{"feed_id": fid, "title": token, "unread": 1,
                        "unread_since": 1, "ts": "2027-01-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 700})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     pg.wait_for_timeout(400)
@@ -1625,7 +1625,7 @@ def test_pulse_stays_quiet_for_unreadable_posts(ui_server, browser):
             "unread_total": 0, "unread_since_total": 0,
             "since_ts": "2027-01-01T00:00:00Z", "every_minutes": 1, "feeds": []}
     pg = _new_page(browser, viewport={"width": 1280, "height": 700})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     mine = pg.evaluate("""(f) => fetch('/api/pulse').then(r => r.json()).then(p =>
@@ -1694,7 +1694,7 @@ def test_pulse_pill_never_announces_zero(ui_server, browser):
             "unread_total": 44, "unread_since_total": 0,
             "since_ts": "2020-01-01T00:00:00Z", "every_minutes": 0,
             "feeds": [big, gained]}
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=fake))   # before boot
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=fake))   # before boot
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     pg.evaluate("window.__pulseTick()")
@@ -1734,7 +1734,7 @@ def test_pulse_pill_does_not_widen_the_stream(ui_server, browser):
             "since_ts": "2020-01-01T00:00:00Z", "every_minutes": 0,
             "feeds": [{"feed_id": 99, "title": "Stub", "unread": 3,
                        "unread_since": 0, "ts": "2020-01-01T00:00:00Z"}]}
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     card = pg.locator(".card", has_text="geometry probe")
@@ -1778,7 +1778,7 @@ def test_pulse_pill_overlays_without_pushing_text(ui_server, browser):
             "feeds": [{"feed_id": 99, "title": "Stub", "unread": 3,
                        "unread_since": 0, "ts": "2020-01-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     pg.wait_for_function("document.getElementById('pulse').hidden === true")
@@ -1834,7 +1834,7 @@ def test_pulse_pill_arms_itself_without_any_manual_tick(ui_server, browser):
     hits = []
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
     _shorten_pulse_timer(pg, 300)
-    pg.route("**/api/pulse", _pulse_route(stub, hits))
+    pg.route("**/api/pulse**", _pulse_route(stub, hits))
     # domcontentloaded: a deliberately 300ms pulse timer keeps the network
     # busy forever, so networkidle would never fire (that itself is proof the
     # loop is running)
@@ -1864,7 +1864,7 @@ def test_pulse_poll_rate_is_the_cadence_not_one_per_round_trip(ui_server, browse
             "every_minutes": 1, "feeds": []}
     hits = []
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", _pulse_route(stub, hits))
+    pg.route("**/api/pulse**", _pulse_route(stub, hits))
     pg.goto(ui_server, wait_until="domcontentloaded")
     pg.wait_for_selector(".card")
     pg.wait_for_timeout(5000)
@@ -1892,7 +1892,7 @@ def test_pulse_backs_off_when_the_server_is_down(ui_server, browser):
         req.fulfill(status=503, body="<html>down</html>",
                     content_type="text/html")
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", handler)
+    pg.route("**/api/pulse**", handler)
     pg.goto(ui_server, wait_until="domcontentloaded")
     pg.wait_for_selector(".card")
     deadline = time.time() + 25
@@ -1906,6 +1906,77 @@ def test_pulse_backs_off_when_the_server_is_down(ui_server, browser):
                            "settles to its cap")
     assert pg.evaluate("window.__pulseState().booted") is False, \
         "a 503 was accepted as the baseline"
+    pg.close()
+
+
+def test_pulse_announces_on_watermark_not_count(ui_server, browser):
+    """F1 in the browser: the pill must speak when the since-total does NOT
+    grow. The stub holds unread_since_total at 2 the whole time (the arrival
+    cancelled a read); only the server's identity watermark moves. With the
+    old count-only trigger the pill never appeared, and the reader who read
+    while away was silenced until the total beat a stale ack."""
+    stub = {"newest_ts": "2020-01-01T00:00:00Z", "ready_total": 0,
+            "unread_total": 2, "unread_since_total": 2, "since_ts": "",
+            "every_minutes": 1, "feeds": [],
+            "high_water_id": 40, "new_since_id": 0}
+    hits = []
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    _shorten_pulse_timer(pg, 300)
+    pg.route("**/api/pulse**", _pulse_route(stub, hits))
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector(".card")
+    pg.wait_for_function("() => window.__pulseState().booted === true",
+                         timeout=6000)
+    assert pg.locator("#pulse").is_hidden(), "the baseline announced itself"
+    stub.update(high_water_id=41, new_since_id=1)   # total still 2
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=6000)
+    assert "2 unread posts" in pg.locator("#pulse-btn").inner_text()
+    # the tap raises BOTH watermarks while the pill is still in front of
+    # the reader; only then does the news clear and the pill go quiet
+    pg.click("#pulse-btn")
+    pg.wait_for_function(
+        "() => window.__pulseState().acked === 2"
+        " && window.__pulseState().seenHw === 41", timeout=6000)
+    stub.update(new_since_id=0)
+    pg.wait_for_function(
+        "() => { const el = document.getElementById('pulse');"
+        " return !el || el.hidden === true; }", timeout=6000)   # the click's
+    # restart() detaches the node until the next tick re-attaches it hidden
+    assert pg.errors == []
+    pg.close()
+
+
+def test_pulse_survives_a_garbage_answer_with_no_manual_tick(ui_server, browser):
+    """Anything that threw inside the tick after the fetch used to kill the
+    chain: .then(pulseStart) is skipped by a rejection, so the pill went
+    silent for the rest of the session - the same silent-mute class that
+    bit twice before. An answer with a broken SHAPE (feeds truthy, not an
+    array) must re-arm anyway, and the next well-formed answer boots the
+    loop. Nothing is ticked by hand."""
+    good = {"newest_ts": "2020-01-02T00:00:00Z", "ready_total": 0,
+            "unread_total": 3, "unread_since_total": 3,
+            "since_ts": "2020-01-01T00:00:00Z", "every_minutes": 1,
+            "feeds": [{"feed_id": 77, "title": "Post-Garbage Feed",
+                       "unread": 3, "unread_since": 3,
+                       "ts": "2020-01-02T00:00:00Z"}],
+            "high_water_id": 9, "new_since_id": 1}
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            req.fulfill(json={"every_minutes": 1, "feeds": {}})   # no .filter
+        else:
+            req.fulfill(json=good)
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    _shorten_pulse_timer(pg, 300)
+    pg.route("**/api/pulse**", handler)
+    pg.goto(ui_server, wait_until="domcontentloaded")
+    pg.wait_for_selector(".card")
+    pg.wait_for_selector("#pulse:not([hidden])", timeout=8000)
+    assert calls["n"] >= 4, (f"only {calls['n']} asks: the loop died on the "
+                            "malformed answer instead of re-arming")
+    assert "Post-Garbage Feed" in pg.locator("#pulse-btn").inner_text()
     pg.close()
 
 
@@ -2000,7 +2071,7 @@ def test_pulse_pill_survives_a_stream_restart(ui_server, browser):
             "feeds": [{"feed_id": fid, "title": token, "unread": 1,
                        "unread_since": 1, "ts": "2027-02-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     stub["unread_since_total"] = stub["feeds"][0]["unread_since"] = 2
@@ -2035,7 +2106,7 @@ def test_reload_does_not_repeat_what_the_reload_showed(ui_server, browser):
             "feeds": [{"feed_id": fid, "title": token, "unread": 3,
                        "unread_since": 3, "ts": "2027-03-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="networkidle")
     pg.wait_for_selector(".card")
     pg.wait_for_timeout(400)
@@ -2071,7 +2142,7 @@ def test_the_load_baseline_is_taken_promptly(ui_server, browser):
             "feeds": [{"feed_id": fid, "title": token, "unread": 3,
                        "unread_since": 3, "ts": "2027-04-01T00:00:00Z"}]}
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     def poll(req):                      # slow: keeps ptrBusy true for ~4s
         time.sleep(4.0)
         req.fulfill(json={"queued": 0, "feeds": 1, "refreshed": 1})
@@ -2108,7 +2179,7 @@ def test_pill_and_sidebar_pips_agree_when_it_speaks(ui_server, browser):
             "unread_total": 0, "unread_since_total": 0,
             "since_ts": "2027-04-01T00:00:00Z", "every_minutes": 1, "feeds": []}
     pg = _new_page(browser, viewport={"width": 1280, "height": 900})
-    pg.route("**/api/pulse", lambda r: r.fulfill(json=stub))
+    pg.route("**/api/pulse**", lambda r: r.fulfill(json=stub))
     pg.goto(ui_server, wait_until="domcontentloaded")
     pg.wait_for_selector(".card")
     pg.wait_for_function("window.__pulseState().booted === true", timeout=5000)

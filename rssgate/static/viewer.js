@@ -681,6 +681,9 @@
   // already held a later post, and re-raised the pill after a click.)
   let pulseTimer = 0, pulseEveryMs = 60000;
   let pulseAcked = 0, pulseShown = 0, pulseBooted = false;
+  // IDENTITY watermark (see pulseTick): ids only grow, so unlike the count
+  // it cannot cancel out or ratchet when the reader consumes posts.
+  let pulseSeenHw = 0, pulseShownHw = 0;
   // see pulseTick for what these mean
   // The pill node lives INSIDE #stream (a flex sibling of the stream steals
   // column width), and restart() does stream.innerHTML='' - which detaches
@@ -695,6 +698,7 @@
   }
   function pulseClear() {                // behave like a freshly loaded page
     pulseAcked = 0; pulseShown = 0; pulseBooted = false;
+    pulseSeenHw = 0; pulseShownHw = 0;
     const box = pulseBox(); if (box) box.hidden = true;
   }
   let pulseInFlight = false;         // overlapping ticks must stack into a burst
@@ -713,7 +717,7 @@
     pulseInFlight = true;
     let p = null;
     try {
-      const r = await fetch('/api/pulse');
+      const r = await fetch('/api/pulse?hw=' + pulseSeenHw);
       if (!r.ok) throw new Error('pulse ' + r.status);   // an error page is
       p = await r.json();                                // not a baseline
     } catch (e) { pulseFails++; return; }                // off: retry, backed off
@@ -739,11 +743,15 @@
     // announcement: unread-first already put those posts at the top of your
     // stream, so a banner about them restates the screen and the tap does
     // nothing - and a reload must not repeat what the reload just showed.
-    // After that, the pill speaks when the number GROWS, i.e. for posts that
-    // landed after you loaded and are therefore not in front of you.
-    // pulseAcked is a watermark, not a claim you read anything: boot raises it
-    // to what the page loaded with, a tap raises it to what it printed. It is
-    // NOT re-baselined by a stream restart or a tab return, only by a load.
+    // After that the pill speaks when the SERVER says a readable-unread post
+    // exists whose id is beyond the caller's watermark (`new_since_id`, asked
+    // with ?hw=), OR the since-count grew. The count alone CANNOT be the
+    // trigger: it cancels out (one read + one arrival = no news, so a post
+    // nobody has seen stays silent) and it ratchets (the pill acked 5, the
+    // reader read down to 2, the next arrival must beat the stale 5). Ids
+    // only grow and reads shrink the set from below, so the watermark is
+    // immune to both. The count stays as the label and as the trigger for
+    // queue posts that turn readable late (an old id rejoining the set).
     const feeds = (p.feeds || []).filter(f => (f.unread_since || 0) > 0);
     const n = p.unread_since_total || 0;
     const box = pulseBox();
@@ -751,11 +759,13 @@
     if (!pulseBooted) {                  // first answer of this page load
       pulseBooted = true;
       pulseAcked = Math.max(pulseAcked, n);
+      pulseSeenHw = p.high_water_id || 0;
       box.hidden = true;
       return;
     }
-    if (n > pulseAcked) {
+    if ((p.new_since_id || 0) > 0 || n > pulseAcked) {
       pulseShown = n;
+      pulseShownHw = p.high_water_id || pulseSeenHw;
       // feeds arrive sorted by 'since' count, so [0] is the feed with most to
       // see - not the biggest backlog, which with a real library is never it
       const top = feeds.length ? ` \u00b7 ${esc(feeds[0].title)}` : '';
@@ -776,8 +786,17 @@
     }
   }
   // pulseArm = check once, then re-arm. setTimeout is armed with pulseArm
-  // (named so the browser tests can shorten just this timer).
-  function pulseArm() { Promise.resolve(pulseTick()).then(pulseStart); }
+  // (named so the browser tests can shorten just this timer). The rejection
+  // path re-arms TOO: a tick that threw after its fetch used to skip
+  // pulseStart entirely, muting the pill for the rest of the session (the
+  // silent-mute class that bit twice already); an unexpected throw also
+  // counts as a failed check, so it backs off like any other.
+  function pulseArm() {
+    Promise.resolve().then(pulseTick).then(pulseStart, () => {
+      pulseFails++;
+      pulseStart();
+    });
+  }
   function pulseStart() {
     clearTimeout(pulseTimer);
     if (pulseEveryMs <= 0 || document.hidden) return;
@@ -799,6 +818,7 @@
   });
   pulseBtn.addEventListener('click', () => {
     pulseAcked = pulseShown;      // acknowledge THIS many (not: you read them)
+    pulseSeenHw = Math.max(pulseSeenHw, pulseShownHw);   // and THIS far into the ids
     const box = pulseBox(); if (box) box.hidden = true;
     restart(true);          // stream restarts at newest; no feed fetching
     refreshPips();
@@ -807,7 +827,8 @@
   window.__pulseTick = pulseTick;      // test seam: run one check now
   window.__pulseClear = pulseClear;    // test seam: re-baseline (as a click)
   window.__pulseState = () => ({acked: pulseAcked, shown: pulseShown,
-                                booted: pulseBooted});   // test seam
+                                booted: pulseBooted, seenHw: pulseSeenHw,
+                                shownHw: pulseShownHw});   // test seam
   // Offline at boot: keep a quiet re-check going, and retry on demand. If the
   // server is back, a reload brings the reader up with the saved position.
   function retryPulse() {           // defined once, re-armed on failure

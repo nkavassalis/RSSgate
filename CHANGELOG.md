@@ -35,6 +35,39 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.80.0] — 2026-10-09
+
+### Added
+- `/api/pulse?hw=<id>` returns `new_since_id` (readable-unread-since-marker
+  posts with id beyond the caller's watermark) and `high_water_id` (the set's
+  max id). Additive; junk `hw` is 0.
+
+### Changed
+- The pill's trigger is now the IDENTITY watermark first, the count second:
+  it speaks when `new_since_id > 0` OR the since-count grew. A snapshot
+  count cannot carry the trigger alone - it cancels out (one post read in
+  the same tick as one arrives: the total never moves and a post nobody has
+  seen stays silent) and it ratchets (the pill acked 5, the reader read down
+  to 2, the next arrival must beat the stale 5 before it may speak). Article
+  ids only grow and reads shrink the set from below, so a watermark advance
+  proves news exists. The count stays as the label and as the trigger for
+  queued posts that turn readable late (an old id rejoining the set); a tap
+  now raises both watermarks. Baseline doctrine unchanged.
+- A tick that THREW after its fetch killed the scheduler chain
+  (`.then(pulseStart)` is skipped by rejections) and muted the pill for the
+  rest of the session. `pulseArm` now handles the rejection, counts it as a
+  failed check (so it backs off) and re-arms.
+
+### Tests
+- Hermetic: watermark fields + the cancel-out scenario (since-total frozen
+  at 5, `new_since_id` 1).
+- Browser (no manual ticks): the pill speaks when only the watermark moved;
+  a malformed answer (`feeds: {}`) re-arms and the next good answer boots
+  the loop. Pulse route stubs match `**/api/pulse**` now that the client
+  sends `?hw=`.
+- Watch item: one unnamed failure on the first full UI run, unrepeated over
+  four later runs (likely a timing-sensitive pulse browser test).
+
 ## [0.79.3] — 2026-10-08
 
 ### Fixed

@@ -212,7 +212,8 @@ def create_app(config_path: str, conn=None, scheduler=None) -> Flask:
         often the reader may ask. Never fetches feeds."""
         cfg = load_config(config_path)
         out = db.pulse(conn, since_ts=db.get_state(conn, "resume_ts", ""),
-                       hide_statuses=_hide_statuses(cfg))
+                       hide_statuses=_hide_statuses(cfg),
+                       above_id=_int(request.args.get("hw"), 0, lo=0))
         out["every_minutes"] = cfg["ui"].get("pulse_minutes", 1)
         return jsonify(out)
 
