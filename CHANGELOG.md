@@ -35,6 +35,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.80.2] — 2026-10-09
+
+### Docs
+- Release checklist step 5 now carries the SAFE live-server restart recipe.
+  Two restarts this session died mid-chain: a pattern-matched
+  pkill/grep-in-`$(...)` also matches the shell running the restart (the
+  pattern text is inside its own args), so the kill list included that shell
+  and the server came back down before the start line ran. The documented
+  fix matches ps FIELDS (`$2==".venv/bin/python" && $3=="run.py"`), and the
+  start runs as its own command, never `&&`-joined behind the kill.
+
 ## [0.80.1] — 2026-10-09
 
 ### Docs / measurement

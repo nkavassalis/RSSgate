@@ -313,7 +313,20 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
 4. Bump `__version__`, add the CHANGELOG entry (say what actually changed),
    commit, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 5. Restart the live server; confirm `/api/status` shows the version and,
-   for UI changes, curl the served asset for a marker of the new code.
+   for UI changes, curl the served asset for a marker of the new code. Kill
+   it by EXACT argv, never by a pattern-matched pkill/grep joined into the
+   restart chain: the shell running that chain has the pattern text in its
+   own args, so the lookup returns that shell too and the kill takes the
+   whole chain down before the restart line ever runs (the live server was
+   left down twice this way - it is recoverable, but only by noticing the
+   143 and starting the process by hand). Split the steps and match fields,
+   not text:
+   ```
+   kill $(ps -eo pid=,args= | awk '$2==".venv/bin/python" && $3=="run.py"{print $1}')
+   ```
+   then start it fresh as its OWN command (`setsid nohup .venv/bin/python
+   run.py >> rssgate.log 2>&1 &`), not `&&`-joined behind the kill; verify
+   with `ps -eo pid,args | grep "[r]un\.py"` and a curl of `/api/status`.
 
 Versioning: MAJOR = breaks a client/config; MINOR = new capability (endpoint,
 param, admin feature, config key with default, additive column); PATCH = fix,
