@@ -371,3 +371,7 @@ perf, docs, tests, polish. When unsure, cut smaller.
 - systemd user unit for the live server.
 - Per-feed smart_block indicator in the cog modal; "Retry all failed".
 - The browser tier is serial (~1 min); per-worker servers would allow xdist.
+- `db.pulse` scans unread articles (no index serves `read_at IS NULL +
+  status`); measured at the real size (939 rows) it is 2.7 ms median at the
+  1-min cadence - noise. Revisit (partial index or lean mode) only if
+  articles pass ~20k or fetch volume jumps an order of magnitude.

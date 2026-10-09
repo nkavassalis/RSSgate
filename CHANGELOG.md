@@ -35,6 +35,17 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.80.1] — 2026-10-09
+
+### Docs / measurement
+- Measured `db.pulse` against a snapshot of the live library (939 articles,
+  723 unread readable): 2.7 ms median, 4.3 ms max per poll, at the 1-minute
+  cadence - well under any threshold worth caring about, and the new
+  `?hw=` path costs the same. EQP: a plain scan of `articles`; no index
+  serves `read_at IS NULL AND status ...`, and none is warranted at this
+  size. Decision recorded in AGENTS.md so the next agent does not "optimize"
+  it blind: revisit past ~20k articles or ~1k new posts/day.
+
 ## [0.80.0] — 2026-10-09
 
 ### Added
