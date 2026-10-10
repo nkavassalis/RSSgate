@@ -261,6 +261,24 @@ def test_pulse_is_read_only_and_counts_visible_only(client):
     assert after["unread_total"] == 2 and after["feeds"][0]["unread"] == 2
 
 
+def test_config_share_title_defaults_off_and_roundtrips(client):
+    """The native share sheet captioned PNG shares with the post title, and
+    share targets that expect a RAW image choke on that. The key is off
+    unless asked for, survives the round trip, and rejects junk (bool only -
+    1/0 are NOT bools here, matching hide_untranscribed's validation).
+    /api/resume carries it so the reader learns the setting at boot."""
+    assert client.get("/api/config").get_json()["ui"]["share_title"] is False
+    assert client.get("/api/resume").get_json()["share_title"] is False
+    for bad in ("x", 1, None, "true", 0):
+        assert client.put("/api/config",
+                          json={"ui": {"share_title": bad}}).status_code == 200
+        assert client.get("/api/config").get_json()["ui"]["share_title"] is False
+    assert client.put("/api/config",
+                      json={"ui": {"share_title": True}}).status_code == 200
+    assert client.get("/api/config").get_json()["ui"]["share_title"] is True
+    assert client.get("/api/resume").get_json()["share_title"] is True
+
+
 def test_config_pulse_minutes_is_validated(client):
     """ui.pulse_minutes drives the reader's read-only check: clamped range,
     0 allowed (off), junk dropped."""

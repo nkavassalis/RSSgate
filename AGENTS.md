@@ -25,7 +25,8 @@ run.py              config -> create_app -> Scheduler -> maint loop -> flask
 rssgate/
   config.py         DEFAULTS + deep-merge load/save, env: secrets, masked_config.
                     ui.*: order, snapshot_width, stream_width, read_delay,
-                    hide_untranscribed (snapshot_width = WIDE share width).
+                    hide_untranscribed, share_title (snapshot_width = WIDE
+                    share width; share_title defaults OFF).
   db.py             ALL SQL. Schema + additive _migrate(). Keyset paging
                     (articles_page), claim_pending (UPDATE..RETURNING),
                     read cursors, category SQL, delete_* return image names,
@@ -205,6 +206,13 @@ renderCardPng(a, {style, width})   load hero + QR bitmaps, build env, DPR=2
   restore 1400 ms). Browser tests grant clipboard permissions and stub
   `navigator.share` / `navigator.standalone` / `execCommand` per path.
   Flash waits use the file's 6 s convention (3 s was flaky under tier load).
+- **Native PNG share carries NO title by default** (`ui.share_title`, off):
+  the share sheet gets the raw image, because targets that expect just a
+  picture misbehave with a caption. The admin Display checkbox (autosaved,
+  bool-validated, delivered via `/api/resume` like the other reader
+  settings) re-adds `title: a.title`. Recorders in tests must note `title`
+  vanishes through `JSON.stringify` when undefined - assert `'title' in d`,
+  not the parsed key.
 
 ## Admin page (admin.html / admin.js)
 - Sections are `section.panel#sec-*`, listed in `.sec-nav` under group labels

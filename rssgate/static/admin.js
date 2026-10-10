@@ -296,6 +296,9 @@ async function loadConfig() {
   $('cfg-imgcap').value = maint.images_max_mb ?? 0;
   $('cfg-imgperpost').value = maint.images_per_post ?? 4;
   $('cfg-hidepend').checked = (cfg.ui || {}).hide_untranscribed !== false;
+  // default OFF: the share sheet carries the raw image unless the reader
+  // asked for the caption (targets that expect a picture-only share)
+  $('cfg-share-title').checked = (cfg.ui || {}).share_title === true;
   $('cfg-readdelay').value = (cfg.ui || {}).read_delay ?? 5;
   $('cfg-sharewidth').value = (cfg.ui || {}).snapshot_width ?? 800;
   $('cfg-theme').value = (cfg.ui || {}).theme || 'auto';
@@ -543,6 +546,7 @@ autosave('cfg-pulse', el => ({ ui: { pulse_minutes: num(el, 0, 120, 1) } }));
 autosave('cfg-theme', el => ({ ui: { theme: el.value } }));
 $('cfg-theme').addEventListener('change', e =>
   document.documentElement.dataset.theme = e.target.value === 'auto' ? '' : e.target.value);
+autosave('cfg-share-title', el => ({ ui: { share_title: el.checked } }));
 autosave('cfg-provider', el => ({ llm: { provider: el.value } }));
 autosave('cfg-base-url', el => ({ llm: { base_url: el.value.trim() } }));
 autosave('cfg-model', el => ({ llm: { model: el.value } }));

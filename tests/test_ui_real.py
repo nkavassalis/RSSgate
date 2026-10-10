@@ -719,6 +719,96 @@ def test_snapshot_prefers_native_share_sheet(ui_server, browser):
     pg.close()
 
 
+def test_snapshot_share_omits_the_title_unless_configured(ui_server, browser):
+    """ui.share_title (default OFF): the native share sheet must carry the
+    PNG alone, because targets expecting a raw image misbehave when a title
+    rides along. With the flag on, the post title returns to the payload."""
+    fid, _ = _mkfeed("shopt", url=True)
+    _seed_article(fid, "p1", title="titled article",
+                  link="https://example.com/raw-image",
+                  ts="2027-03-06T00:00:00Z")
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.add_init_script("""
+      navigator.canShare = d => d && d.files && d.files.length > 0;
+      navigator.share = async d => {
+        // sessionStorage survives the reload (an init script re-runs and
+        // would reset any window global); the recorder must not
+        const s = JSON.parse(sessionStorage.getItem('shares') || '[]');
+        s.push({ hasTitle: 'title' in d, title: d.title });
+        sessionStorage.setItem('shares', JSON.stringify(s));
+      };
+    """)
+    pg.goto(ui_server, wait_until="networkidle")
+    pg.click(f"#feed-filter li[data-feed='{fid}']")
+    card = pg.locator(".card", has_text="titled article")
+    try:
+        card.locator(".snap-btn[data-fmt=tall]").click()
+        pg.wait_for_function(
+            "() => JSON.parse(sessionStorage.getItem('shares') || '[]')"
+            ".length >= 1", timeout=15000)
+        first = pg.evaluate("JSON.parse(sessionStorage.getItem('shares'))[0]")
+        assert first["hasTitle"] is False and first.get("title") is None, \
+            "the default payload captioned the image"
+
+        # switch the flag on (config is the source of truth; the reader
+        # learns it from /api/resume at boot), reload, share again
+        pg.evaluate("""() => fetch('/api/config', {method: 'PUT',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({ ui: { share_title: true } })})""")
+        assert pg.evaluate("() => fetch('/api/resume').then(r => r.json())"
+                           ".then(s => s.share_title)") is True
+        pg.reload(wait_until="networkidle")
+        pg.click(f"#feed-filter li[data-feed='{fid}']")
+        pg.wait_for_selector("#stream .snap-btn", timeout=6000)
+        pg.locator(".card", has_text="titled article") \
+            .locator(".snap-btn[data-fmt=tall]").click()
+        pg.wait_for_function(
+            "() => JSON.parse(sessionStorage.getItem('shares') || '[]')"
+            ".length >= 2", timeout=15000)
+        sh = pg.evaluate("JSON.parse(sessionStorage.getItem('shares'))[1]")
+        assert sh["hasTitle"] is True and sh["title"] == "titled article"
+        assert pg.errors == []
+    finally:
+        # the tier shares ONE config file: restore even after a failed
+        # assert, or every later test inherits a switched-on caption
+        pg.evaluate("""() => fetch('/api/config', {method: 'PUT',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({ ui: { share_title: false } })})""")
+    pg.close()
+
+
+def test_share_title_toggle_lives_in_display_and_autosaves(ui_server, browser):
+    """The admin control sits in Display & sharing, renders the server's
+    value (off by default), and autosaves its own field with the flash."""
+    pg = _new_page(browser, viewport={"width": 1280, "height": 900})
+    pg.goto(ui_server + "/admin", wait_until="networkidle")
+    where = pg.evaluate("""() => document.getElementById('cfg-share-title')
+        .closest('section').querySelector('h2').textContent""")
+    assert "Display" in where
+    # shared tier: the box must MIRROR the server value, not a hardcoded
+    # default (an earlier test may have left the flag flipped)
+    server_val = pg.evaluate("() => fetch('/api/config').then(r => r.json())"
+                             ".then(c => !!c.ui.share_title)")
+    assert pg.locator("#cfg-share-title").is_checked() is bool(server_val)
+    if server_val:                                # start from a known OFF
+        pg.uncheck("#cfg-share-title")
+        pg.wait_for_function("""() => fetch('/api/config').then(r => r.json())
+            .then(c => c.ui.share_title === false)""", timeout=5000)
+    puts = []
+    pg.on("request", lambda r: puts.append(r.post_data)
+          if r.method == "PUT" and r.url.endswith("/api/config") else None)
+    pg.check("#cfg-share-title")
+    pg.wait_for_selector("label:has(#cfg-share-title).cfg-ok", timeout=5000)
+    assert puts and "share_title" in puts[-1] and "true" in puts[-1]
+    assert pg.evaluate("() => fetch('/api/config').then(r => r.json())"
+                       ".then(c => c.ui.share_title)") is True
+    pg.uncheck("#cfg-share-title")                 # restore the OFF default
+    pg.wait_for_function("""() => fetch('/api/config').then(r => r.json())
+        .then(c => c.ui.share_title === false)""", timeout=5000)
+    assert pg.errors == []
+    pg.close()
+
+
 # ------------------------------------------------------------ share cards
 # Every share test derives coordinates from window.__lastShareGeo (layout
 # truth) and verifies PIXELS inside those rects. Never hard-code pixel

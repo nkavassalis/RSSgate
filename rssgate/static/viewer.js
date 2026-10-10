@@ -252,6 +252,10 @@
   }
 
   let SHARE_W = 800;
+  // ui.share_title via /api/resume: caption the shared PNG with the post
+  // title? OFF by default - share targets that expect a RAW image (chat
+  // apps that inline the file) misbehave when a title rides along.
+  let SHARE_TITLE = false;
   let SHARE_STYLE = 'banner';   // default for direct renderCardPng calls
   // two share buttons per card: TALL = banner at a fixed phone-friendly
   // width; WIDE = magazine layout at ui.snapshot_width (admin setting)
@@ -590,7 +594,9 @@
       // native share sheet first (iOS home-screen app & https browsers):
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: a.title });
+          const payload = { files: [file] };
+          if (SHARE_TITLE) payload.title = a.title;
+          await navigator.share(payload);
           btn.textContent = '\u2713';
           setTimeout(() => { btn.innerHTML = glyph; }, 1400);
           return;
@@ -1121,6 +1127,7 @@
       SHARE_W = Math.round(s.snapshot_width);
     if (typeof s.read_delay === 'number' && s.read_delay >= 0 && s.read_delay <= 60)
       READ_DELAY_MS = s.read_delay * 1000;
+    if (typeof s.share_title === 'boolean') SHARE_TITLE = s.share_title;
     if (s.stream_width >= 480 && s.stream_width <= 1600)
       document.documentElement.style
         .setProperty('--stream-w', Math.round(s.stream_width) + 'px');

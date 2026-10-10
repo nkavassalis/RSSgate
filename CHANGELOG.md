@@ -35,6 +35,24 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.82.0] — 2026-10-09
+
+### Added
+- `ui.share_title` (default OFF): whether the native share sheet captions
+  the shared card PNG with the post title. Off shares the RAW image -
+  targets that expect just a picture were choking on the caption. Admin
+  control `cfg-share-title` sits in Display & sharing and autosaves per the
+  doctrine; the reader learns the value from `/api/resume` at boot like the
+  other ui settings.
+
+### Tests
+- Hermetic: default-off, bool-only validation (1/0/"true" rejected),
+  round-trip, `/api/resume` carriage.
+- Browser: the share payload omits `title` by default and carries it when
+  configured (sessionStorage recorder - init scripts re-run on reload and
+  would reset a window global); the admin checkbox mirrors the server value
+  and autosaves, restoring the default afterwards.
+
 ## [0.81.1] — 2026-10-09
 
 ### Docs
