@@ -393,6 +393,15 @@ perf, docs, tests, polish. When unsure, cut smaller.
 
 ## Known follow-ups (not started)
 - systemd user unit for the live server.
+- **No dev/prod serve switch - decided, don't re-litigate.** Werkzeug
+  `app.run(threaded=True, debug=False)` + the in-process scheduler is
+  deliberate at this scale (single reader, LAN, `/api/pulse` costs 2.7 ms).
+  A "production mode" implies multi-worker serving, and N workers boot N
+  schedulers -> double-fetching feeds (the invariant that already cost the
+  TechPowerUp IP). If it is ever revisited: split the scheduler into its own
+  process FIRST, then waitress with workers=1; and the mode must be the one
+  the tiers actually boot, never an untested second path. Revisit triggers:
+  a second machine, a second reader, or an internet-facing reverse proxy.
 - Per-feed smart_block indicator in the cog modal; "Retry all failed".
 - The browser tier is serial (~1 min); per-worker servers would allow xdist.
 - `db.pulse` scans unread articles (no index serves `read_at IS NULL +

@@ -35,6 +35,16 @@ PATCH. When in doubt, cut the smaller number and fix forward.
 Release checklist: tests green (`python -m pytest`), `__version__` bumped,
 CHANGELOG entry added, `git tag -a vX.Y.Z`, `git push --follow-tags`.
 
+## [0.81.1] — 2026-10-09
+
+### Docs
+- Recorded the decision AGAINST a dev/prod serve switch (AGENTS.md,
+  Known follow-ups): Werkzeug + in-process scheduler is deliberate at this
+  scale; multi-worker serving would boot N schedulers (double-fetch), so any
+  future production mode must split the scheduler out first, run workers=1,
+  and be the mode the tiers actually boot. Revisit triggers: second
+  machine, second reader, or a reverse proxy in front.
+
 ## [0.81.0] — 2026-10-09
 
 ### Added
